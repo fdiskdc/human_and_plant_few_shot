@@ -46,15 +46,13 @@ class PlantDataset(Dataset):
     与 Mer100Dataset 格式完全一致，使用内存映射加载
     """
 
-    # 缓存目录路径
-    CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'npy/cache')
-
-    def __init__(self, plant_dir='plant', use_cache=True, preload_cache=True):
+    def __init__(self, plant_dir='plant', cache_dir=None, use_cache=True, preload_cache=True):
         """
         初始化Plant数据集
 
         Args:
             plant_dir (str): plant数据目录路径
+            cache_dir (str): 缓存目录路径（默认None，使用默认路径）
             use_cache (bool): 是否启用二级结构缓存（默认True）
             preload_cache (bool): 是否在初始化时加载所有边索引到内存（默认True）
         """
@@ -62,6 +60,12 @@ class PlantDataset(Dataset):
         self.use_cache = use_cache
         self._batch_cache = None
         self._edge_indices = None
+
+        # 设置缓存目录
+        if cache_dir is None:
+            self.CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'npy/cache')
+        else:
+            self.CACHE_DIR = cache_dir
 
         # 确保缓存目录存在
         if self.use_cache:
