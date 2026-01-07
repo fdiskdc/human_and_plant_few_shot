@@ -146,12 +146,35 @@ def load_config(config_path: str = 'model.json') -> Tuple:
         """Global configuration class"""
         pass
 
-    # Set paths
-    Config.data_dir = config_dict.get('data_dir', './human3')
+    # Set paths - support both old and new config format
+    data_cfg = config_dict.get('data', {})
+    
+    # For backward compatibility, if 'data' section doesn't exist, use old format
+    if data_cfg:
+        # New format with separate data paths
+        Config.data_dir = data_cfg.get('human_data_dir', './human3')
+        Config.human_data_dir = data_cfg.get('human_data_dir', './human3')
+        Config.plant_data_dir = data_cfg.get('plant_data_dir', './plant')
+        Config.cache_dir = data_cfg.get('cache_dir', './cache')
+    else:
+        # Old format (backward compatibility)
+        Config.data_dir = config_dict.get('data_dir', './human3')
+        Config.human_data_dir = Config.data_dir
+        Config.plant_data_dir = './plant'
+        Config.cache_dir = './cache'
+    
     Config.checkpoint_dir = checkpoint_dir
     Config.log_dir = log_dir
     Config.experiment_name = exp_name
     Config.timestamp = timestamp
+    
+    # Create Config.data object for easier access
+    class DataConfig:
+        pass
+    DataConfig.human_data_dir = Config.human_data_dir
+    DataConfig.plant_data_dir = Config.plant_data_dir
+    DataConfig.cache_dir = Config.cache_dir
+    Config.data = DataConfig
 
     # Set model parameters
     model_cfg = config_dict.get('model', {})

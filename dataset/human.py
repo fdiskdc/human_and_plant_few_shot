@@ -369,16 +369,14 @@ class Mer100Dataset(Dataset):
     使用内存映射加载，支持多线程DataLoader
     """
 
-    # 缓存目录路径
-    CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'cache')
-
-    def __init__(self, mode='train', data_dir='../npy', use_human3=True, use_cache=True, preload_cache=True):
+    def __init__(self, mode='train', data_dir='../npy', cache_dir=None, use_human3=True, use_cache=True, preload_cache=True):
         """
         初始化数据集（支持内存映射和多线程）
 
         Args:
             mode (str): 'train' 或 'test'，指定加载训练集还是测试集
             data_dir (str): 数据文件目录路径
+            cache_dir (str): 缓存目录路径（默认None，使用默认路径）
             use_human3 (bool): 是否使用human3目录数据（默认True）
             use_cache (bool): 是否启用二级结构缓存（默认True）
             preload_cache (bool): 是否在初始化时加载所有边索引到内存（默认True）
@@ -388,6 +386,12 @@ class Mer100Dataset(Dataset):
         self.use_cache = use_cache
         self._batch_cache = None  # 批量缓存数据
         self._edge_indices = None  # 内存中的边索引列表
+
+        # 设置缓存目录
+        if cache_dir is None:
+            self.CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'cache')
+        else:
+            self.CACHE_DIR = cache_dir
 
         # 确保缓存目录存在
         if self.use_cache:

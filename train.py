@@ -169,8 +169,14 @@ def main(config_path='model.json'):
     random.seed(Config.random_seed)
 
     # Load dataset
-    logger.info(f"\nLoading dataset from {Config.data_dir}...")
-    dataset = Mer100Dataset(mode='train', data_dir=Config.data_dir, use_human3=True, use_cache=True)
+    logger.info(f"\nLoading dataset from {Config.data.human_data_dir}...")
+    dataset = Mer100Dataset(
+        mode='train', 
+        data_dir=Config.data.human_data_dir, 
+        cache_dir=Config.data.cache_dir,
+        use_human3=True, 
+        use_cache=True
+    )
     logger.info(f"Dataset loaded: {len(dataset)} samples")
 
     # 预计算所有二级结构（如果批量缓存不存在）
@@ -250,7 +256,12 @@ def main(config_path='model.json'):
 
     # Load plant dataset for evaluation
     logger.info(f"\nLoading plant dataset for evaluation...")
-    plant_dataset = PlantDataset(plant_dir="npy/plant", use_cache=True, preload_cache=True)
+    plant_dataset = PlantDataset(
+        plant_dir=Config.data.plant_data_dir,
+        cache_dir=Config.data.cache_dir,
+        use_cache=True, 
+        preload_cache=True
+    )
 
     # 预计算plant所有二级结构（如果批量缓存不存在）
     plant_cache_stats = plant_dataset.get_cache_stats()
