@@ -1,0 +1,14 @@
+# 忽略所有.npy文件
+*.npy
+
+# 忽略所有.log文件
+*.log
+
+# 忽略.vscode文件夹
+.vscode/
+
+# 忽略所有.pyc文件
+*.pyc
+
+# 忽略__pycache__文件夹
+__pycache__/
