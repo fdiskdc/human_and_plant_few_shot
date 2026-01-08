@@ -51,12 +51,17 @@ from utils import (
 # Few-Shot Benchmark Function
 # ============================================================================
 
-def run_few_shot_benchmark(model, plant_dataset, device, shots=[0, 1, 3, 5, 7, 10], 
+def run_few_shot_benchmark(model, plant_dataset, device, shots=[0, 1, 3, 5, 7, 10],
                           epoch=0, logger=None, tb_writer=None, config=None):
     """
-    Runs Plant Few-Shot Benchmark.
-    Ensures model is restored to pre-adaptation state after execution.
-    
+    Runs Plant Few-Shot Benchmark with optimized fine-tuning strategy.
+
+    Key fixes applied:
+    1. Force eval mode during fine-tuning to freeze BN statistics (but gradients still enabled)
+    2. Increased learning rate from 1e-5 to 1e-3 for faster adaptation
+    3. Increased fine-tuning epochs from 10 to 20
+    4. Masked loss: only compute gradients for valid plant classes [5, 8, 9] (Y, m5C, m6A)
+
     Args:
         model: The neural network model
         plant_dataset: PlantDataset instance
@@ -66,77 +71,87 @@ def run_few_shot_benchmark(model, plant_dataset, device, shots=[0, 1, 3, 5, 7, 1
         logger: Logger instance
         tb_writer: Tensorboard writer
         config: Configuration object
-        
+
     Returns:
         dict: Results for all shots
     """
     logger.info(f"\n>>> Starting Plant Few-Shot Benchmark (Shots: {shots}) <<<")
-    
+
     # 1. Save Human model state (Deep Copy is crucial)
     original_state_dict = copy.deepcopy(model.state_dict())
     all_results = {}
-    
+
+    # Plant valid classes indices (Y, m5C, m6A)
+    valid_indices = [5, 8, 9]
+
     for k in shots:
         logger.info(f"\n--- Running {k}-Shot Adaptation ---")
-        
+
         # 2. Reset model to Human state before EVERY shot experiment
         model.load_state_dict(original_state_dict)
-        
+
         # 3. Get Data Split (Fixed 90% Test, Sample k from 10% Pool)
         support_indices, test_indices = plant_dataset.get_few_shot_split(
-            k_shots=k, valid_classes=[5, 8, 9], test_ratio=0.9, seed=config.random_seed
+            k_shots=k, valid_classes=valid_indices, test_ratio=0.9, seed=config.random_seed
         )
-        
+
         # Create Test Loader (Fixed)
         test_subset = Subset(plant_dataset, test_indices)
         test_loader = DataLoader(test_subset, batch_size=config.batch_size, shuffle=False, num_workers=2)
-        
+
         # 4. Fine-tuning (Only if k > 0)
         if k > 0:
             support_subset = Subset(plant_dataset, support_indices)
             ft_batch_size = min(32, len(support_indices)) if len(support_indices) > 0 else 1
             support_loader = DataLoader(support_subset, batch_size=ft_batch_size, shuffle=True)
-            
-            # New Optimizer for Fine-tuning (Do not affect global optimizer)
-            ft_optimizer = optim.AdamW(model.parameters(), lr=1e-5, weight_decay=1e-4)
+
+            # [Fix 1] Increase LR for quick adaptation
+            ft_optimizer = optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
             ft_criterion = nn.BCEWithLogitsLoss()
-            
-            model.train()
-            ft_epochs = 10  # Short adaptation
-            
+
+            # [Fix 2] Force eval mode to freeze BN statistics, but keep gradients enabled
+            # This prevents BN from updating running_mean/var on tiny support sets
+            # while still allowing AutoGrad to update all other parameters
+            model.eval()
+
+            # [Fix 3] Increase epochs for better convergence
+            ft_epochs = 20
+
             for ft_ep in range(ft_epochs):
                 for batch in support_loader:
                     batch = batch.to(device)
                     if not isinstance(batch.y, torch.Tensor):
                         batch.y = torch.tensor(batch.y, dtype=torch.float32)
                     batch.y = batch.y.to(device)
-                    
+
                     ft_optimizer.zero_grad()
                     if config.use_hierarchical:
                         logits_12, _ = model(batch.x, batch.edge_index, batch.batch)
-                        loss = ft_criterion(logits_12, batch.y)
                     else:
-                        logits = model(batch.x, batch.edge_index, batch.batch)
-                        loss = ft_criterion(logits, batch.y)
-                    
+                        logits_12 = model(batch.x, batch.edge_index, batch.batch)
+
+                    # [Fix 4] Masked Loss: Only compute gradients for valid plant classes
+                    # This prevents the model from overfitting to the '0' labels of unknown classes
+                    loss = ft_criterion(logits_12[:, valid_indices], batch.y[:, valid_indices])
+
                     loss.backward()
                     ft_optimizer.step()
 
         # 5. Evaluation on Fixed Test Set
         y_true, y_prob, y_4class, y_4prob = get_all_predictions(model, test_loader, device, config.use_hierarchical)
-        
+
         metrics_unbalance = evaluate_plant_unbalance(y_true, y_prob, device, y_4class, config.random_seed, y_4prob)
         metrics_balanceb = evaluate_plant_balanceb(y_true, y_prob, y_4class, device, config.random_seed, y_4prob)
-        
+
         all_results[k] = {"unbalance": metrics_unbalance, "balanceb": metrics_balanceb}
 
     # 6. Print Summary
     print_few_shot_results(all_results, epoch, logger)
-    
+
     # 7. Restore Model State (Crucial)
     model.load_state_dict(original_state_dict)
     logger.info(">>> Few-Shot Benchmark Finished. Model parameters restored. <<<")
-    
+
     return all_results
 
 
