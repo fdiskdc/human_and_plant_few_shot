@@ -48,125 +48,259 @@ from utils import (
 
 
 # ============================================================================
+# Data Augmentation Utilities
+# ============================================================================
+
+def apply_advanced_augmentation(data, protected_mask=None,
+                                mutation_prob=0.01,    # 降低突变率
+                                protection_radius=2,   # [关键] 保护半径 +/- 2bp
+                                cutout_prob=0.1,       # [新增] 区域遮挡
+                                drop_edge_prob=0.15):  # [新增] 图结构丢边
+    """
+    综合 RNA 增强：带上下文保护的突变 + 区域遮挡 + 结构丢边
+    """
+    from torch_geometric.utils import dropout_adj
+
+    aug_data = data.clone()
+    device = aug_data.x.device
+    seq_len = aug_data.x.size(0)
+
+    # ---------------------------------------------------------
+    # 0. 预处理保护掩码 (Dilate Mask)
+    # ---------------------------------------------------------
+    final_protected = None
+    if protected_mask is not None:
+        # 确保 mask 是 Tensor
+        if not isinstance(protected_mask, torch.Tensor):
+            mask_tensor = torch.tensor(protected_mask, device=device, dtype=torch.float32)
+        else:
+            mask_tensor = protected_mask.to(device, dtype=torch.float32)
+
+        if mask_tensor.dim() == 1:
+            mask_tensor = mask_tensor.view(1, 1, -1) # (1, 1, L)
+
+        # 使用 MaxPool1d 进行膨胀 (Dilation)
+        # Kernel size = 2*r + 1, Stride = 1, Padding = r
+        if protection_radius > 0:
+            k_size = 2 * protection_radius + 1
+            dilated = torch.nn.functional.max_pool1d(
+                mask_tensor, kernel_size=k_size, stride=1, padding=protection_radius
+            )
+            final_protected = dilated.view(-1) > 0.5 # 回到 (L, ) Boolean
+        else:
+            final_protected = mask_tensor.view(-1) > 0.5
+
+    # ---------------------------------------------------------
+    # 1. 序列突变 (Mutation / Flipping)
+    # ---------------------------------------------------------
+    if mutation_prob > 0:
+        flip_mask = torch.rand(seq_len, device=device) < mutation_prob
+
+        # 应用扩大的保护掩码
+        if final_protected is not None:
+            flip_mask = flip_mask & (~final_protected)
+
+        num_flips = flip_mask.sum().item()
+        if num_flips > 0:
+            new_bases = torch.randint(0, 4, (num_flips,), device=device)
+            new_one_hot = torch.zeros(num_flips, 4, device=device)
+            new_one_hot.scatter_(1, new_bases.unsqueeze(1), 1.0)
+            aug_data.x[flip_mask] = new_one_hot
+
+    # ---------------------------------------------------------
+    # 2. 区域遮挡 (Cutout / Span Masking) - 比突变更安全
+    # ---------------------------------------------------------
+    if cutout_prob > 0 and (torch.rand(1).item() < cutout_prob):
+        cutout_len = 10
+        # 随机选起点
+        if seq_len > cutout_len:
+            start_idx = torch.randint(0, seq_len - cutout_len, (1,)).item()
+            end_idx = start_idx + cutout_len
+
+            # 检查是否覆盖了受保护区域
+            is_safe = True
+            if final_protected is not None:
+                if torch.any(final_protected[start_idx:end_idx]):
+                    is_safe = False
+
+            if is_safe:
+                aug_data.x[start_idx:end_idx] = 0.0 # 遮挡
+
+    # ---------------------------------------------------------
+    # 3. 图结构丢边 (DropEdge) - 增强 GCN 鲁棒性
+    # ---------------------------------------------------------
+    if drop_edge_prob > 0 and aug_data.edge_index.size(1) > 0:
+        aug_data.edge_index, _ = dropout_adj(
+            aug_data.edge_index, p=drop_edge_prob, force_undirected=False
+        )
+
+    return aug_data
+
+
+# ============================================================================
 # Few-Shot Benchmark Function
 # ============================================================================
 
 def run_few_shot_benchmark(model, plant_dataset, device, shots=[0, 1, 3, 5, 7, 10],
                           epoch=0, logger=None, tb_writer=None, config=None):
     """
-    Runs Plant Few-Shot Benchmark with optimized fine-tuning strategy.
+    Run Few-Shot Learning Benchmark with Bias Initialization Fix
 
-    Key fixes applied:
-    1. Force eval mode during fine-tuning to freeze BN statistics (but gradients still enabled)
-    2. Increased learning rate from 1e-5 to 1e-3 for faster adaptation
-    3. Increased fine-tuning epochs from 10 to 20
-    4. Masked loss: only compute gradients for valid plant classes [5, 8, 9] (Y, m5C, m6A)
-
-    Args:
-        model: The neural network model
-        plant_dataset: PlantDataset instance
-        device: Device to run on (cuda/cpu)
-        shots: List of shot counts to evaluate
-        epoch: Current epoch number
-        logger: Logger instance
-        tb_writer: Tensorboard writer
-        config: Configuration object
-
-    Returns:
-        dict: Results for all shots
+    Key changes:
+    1. Use mutual negative sampling (all classes in support set)
+    2. Initialize head bias to -2.0 to fix 0-shot positive bias
+    3. Full dataset for evaluation
     """
-    logger.info(f"\n>>> Starting Plant Few-Shot Benchmark (Shots: {shots}) <<<")
+    from torch_geometric.data import Batch as PyGBatch
 
-    # 1. Save Human model state (Deep Copy is crucial)
+    logger.info(f"\n>>> Starting Plant Few-Shot Benchmark (Shots: {shots}) <<<")
+    logger.info(">>> Strategy: Bias Reset (-2.0) + Mutual Negative Sampling <<<")
+
     original_state_dict = copy.deepcopy(model.state_dict())
     all_results = {}
+    valid_indices = [5, 8, 9]  # Plant valid classes
 
-    # Plant valid classes indices (Y, m5C, m6A)
-    valid_indices = [5, 8, 9]
+    # 获取 Dataset 保护标签
+    dataset_labels = None
+    if hasattr(plant_dataset, 'full_labels'):
+        dataset_labels = plant_dataset.full_labels
+        logger.info(f"Augmentation: Using full_labels with +/- 2bp context protection.")
+    else:
+        logger.warning("Augmentation: 'full_labels' not found!")
 
     for k in shots:
         logger.info(f"\n--- Running {k}-Shot Adaptation ---")
-
-        # 2. Reset model to Human state before EVERY shot experiment
         model.load_state_dict(original_state_dict)
 
-        # 3. Get Data Split (Fixed 90% Test, Sample k from 10% Pool)
-        support_indices, test_indices = plant_dataset.get_few_shot_split(
-            k_shots=k, valid_classes=valid_indices, test_ratio=0.9, seed=config.random_seed
-        )
-
-        # Create Test Loader (Fixed)
-        test_subset = Subset(plant_dataset, test_indices)
-        test_loader = DataLoader(test_subset, batch_size=config.batch_size, shuffle=False, num_workers=2)
-
-        # 4. Fine-tuning (Only if k > 0)
+        # ------------------------------------------------------------------
+        # 1. 采样 (使用互为负样本策略)
+        # ------------------------------------------------------------------
+        support_indices = []
         if k > 0:
-            support_subset = Subset(plant_dataset, support_indices)
-            ft_batch_size = min(32, len(support_indices)) if len(support_indices) > 0 else 1
-            support_loader = DataLoader(support_subset, batch_size=ft_batch_size, shuffle=True)
+            y_true = plant_dataset.y_12class
+            pos_indices_set = set()
 
-            # ================= [修改开始] =================
-            # 策略调整：冻结 Backbone，只训练 Head，并提高 Head 的学习率
+            # 对每个有效类采样 k 个
+            for c in valid_indices:
+                c_pos_indices = np.where(y_true[:, c] == 1)[0]
+                if len(c_pos_indices) >= k:
+                    selected = np.random.choice(c_pos_indices, k, replace=False)
+                else:
+                    selected = c_pos_indices
+                pos_indices_set.update(selected.tolist())
 
-            # 1. 冻结非 Head 层的参数
+            support_indices = list(pos_indices_set)
+            np.random.shuffle(support_indices)
+            logger.info(f"Support set size: {len(support_indices)} (Valid Classes: {valid_indices})")
+
+        # 准备测试集 (全量)
+        test_loader = DataLoader(plant_dataset, batch_size=config.batch_size, shuffle=False, num_workers=2)
+
+        # ------------------------------------------------------------------
+        # 2. 微调训练 (Fine-tuning)
+        # ------------------------------------------------------------------
+        if k > 0 and len(support_indices) > 0:
+            support_data_list = [plant_dataset[i] for i in support_indices]
+
+            # 提取保护 Mask
+            support_masks = []
+            if dataset_labels is not None:
+                for idx in support_indices:
+                    lbl = dataset_labels[idx]
+                    mask = (lbl > 0)
+                    support_masks.append(mask)
+
+            # 冻结 Backbone, 激活 Head
             trainable_params = []
+            head_bias_params = []  # 专门收集 Bias 参数
+
             for name, param in model.named_parameters():
-                if "class_query_head" in name: # 只筛选最后分类头的参数
+                if "class_query_head" in name:
                     param.requires_grad = True
                     trainable_params.append(param)
+                    if "bias" in name:
+                        head_bias_params.append(param)
                 else:
-                    param.requires_grad = False # 冻结 CNN 和 GCN
+                    param.requires_grad = False
 
-            # 2. 针对 Head 使用较大的学习率 (1e-3)，让它快速适应新数据
-            # 这里的 lr 改回 1e-3，甚至可以尝试 5e-3，因为只调最后一层很安全
-            ft_optimizer = optim.AdamW(trainable_params, lr=1e-3, weight_decay=1e-4)
-            # ================= [修改结束] =================
+            # [关键修复]：重置 Head 的 Bias
+            # 0-shot 时模型倾向于预测全 1 (Sp=0)，我们需要手动把它按下去。
+            # 将 valid_indices 对应的 Bias 设为 -2.0 (Sigmoid(-2.0) ≈ 0.12)
+            # 这样模型初始状态会倾向于预测 0 (Negative)，从而大幅提升 Precision/Specificity
+            with torch.no_grad():
+                for bias in head_bias_params:
+                    # 确保只修改 valid_indices 的 bias (如果是 12 类的 bias)
+                    if bias.shape[0] == 12:
+                        for c in valid_indices:
+                            bias[c].fill_(-2.0)  # 强行设为负值
+                    elif bias.shape[0] == 1:  # 如果是单输出
+                        bias.fill_(-2.0)
 
+            logger.info("Initialized Head Bias to -2.0 to fix 0-shot Positive Bias.")
+
+            # 优化器
+            ft_optimizer = optim.AdamW(trainable_params, lr=5e-3, weight_decay=0.01)
             ft_criterion = nn.BCEWithLogitsLoss()
 
-            # [Fix 2] Force eval mode to freeze BN statistics, but keep gradients enabled
-            # This prevents BN from updating running_mean/var on tiny support sets
-            # while still allowing AutoGrad to update all other parameters
-            model.eval()
-
-            # [Fix 3] Increase epochs for better convergence
-            ft_epochs = 10+10 if k < 10 else 20+10
+            model.eval()  # Freeze BN
+            ft_epochs = 50
+            aug_factor = 8 if k <= 5 else 4  # 增强倍数
 
             for ft_ep in range(ft_epochs):
-                for batch in support_loader:
-                    batch = batch.to(device)
-                    if not isinstance(batch.y, torch.Tensor):
-                        batch.y = torch.tensor(batch.y, dtype=torch.float32)
-                    batch.y = batch.y.to(device)
+                batch_list = []
 
+                # A. 原始样本
+                for data in support_data_list:
+                    batch_list.append(data.clone())
+
+                # B. 增强样本
+                for _ in range(aug_factor):
+                    for idx, data in enumerate(support_data_list):
+                        curr_mask = None
+                        if len(support_masks) > idx:
+                            curr_mask = support_masks[idx]
+
+                        # 使用综合增强函数
+                        aug_data = apply_advanced_augmentation(
+                            data,
+                            protected_mask=curr_mask,
+                            mutation_prob=0.01,
+                            protection_radius=2,
+                            cutout_prob=0.1,
+                            drop_edge_prob=0.15
+                        )
+                        batch_list.append(aug_data)
+
+                if len(batch_list) > 0:
+                    batch = PyGBatch.from_data_list(batch_list).to(device)
                     ft_optimizer.zero_grad()
+
                     if config.use_hierarchical:
                         logits_12, _ = model(batch.x, batch.edge_index, batch.batch)
                     else:
                         logits_12 = model(batch.x, batch.edge_index, batch.batch)
 
-                    # [Fix 4] Masked Loss: Only compute gradients for valid plant classes
-                    # This prevents the model from overfitting to the '0' labels of unknown classes
+                    # 计算 Loss：此时 Class 5 的正样本会推高 Bias[5]，
+                    # 而 Class 8/9 的样本（对于 Class 5 是负样本）会压低 Bias[5]。
+                    # 由于 Bias 初始值已经是 -2.0，模型会更容易学到"拒绝"。
                     loss = ft_criterion(logits_12[:, valid_indices], batch.y[:, valid_indices])
-
                     loss.backward()
                     ft_optimizer.step()
 
-        # 5. Evaluation on Fixed Test Set
+        # ------------------------------------------------------------------
+        # 3. 评估
+        # ------------------------------------------------------------------
         y_true, y_prob, y_4class, y_4prob = get_all_predictions(model, test_loader, device, config.use_hierarchical)
-
         metrics_unbalance = evaluate_plant_unbalance(y_true, y_prob, device, y_4class, config.random_seed, y_4prob)
         metrics_balanceb = evaluate_plant_balanceb(y_true, y_prob, y_4class, device, config.random_seed, y_4prob)
-
         all_results[k] = {"unbalance": metrics_unbalance, "balanceb": metrics_balanceb}
 
-    # 6. Print Summary
+        macro_f1 = metrics_unbalance.get('group_plant_opt_macro_f1', 0.0)
+        logger.info(f"{k}-Shot Result - Macro F1: {macro_f1:.4f}")
+
     print_few_shot_results(all_results, epoch, logger)
-
-    # 7. Restore Model State (Crucial)
     model.load_state_dict(original_state_dict)
-    logger.info(">>> Few-Shot Benchmark Finished. Model parameters restored. <<<")
-
+    logger.info(">>> Few-Shot Benchmark Finished. <<<")
     return all_results
 
 
