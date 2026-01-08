@@ -105,8 +105,23 @@ def run_few_shot_benchmark(model, plant_dataset, device, shots=[0, 1, 3, 5, 7, 1
             ft_batch_size = min(32, len(support_indices)) if len(support_indices) > 0 else 1
             support_loader = DataLoader(support_subset, batch_size=ft_batch_size, shuffle=True)
 
-            # [Fix 1] Increase LR for quick adaptation
-            ft_optimizer = optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
+            # ================= [修改开始] =================
+            # 策略调整：冻结 Backbone，只训练 Head，并提高 Head 的学习率
+
+            # 1. 冻结非 Head 层的参数
+            trainable_params = []
+            for name, param in model.named_parameters():
+                if "class_query_head" in name: # 只筛选最后分类头的参数
+                    param.requires_grad = True
+                    trainable_params.append(param)
+                else:
+                    param.requires_grad = False # 冻结 CNN 和 GCN
+
+            # 2. 针对 Head 使用较大的学习率 (1e-3)，让它快速适应新数据
+            # 这里的 lr 改回 1e-3，甚至可以尝试 5e-3，因为只调最后一层很安全
+            ft_optimizer = optim.AdamW(trainable_params, lr=1e-3, weight_decay=1e-4)
+            # ================= [修改结束] =================
+
             ft_criterion = nn.BCEWithLogitsLoss()
 
             # [Fix 2] Force eval mode to freeze BN statistics, but keep gradients enabled
@@ -115,7 +130,7 @@ def run_few_shot_benchmark(model, plant_dataset, device, shots=[0, 1, 3, 5, 7, 1
             model.eval()
 
             # [Fix 3] Increase epochs for better convergence
-            ft_epochs = 20
+            ft_epochs = 10+10 if k < 10 else 20+10
 
             for ft_ep in range(ft_epochs):
                 for batch in support_loader:
@@ -470,7 +485,7 @@ def main(config_path='model.json'):
                 model=model,
                 plant_dataset=plant_dataset,
                 device=Config.device,
-                shots=[0, 1, 3, 5, 7, 10], 
+                shots=[0, 1, 3, 5, 7, 10,25,50,100], 
                 epoch=epoch,
                 logger=logger,
                 tb_writer=tb_writer,
