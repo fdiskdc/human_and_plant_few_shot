@@ -626,7 +626,8 @@ class Mer100Dataset(Dataset):
         Returns:
             str: 批量缓存文件完整路径
         """
-        return os.path.join(self.CACHE_DIR, f"{self.mode}_{BATCH_CACHE_FILE}")
+        # 添加数据集名称前缀
+        return os.path.join(self.CACHE_DIR, f"human_{self.mode}_{BATCH_CACHE_FILE}")
 
     def _load_batch_cache(self):
         """
