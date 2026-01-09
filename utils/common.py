@@ -210,6 +210,9 @@ def load_config(config_path: str = 'model.json') -> Tuple:
     Config.use_dynamic_sampler = train_cfg.get('use_dynamic_sampler', True)
     Config.balance_ratio = train_cfg.get('balance_ratio', 0.3)
 
+    # AMP (Automatic Mixed Precision) settings
+    Config.use_amp = train_cfg.get('use_amp', True)
+
     # Device
     Config.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -290,7 +293,8 @@ def train_epoch(
     scheduler: Optional[torch.optim.lr_scheduler._LRScheduler],
     device: torch.device,
     logger: Optional[logging.Logger] = None,
-    use_hierarchical: bool = False
+    use_hierarchical: bool = False,
+    use_amp: bool = False
 ) -> float:
     """
     Train for one epoch with TQDM progress monitoring.
@@ -304,6 +308,7 @@ def train_epoch(
         device: Device to train on
         logger: Optional logger instance
         use_hierarchical: If True, use multi-task learning (4-class + 12-class)
+        use_amp: If True, use automatic mixed precision
 
     Returns:
         Average loss for the epoch
@@ -316,6 +321,9 @@ def train_epoch(
     total_loss_12 = 0.0
     total_loss_4 = 0.0
     num_batches = 0
+
+    # Create GradScaler for AMP if enabled
+    scaler = torch.cuda.amp.GradScaler() if use_amp else None
 
     pbar = tqdm(dataloader, desc="Training", leave=True)
     for batch in pbar:
@@ -331,39 +339,77 @@ def train_epoch(
         # Forward pass
         optimizer.zero_grad()
 
-        if use_hierarchical:
-            # Multi-task learning: get both 12-class and 4-class logits
-            from .common import GROUP_TO_CLASS_INDICES
+        if use_amp:
+            # Use AMP for forward pass
+            with torch.cuda.amp.autocast():
+                if use_hierarchical:
+                    # Multi-task learning: get both 12-class and 4-class logits
+                    from .common import GROUP_TO_CLASS_INDICES
 
-            logits_12, logits_4 = model(batch.x, batch.edge_index, batch.batch)
+                    logits_12, logits_4 = model(batch.x, batch.edge_index, batch.batch)
 
-            # Generate 4-class labels from 12-class labels
-            # y_4class[g] = 1 if any class in group g has modification
-            y_12 = batch.y  # (Batch, 12)
-            y_4 = torch.zeros(y_12.size(0), 4, device=y_12.device)
+                    # Generate 4-class labels from 12-class labels
+                    # y_4class[g] = 1 if any class in group g has modification
+                    y_12 = batch.y  # (Batch, 12)
+                    y_4 = torch.zeros(y_12.size(0), 4, device=y_12.device)
 
-            # For each group (A=0, C=1, G=2, U=3)
-            for group_idx, group_name in enumerate(['A', 'C', 'G', 'U']):
-                class_indices = GROUP_TO_CLASS_INDICES[group_name]
-                y_4[:, group_idx] = y_12[:, class_indices].max(dim=1)[0]
+                    # For each group (A=0, C=1, G=2, U=3)
+                    for group_idx, group_name in enumerate(['A', 'C', 'G', 'U']):
+                        class_indices = GROUP_TO_CLASS_INDICES[group_name]
+                        y_4[:, group_idx] = y_12[:, class_indices].max(dim=1)[0]
 
-            # Calculate losses for both tasks
-            # Note: criterion has pos_weight for 12 classes, so we can only use it for 12-class loss
-            # For 4-class loss, we use BCEWithLogitsLoss without pos_weight
-            loss_12 = criterion(logits_12, y_12)
-            loss_4 = F.binary_cross_entropy_with_logits(logits_4, y_4)
-            loss = loss_12 + loss_4
+                    # Calculate losses for both tasks
+                    # Note: criterion has pos_weight for 12 classes, so we can only use it for 12-class loss
+                    # For 4-class loss, we use BCEWithLogitsLoss without pos_weight
+                    loss_12 = criterion(logits_12, y_12)
+                    loss_4 = F.binary_cross_entropy_with_logits(logits_4, y_4)
+                    loss = loss_12 + loss_4
 
-            total_loss_12 += loss_12.item()
-            total_loss_4 += loss_4.item()
+                    total_loss_12 += loss_12.item()
+                    total_loss_4 += loss_4.item()
+                else:
+                    # Single-task learning: only 12-class
+                    logits = model(batch.x, batch.edge_index, batch.batch)
+                    loss = criterion(logits, batch.y)
+
+            # Backward pass with scaler
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
         else:
-            # Single-task learning: only 12-class
-            logits = model(batch.x, batch.edge_index, batch.batch)
-            loss = criterion(logits, batch.y)
+            if use_hierarchical:
+                # Multi-task learning: get both 12-class and 4-class logits
+                from .common import GROUP_TO_CLASS_INDICES
 
-        # Backward pass
-        loss.backward()
-        optimizer.step()
+                logits_12, logits_4 = model(batch.x, batch.edge_index, batch.batch)
+
+                # Generate 4-class labels from 12-class labels
+                # y_4class[g] = 1 if any class in group g has modification
+                y_12 = batch.y  # (Batch, 12)
+                y_4 = torch.zeros(y_12.size(0), 4, device=y_12.device)
+
+                # For each group (A=0, C=1, G=2, U=3)
+                for group_idx, group_name in enumerate(['A', 'C', 'G', 'U']):
+                    class_indices = GROUP_TO_CLASS_INDICES[group_name]
+                    y_4[:, group_idx] = y_12[:, class_indices].max(dim=1)[0]
+
+                # Calculate losses for both tasks
+                # Note: criterion has pos_weight for 12 classes, so we can only use it for 12-class loss
+                # For 4-class loss, we use BCEWithLogitsLoss without pos_weight
+                loss_12 = criterion(logits_12, y_12)
+                loss_4 = F.binary_cross_entropy_with_logits(logits_4, y_4)
+                loss = loss_12 + loss_4
+
+                total_loss_12 += loss_12.item()
+                total_loss_4 += loss_4.item()
+            else:
+                # Single-task learning: only 12-class
+                logits = model(batch.x, batch.edge_index, batch.batch)
+                loss = criterion(logits, batch.y)
+
+            # Backward pass
+            loss.backward()
+            optimizer.step()
 
         total_loss += loss.item()
         num_batches += 1
@@ -399,7 +445,8 @@ def test_epoch(
     device: torch.device,
     phase: str = "test",
     logger: Optional[logging.Logger] = None,
-    use_hierarchical: bool = False
+    use_hierarchical: bool = False,
+    use_amp: bool = False
 ) -> float:
     """
     Test for one epoch with TQDM progress monitoring.
@@ -412,6 +459,7 @@ def test_epoch(
         phase: Phase name ('test' or 'val')
         logger: Optional logger instance
         use_hierarchical: If True, use multi-task learning (4-class + 12-class)
+        use_amp: If True, use automatic mixed precision
 
     Returns:
         Average loss for the epoch
@@ -425,55 +473,109 @@ def test_epoch(
     total_loss_4 = 0.0
     num_batches = 0
 
+    # Determine autocast context for AMP
+    autocast = torch.cuda.amp.autocast if use_amp else torch.no_grad
+
     pbar = tqdm(dataloader, desc=f"{phase.capitalize()}", leave=True)
-    with torch.no_grad():
-        for batch in pbar:
-            # Ensure labels are tensor before moving to device
-            if not isinstance(batch.y, torch.Tensor):
-                batch.y = torch.tensor(batch.y, dtype=torch.float32)
+    if use_amp:
+        with torch.no_grad():
+            for batch in pbar:
+                # Ensure labels are tensor before moving to device
+                if not isinstance(batch.y, torch.Tensor):
+                    batch.y = torch.tensor(batch.y, dtype=torch.float32)
 
-            batch = batch.to(device)
+                batch = batch.to(device)
 
-            # Ensure labels are on same device
-            batch.y = batch.y.to(device)
+                # Ensure labels are on same device
+                batch.y = batch.y.to(device)
 
-            # Forward pass
-            if use_hierarchical:
-                # Multi-task learning: get both 12-class and 4-class logits
-                from .common import GROUP_TO_CLASS_INDICES
+                # Forward pass with AMP
+                with torch.cuda.amp.autocast():
+                    if use_hierarchical:
+                        # Multi-task learning: get both 12-class and 4-class logits
+                        from .common import GROUP_TO_CLASS_INDICES
 
-                logits_12, logits_4 = model(batch.x, batch.edge_index, batch.batch)
+                        logits_12, logits_4 = model(batch.x, batch.edge_index, batch.batch)
 
-                # Generate 4-class labels from 12-class labels
-                y_12 = batch.y  # (Batch, 12)
-                y_4 = torch.zeros(y_12.size(0), 4, device=y_12.device)
+                        # Generate 4-class labels from 12-class labels
+                        y_12 = batch.y  # (Batch, 12)
+                        y_4 = torch.zeros(y_12.size(0), 4, device=y_12.device)
 
-                # For each group (A=0, C=1, G=2, U=3)
-                for group_idx, group_name in enumerate(['A', 'C', 'G', 'U']):
-                    class_indices = GROUP_TO_CLASS_INDICES[group_name]
-                    y_4[:, group_idx] = y_12[:, class_indices].max(dim=1)[0]
+                        # For each group (A=0, C=1, G=2, U=3)
+                        for group_idx, group_name in enumerate(['A', 'C', 'G', 'U']):
+                            class_indices = GROUP_TO_CLASS_INDICES[group_name]
+                            y_4[:, group_idx] = y_12[:, class_indices].max(dim=1)[0]
 
-                # Calculate losses for both tasks
-                # Note: criterion has pos_weight for 12 classes, so we can only use it for 12-class loss
-                # For 4-class loss, we use BCEWithLogitsLoss without pos_weight
-                loss_12 = criterion(logits_12, y_12)
-                loss_4 = F.binary_cross_entropy_with_logits(logits_4, y_4)
-                loss = loss_12 + loss_4
+                        # Calculate losses for both tasks
+                        # Note: criterion has pos_weight for 12 classes, so we can only use it for 12-class loss
+                        # For 4-class loss, we use BCEWithLogitsLoss without pos_weight
+                        loss_12 = criterion(logits_12, y_12)
+                        loss_4 = F.binary_cross_entropy_with_logits(logits_4, y_4)
+                        loss = loss_12 + loss_4
 
-                total_loss_12 += loss_12.item()
-                total_loss_4 += loss_4.item()
-            else:
-                # Single-task learning: only 12-class
-                logits = model(batch.x, batch.edge_index, batch.batch)
-                loss = criterion(logits, batch.y)
+                        total_loss_12 += loss_12.item()
+                        total_loss_4 += loss_4.item()
+                    else:
+                        # Single-task learning: only 12-class
+                        logits = model(batch.x, batch.edge_index, batch.batch)
+                        loss = criterion(logits, batch.y)
 
-            total_loss += loss.item()
-            num_batches += 1
+                total_loss += loss.item()
+                num_batches += 1
 
-            if use_hierarchical:
-                pbar.set_postfix({"loss": f"{loss.item():.4f}", "loss_12": f"{loss_12.item():.4f}", "loss_4": f"{loss_4.item():.4f}"})
-            else:
-                pbar.set_postfix({"loss": f"{loss.item():.4f}"})
+                if use_hierarchical:
+                    pbar.set_postfix({"loss": f"{loss.item():.4f}", "loss_12": f"{loss_12.item():.4f}", "loss_4": f"{loss_4.item():.4f}"})
+                else:
+                    pbar.set_postfix({"loss": f"{loss.item():.4f}"})
+    else:
+        with torch.no_grad():
+            for batch in pbar:
+                # Ensure labels are tensor before moving to device
+                if not isinstance(batch.y, torch.Tensor):
+                    batch.y = torch.tensor(batch.y, dtype=torch.float32)
+
+                batch = batch.to(device)
+
+                # Ensure labels are on same device
+                batch.y = batch.y.to(device)
+
+                # Forward pass
+                if use_hierarchical:
+                    # Multi-task learning: get both 12-class and 4-class logits
+                    from .common import GROUP_TO_CLASS_INDICES
+
+                    logits_12, logits_4 = model(batch.x, batch.edge_index, batch.batch)
+
+                    # Generate 4-class labels from 12-class labels
+                    y_12 = batch.y  # (Batch, 12)
+                    y_4 = torch.zeros(y_12.size(0), 4, device=y_12.device)
+
+                    # For each group (A=0, C=1, G=2, U=3)
+                    for group_idx, group_name in enumerate(['A', 'C', 'G', 'U']):
+                        class_indices = GROUP_TO_CLASS_INDICES[group_name]
+                        y_4[:, group_idx] = y_12[:, class_indices].max(dim=1)[0]
+
+                    # Calculate losses for both tasks
+                    # Note: criterion has pos_weight for 12 classes, so we can only use it for 12-class loss
+                    # For 4-class loss, we use BCEWithLogitsLoss without pos_weight
+                    loss_12 = criterion(logits_12, y_12)
+                    loss_4 = F.binary_cross_entropy_with_logits(logits_4, y_4)
+                    loss = loss_12 + loss_4
+
+                    total_loss_12 += loss_12.item()
+                    total_loss_4 += loss_4.item()
+                else:
+                    # Single-task learning: only 12-class
+                    logits = model(batch.x, batch.edge_index, batch.batch)
+                    loss = criterion(logits, batch.y)
+
+                total_loss += loss.item()
+                num_batches += 1
+
+                if use_hierarchical:
+                    pbar.set_postfix({"loss": f"{loss.item():.4f}", "loss_12": f"{loss_12.item():.4f}", "loss_4": f"{loss_4.item():.4f}"})
+                else:
+                    pbar.set_postfix({"loss": f"{loss.item():.4f}"})
 
     avg_loss = total_loss / num_batches
     if use_hierarchical:

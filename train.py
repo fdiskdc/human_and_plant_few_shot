@@ -141,46 +141,46 @@ def apply_advanced_augmentation(data, protected_mask=None,
 # Few-Shot Benchmark Function
 # ============================================================================
 
-def run_few_shot_benchmark(model, plant_dataset, device, shots=[0, 1, 3, 5, 7, 10],
+def run_few_shot_benchmark(model, plant_dataset, device, shots=[0, 1, 3, 5, 7, 10], 
                           epoch=0, logger=None, tb_writer=None, config=None):
     """
-    Run Few-Shot Learning Benchmark with Bias Initialization Fix
-
-    Key changes:
-    1. Use mutual negative sampling (all classes in support set)
-    2. Initialize head bias to -2.0 to fix 0-shot positive bias
-    3. Full dataset for evaluation
+    Run Few-Shot Learning Benchmark with Stability Guarantees
+    Strategy: 
+    1. Bias-Only Tuning for Low Shots (Prevent Feature Destruction)
+    2. Weight Interpolation (Soft Landing to 0-shot baseline)
     """
     from torch_geometric.data import Batch as PyGBatch
+    import copy
+    import numpy as np
 
     logger.info(f"\n>>> Starting Plant Few-Shot Benchmark (Shots: {shots}) <<<")
-    logger.info(">>> Strategy: Bias Reset (-2.0) + Mutual Negative Sampling <<<")
 
+    # 保存原始 0-shot 参数作为锚点 (Anchor)
     original_state_dict = copy.deepcopy(model.state_dict())
     all_results = {}
-    valid_indices = [5, 8, 9]  # Plant valid classes
+    valid_indices = [5, 8, 9]
 
-    # 获取 Dataset 保护标签
+    # 获取增强保护 Mask
     dataset_labels = None
     if hasattr(plant_dataset, 'full_labels'):
         dataset_labels = plant_dataset.full_labels
-        logger.info(f"Augmentation: Using full_labels with +/- 2bp context protection.")
-    else:
-        logger.warning("Augmentation: 'full_labels' not found!")
 
     for k in shots:
         logger.info(f"\n--- Running {k}-Shot Adaptation ---")
+
+        # [显存优化] 每个shot开始前清理显存
+        torch.cuda.empty_cache() if torch.cuda.is_available() else None
+
+        # 1. 每次开始前，重置回原始状态 (从 0 开始)
         model.load_state_dict(original_state_dict)
 
         # ------------------------------------------------------------------
-        # 1. 采样 (使用互为负样本策略)
+        # A. 采样 (Sampling)
         # ------------------------------------------------------------------
         support_indices = []
         if k > 0:
             y_true = plant_dataset.y_12class
             pos_indices_set = set()
-
-            # 对每个有效类采样 k 个
             for c in valid_indices:
                 c_pos_indices = np.where(y_true[:, c] == 1)[0]
                 if len(c_pos_indices) >= k:
@@ -188,121 +188,231 @@ def run_few_shot_benchmark(model, plant_dataset, device, shots=[0, 1, 3, 5, 7, 1
                 else:
                     selected = c_pos_indices
                 pos_indices_set.update(selected.tolist())
-
             support_indices = list(pos_indices_set)
             np.random.shuffle(support_indices)
-            logger.info(f"Support set size: {len(support_indices)} (Valid Classes: {valid_indices})")
+            logger.info(f"Support set size: {len(support_indices)}")
 
-        # 准备测试集 (全量)
+        # 测试集准备
         test_loader = DataLoader(plant_dataset, batch_size=config.batch_size, shuffle=False, num_workers=2)
 
         # ------------------------------------------------------------------
-        # 2. 微调训练 (Fine-tuning)
+        # B. 策略配置 (Strategy Config)
         # ------------------------------------------------------------------
         if k > 0 and len(support_indices) > 0:
             support_data_list = [plant_dataset[i] for i in support_indices]
-
-            # 提取保护 Mask
+            
+            # Mask 提取
             support_masks = []
             if dataset_labels is not None:
                 for idx in support_indices:
-                    lbl = dataset_labels[idx]
-                    mask = (lbl > 0)
-                    support_masks.append(mask)
+                    support_masks.append((dataset_labels[idx] > 0))
 
-            # 冻结 Backbone, 激活 Head
+            # [策略 1]: 动态冻结层 (Dynamic Freezing)
+            # Low Shot (<10): 只有 Bias 能动 (Bias-Only Tuning)
+            # High Shot (>=10): 整个 Head 能动
             trainable_params = []
-            head_bias_params = []  # 专门收集 Bias 参数
+
+            # 标记是否为 Bias-Only 模式
+            is_bias_only = (k < 10)
+
+            # Detect model type: RNA_ClassQuery_Model uses "class_query_head", model_v3 uses "NaiveFC"
+            is_class_query_model = any("class_query_head" in name for name, _ in model.named_parameters())
+            is_model_v3 = any("NaiveFC" in name for name, _ in model.named_parameters())
 
             for name, param in model.named_parameters():
-                if "class_query_head" in name:
-                    param.requires_grad = True
-                    trainable_params.append(param)
-                    if "bias" in name:
-                        head_bias_params.append(param)
+                # For RNA_ClassQuery_Model: train class_query_head parameters
+                # For model_v3: train NaiveFC (output layers) and optionally Attention
+                should_train = False
+
+                if is_class_query_model and "class_query_head" in name:
+                    should_train = True
+                elif is_model_v3:
+                    if "NaiveFC" in name:
+                        # Always train output FC layers
+                        should_train = True
+                    elif "Attention" in name and not is_bias_only:
+                        # Train attention only in full-head mode
+                        should_train = True
+
+                if should_train:
+                    if is_bias_only and is_class_query_model:
+                        # For class_query_model in bias-only mode: only train bias
+                        if "bias" in name:
+                            param.requires_grad = True
+                            trainable_params.append(param)
+                        else:
+                            param.requires_grad = False
+                    else:
+                        # Full-head mode or model_v3: train all selected parameters
+                        param.requires_grad = True
+                        trainable_params.append(param)
                 else:
                     param.requires_grad = False
 
-            # [关键修复]：重置 Head 的 Bias
-            # 0-shot 时模型倾向于预测全 1 (Sp=0)，我们需要手动把它按下去。
-            # 将 valid_indices 对应的 Bias 设为 -2.0 (Sigmoid(-2.0) ≈ 0.12)
-            # 这样模型初始状态会倾向于预测 0 (Negative)，从而大幅提升 Precision/Specificity
-            with torch.no_grad():
-                for bias in head_bias_params:
-                    # 确保只修改 valid_indices 的 bias (如果是 12 类的 bias)
-                    if bias.shape[0] == 12:
-                        for c in valid_indices:
-                            bias[c].fill_(-2.0)  # 强行设为负值
-                    elif bias.shape[0] == 1:  # 如果是单输出
-                        bias.fill_(-2.0)
+            mode_str = "Bias-Only" if is_bias_only else "Full-Head"
+            logger.info(f"Training Mode: {mode_str} (samples={k}), Model: {'ClassQuery' if is_class_query_model else 'model_v3'})")
 
-            logger.info("Initialized Head Bias to -2.0 to fix 0-shot Positive Bias.")
+            # [策略 2]: 软 Bias 初始化
+            # 帮助模型打破 Sp=0 的僵局，但不要像 -2.0 那么激进
+            if k <= 5 and is_class_query_model:
+                with torch.no_grad():
+                    for name, param in model.named_parameters():
+                        if "class_query_head" in name and "bias" in name:
+                            # 仅针对 Valid Classes 微调初始值
+                            if param.dim() == 1 and param.shape[0] == 12:
+                                for c in valid_indices:
+                                    # -0.5 对应 sigmoid 0.37，比较中性，既不全是1也不全是0
+                                    param[c].fill_(-0.5)
+            elif k <= 5 and is_model_v3:
+                # For model_v3, initialize the final layer bias of NaiveFC for valid classes
+                with torch.no_grad():
+                    for i in valid_indices:
+                        fc_layer = getattr(model, f"NaiveFC{i}")
+                        # NaiveFC is a Sequential: Linear -> ReLU -> Dropout -> Linear
+                        # Get the last Linear layer's bias
+                        last_linear = fc_layer[-1]  # The final Linear layer
+                        if hasattr(last_linear, 'bias') and last_linear.bias is not None:
+                            last_linear.bias.fill_(-0.5) 
 
             # 优化器
-            ft_optimizer = optim.AdamW(trainable_params, lr=5e-3, weight_decay=0.01)
+            ft_optimizer = optim.AdamW(trainable_params, lr=1e-2, weight_decay=0.0) # Bias需要较大的LR
             ft_criterion = nn.BCEWithLogitsLoss()
 
-            model.eval()  # Freeze BN
-            ft_epochs = 50
-            aug_factor = 8 if k <= 5 else 4  # 增强倍数
+            model.eval()
+            ft_epochs = 30 # 轮数减少，Bias收敛很快
+
+            # [显存优化]: 动态调整增强倍数
+            # 低shot: 保持高增强以扩充数据
+            # 高shot: 降低增强倍数以控制显存
+            if k <= 10:
+                aug_factor = 8
+            elif k <= 50:
+                aug_factor = 4
+            else:
+                aug_factor = 2
+
+            # ------------------------------------------------------------------
+            # C. 训练循环 (显存优化: 分批训练 + 梯度累积)
+            # ------------------------------------------------------------------
+            # [显存优化] 设置小batch size，通过梯度累积实现大batch训练
+            micro_batch_size = 64  # 每个微批次的最大样本数
 
             for ft_ep in range(ft_epochs):
                 batch_list = []
-
-                # A. 原始样本
+                # 原始 + 增强
                 for data in support_data_list:
                     batch_list.append(data.clone())
-
-                # B. 增强样本
                 for _ in range(aug_factor):
                     for idx, data in enumerate(support_data_list):
                         curr_mask = None
-                        if len(support_masks) > idx:
-                            curr_mask = support_masks[idx]
-
-                        # 使用综合增强函数
+                        if len(support_masks) > idx: curr_mask = support_masks[idx]
                         aug_data = apply_advanced_augmentation(
-                            data,
-                            protected_mask=curr_mask,
-                            mutation_prob=0.01,
-                            protection_radius=2,
-                            cutout_prob=0.1,
-                            drop_edge_prob=0.15
+                            data, protected_mask=curr_mask,
+                            mutation_prob=0.01, protection_radius=2,
+                            cutout_prob=0.1, drop_edge_prob=0.15
                         )
                         batch_list.append(aug_data)
 
+                # [显存优化] 分批处理所有数据，使用梯度累积
                 if len(batch_list) > 0:
-                    batch = PyGBatch.from_data_list(batch_list).to(device)
                     ft_optimizer.zero_grad()
+                    total_loss = 0.0
 
-                    if config.use_hierarchical:
-                        logits_12, _ = model(batch.x, batch.edge_index, batch.batch)
-                    else:
-                        logits_12 = model(batch.x, batch.edge_index, batch.batch)
+                    # 将batch_list拆分为多个小batch
+                    num_micro_batches = (len(batch_list) + micro_batch_size - 1) // micro_batch_size
 
-                    # 计算 Loss：此时 Class 5 的正样本会推高 Bias[5]，
-                    # 而 Class 8/9 的样本（对于 Class 5 是负样本）会压低 Bias[5]。
-                    # 由于 Bias 初始值已经是 -2.0，模型会更容易学到"拒绝"。
-                    loss = ft_criterion(logits_12[:, valid_indices], batch.y[:, valid_indices])
-                    loss.backward()
+                    for i in range(num_micro_batches):
+                        start_idx = i * micro_batch_size
+                        end_idx = min((i + 1) * micro_batch_size, len(batch_list))
+                        micro_batch_list = batch_list[start_idx:end_idx]
+
+                        # 构建当前微批次
+                        batch = PyGBatch.from_data_list(micro_batch_list).to(device)
+
+                        if config.use_hierarchical:
+                            logits_12, _ = model(batch.x, batch.edge_index, batch.batch)
+                        else:
+                            logits_12 = model(batch.x, batch.edge_index, batch.batch)
+
+                        loss = ft_criterion(logits_12[:, valid_indices], batch.y[:, valid_indices])
+                        # 归一化损失以便梯度累积
+                        loss = loss / num_micro_batches
+                        loss.backward()
+                        total_loss += loss.item()
+
+                        # [显存优化] 清理中间变量
+                        del batch, logits_12, loss
+                        if i < num_micro_batches - 1:  # 最后一个batch后清理，保留loss用于logging
+                            torch.cuda.empty_cache() if torch.cuda.is_available() else None
+
                     ft_optimizer.step()
 
+            # ------------------------------------------------------------------
+            # D. [核心策略 3]: 权重插值 (Weight Interpolation)
+            # ------------------------------------------------------------------
+            # 训练完后，强行把参数拉回 0-shot 附近
+            # alpha 是 "新参数的保留比例"
+            # k=1 -> alpha=0.2 (保留 80% 原知识)
+            # k=10 -> alpha=0.8 (保留 20% 原知识)
+            alpha = min(1.0, 0.1 + 0.1 * k)
+
+            logger.info(f"Weight Interpolation: Mixing {alpha:.2f} Fine-tuned + {1-alpha:.2f} Original")
+
+            current_state_dict = model.state_dict()
+            mixed_state_dict = {}
+
+            for key in current_state_dict:
+                # 只对我们动过的 Head 参数做插值
+                # For RNA_ClassQuery_Model: class_query_head parameters
+                # For model_v3: NaiveFC and optionally Attention parameters
+                should_interpolate = False
+                if is_class_query_model and "class_query_head" in key:
+                    should_interpolate = True
+                elif is_model_v3:
+                    if "NaiveFC" in key:
+                        should_interpolate = True
+                    elif "Attention" in key and not is_bias_only:
+                        # Interpolate attention only if we trained it (full-head mode)
+                        should_interpolate = True
+
+                if should_interpolate:
+                    w_ft = current_state_dict[key]
+                    w_orig = original_state_dict[key]
+                    # 插值公式
+                    mixed_state_dict[key] = alpha * w_ft + (1 - alpha) * w_orig
+                else:
+                    mixed_state_dict[key] = current_state_dict[key] # Backbone 没动
+
+            # 加载融合后的参数
+            model.load_state_dict(mixed_state_dict)
+
+            # [显存优化] 清理训练过程中的缓存
+            del current_state_dict, mixed_state_dict
+            torch.cuda.empty_cache() if torch.cuda.is_available() else None
+
         # ------------------------------------------------------------------
-        # 3. 评估
+        # E. 评估
         # ------------------------------------------------------------------
+        # [显存优化] 评估前清理显存
+        torch.cuda.empty_cache() if torch.cuda.is_available() else None
+
         y_true, y_prob, y_4class, y_4prob = get_all_predictions(model, test_loader, device, config.use_hierarchical)
         metrics_unbalance = evaluate_plant_unbalance(y_true, y_prob, device, y_4class, config.random_seed, y_4prob)
         metrics_balanceb = evaluate_plant_balanceb(y_true, y_prob, y_4class, device, config.random_seed, y_4prob)
-        all_results[k] = {"unbalance": metrics_unbalance, "balanceb": metrics_balanceb}
 
+        # [显存优化] 评估后清理预测结果
+        del y_true, y_prob, y_4class, y_4prob
+        torch.cuda.empty_cache() if torch.cuda.is_available() else None
+
+        all_results[k] = {"unbalance": metrics_unbalance, "balanceb": metrics_balanceb}
         macro_f1 = metrics_unbalance.get('group_plant_opt_macro_f1', 0.0)
         logger.info(f"{k}-Shot Result - Macro F1: {macro_f1:.4f}")
 
     print_few_shot_results(all_results, epoch, logger)
+    # 最后恢复原始模型
     model.load_state_dict(original_state_dict)
     logger.info(">>> Few-Shot Benchmark Finished. <<<")
     return all_results
-
 
 # ============================================================================
 # Main Training Loop
@@ -549,7 +659,8 @@ def main(config_path='model.json'):
         # Train
         train_loss = train_epoch(
             model, train_loader, criterion, optimizer, scheduler, Config.device, logger,
-            use_hierarchical=Config.use_hierarchical
+            use_hierarchical=Config.use_hierarchical,
+            use_amp=Config.use_amp and torch.cuda.is_available()
         )
 
         # Log train loss to tensorboard
@@ -566,7 +677,8 @@ def main(config_path='model.json'):
             logger.info(f"\nEvaluating...")
             test_loss = test_epoch(
                 model, test_loader, criterion, Config.device, "test", logger,
-                use_hierarchical=Config.use_hierarchical
+                use_hierarchical=Config.use_hierarchical,
+                use_amp=Config.use_amp and torch.cuda.is_available()
             )
 
             # Log test loss to tensorboard
