@@ -17,7 +17,7 @@
     "gcn_num_layers": 3,
     "gcn_dropout": 0.3,
     "num_classes": 12,
-    "num_attn_heads": 4,
+    "num_attn_heads": 8,
     "attn_dropout": 0.1,
     "use_simple_pooling": false,
     "use_layer_norm": true
@@ -32,12 +32,29 @@
     "train_ratio": 0.7,
     "random_seed": 42,
     "eval_threshold": 0.5,
-    "test_interval": 5,
+    "test_interval": 10,
     "save_every_epoch": true,
     "save_best_only": false,
     "use_dynamic_sampler": true,
     "balance_ratio": 0.9,
     "use_amp": true
+  },
+
+  "few_shot": {
+    "enable_dynamic_freezing": false,
+    "enable_soft_bias_init": false,
+    "enable_weight_interpolation": false,
+    "bias_init_threshold": 5,
+    "full_head_threshold": 10,
+    "weight_interpolation_base_alpha": 0.1,
+    "weight_interpolation_alpha_multiplier": 0.1,
+    "bias_init_value": -0.5,
+    "ft_lr": 0.001,
+    "ft_epochs": 30,
+    "aug_factor_low_shot": 8,
+    "aug_factor_mid_shot": 4,
+    "aug_factor_high_shot": 2,
+    "micro_batch_size": 64
   },
 
   "paths": {

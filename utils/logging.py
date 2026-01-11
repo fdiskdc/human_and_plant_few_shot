@@ -473,8 +473,8 @@ def print_few_shot_results(all_shot_metrics, epoch, logger=None):
     for config in table_configs:
         output += f"\n### {config['title']} ###\n"
         table = PrettyTable()
-        # Extended table with additional metrics: TP, TN, FP, FN, AUPRC, Sn, Sp
-        table.field_names = ["Shot", "Class", "F1", "Prec", "Rec", "AUPRC", "Sn", "Sp", "TP", "TN", "FP", "FN"]
+        # Extended table with additional metrics: TP, TN, FP, FN, AUC, AUPRC, Sn, Sp
+        table.field_names = ["Shot", "Class", "F1", "Prec", "Rec", "AUC", "AUPRC", "Sn", "Sp", "TP", "TN", "FP", "FN"]
         table.align = "r"
         table.align["Class"] = "l"
 
@@ -486,14 +486,14 @@ def print_few_shot_results(all_shot_metrics, epoch, logger=None):
 
             # Separator
             if shot != sorted(all_shot_metrics.keys())[0]:
-                table.add_row(["-"*4, "-"*5, "-"*6, "-"*6, "-"*6, "-"*6, "-"*6, "-"*6, "-"*4, "-"*4, "-"*4, "-"*4])
+                table.add_row(["-"*4, "-"*5, "-"*6, "-"*6, "-"*6, "-"*6, "-"*6, "-"*6, "-"*6, "-"*4, "-"*4, "-"*4, "-"*4])
 
             # Macro Average Row
             macro_f1 = metrics.get(f'{prefix}opt_macro_f1', 0.0)
             macro_p = metrics.get(f'{prefix}opt_macro_precision', 0.0)
             macro_r = metrics.get(f'{prefix}opt_macro_recall', 0.0)
-            # Counts/AUPRC don't sum meaningfully for Macro Avg in this context, using placeholders
-            table.add_row([f"{shot}-s", "Avg", f"{macro_f1:.4f}", f"{macro_p:.4f}", f"{macro_r:.4f}", "-", "-", "-", "-", "-", "-", "-"])
+            # Counts/AUC/AUPRC don't sum meaningfully for Macro Avg in this context, using placeholders
+            table.add_row([f"{shot}-s", "Avg", f"{macro_f1:.4f}", f"{macro_p:.4f}", f"{macro_r:.4f}", "-", "-", "-", "-", "-", "-", "-", "-"])
 
             # Class Rows
             for c in valid_classes:
@@ -503,6 +503,7 @@ def print_few_shot_results(all_shot_metrics, epoch, logger=None):
                 f1 = metrics.get(f'{prefix}class_{c}_opt_f1', 0.0)
                 p = metrics.get(f'{prefix}class_{c}_opt_precision', 0.0)
                 r = metrics.get(f'{prefix}class_{c}_opt_recall', 0.0)
+                auc = metrics.get(f'{prefix}class_{c}_auc', 0.0)
                 auprc = metrics.get(f'{prefix}class_{c}_auprc', 0.0)
                 sn = metrics.get(f'{prefix}class_{c}_opt_sensitivity', 0.0)
                 sp = metrics.get(f'{prefix}class_{c}_opt_specificity', 0.0)
@@ -518,6 +519,105 @@ def print_few_shot_results(all_shot_metrics, epoch, logger=None):
                     f"{f1:.4f}",
                     f"{p:.4f}",
                     f"{r:.4f}",
+                    f"{auc:.4f}",
+                    f"{auprc:.4f}",
+                    f"{sn:.4f}",
+                    f"{sp:.4f}",
+                    tp, tn, fp, fn
+                ])
+
+        output += str(table) + "\n"
+
+    print(output)
+    if logger:
+        logger.info(output)
+
+
+def print_few_shot_results_ac4c(all_shot_metrics, epoch, logger=None):
+    """
+    Print summary tables for Few-Shot results for ac4c dataset with extended metrics.
+    all_shot_metrics structure: {k_shot: {'unbalance': metrics, 'balanceb': metrics}}
+
+    Extended metrics include: TP, TN, FP, FN, AUPRC, Sn (Sensitivity), Sp (Specificity)
+
+    Args:
+        all_shot_metrics (dict): Dictionary of metrics for each shot count
+            Format: {k_shot: {'unbalance': metrics_dict, 'balanceb': metrics_dict}}
+        epoch (int): Current epoch number
+        logger: Optional logger instance for logging to file
+    """
+    from prettytable import PrettyTable
+    from utils.common import MOD_NAMES
+
+    output = f"\n{'='*150}\n"  # Increased width for more columns
+    output += f"ac4c Few-Shot Adaptation Results - Epoch {epoch}\n"
+    output += f"{'='*150}\n"
+
+    # Define table configurations
+    table_configs = [
+        {
+            "title": "ac4c - 12 Class (Unbalanced) per Shot",
+            "metric_type": "unbalance",
+            "prefix": "group_"
+        },
+        {
+            "title": "ac4c - 12 Class (Balanced) per Shot",
+            "metric_type": "balanceb",
+            "prefix": "group_"
+        }
+    ]
+    valid_classes = [6]  # ac4C is class index 6 in the human dataset
+
+    for config in table_configs:
+        output += f"\n### {config['title']} ###\n"
+        table = PrettyTable()
+        # Extended table with additional metrics: TP, TN, FP, FN, AUC, AUPRC, Sn, Sp
+        table.field_names = ["Shot", "Class", "F1", "Prec", "Rec", "AUC", "AUPRC", "Sn", "Sp", "TP", "TN", "FP", "FN"]
+        table.align = "r"
+        table.align["Class"] = "l"
+
+        prefix = config['prefix']
+
+        # Iterate through sorted shots
+        for shot in sorted(all_shot_metrics.keys()):
+            metrics = all_shot_metrics[shot][config['metric_type']]
+
+            # Separator
+            if shot != sorted(all_shot_metrics.keys())[0]:
+                table.add_row(["-"*4, "-"*5, "-"*6, "-"*6, "-"*6, "-"*6, "-"*6, "-"*6, "-"*6, "-"*4, "-"*4, "-"*4, "-"*4])
+
+            # Macro Average Row
+            macro_f1 = metrics.get(f'{prefix}opt_macro_f1', 0.0)
+            macro_p = metrics.get(f'{prefix}opt_macro_precision', 0.0)
+            macro_r = metrics.get(f'{prefix}opt_macro_recall', 0.0)
+            # Counts/AUC/AUPRC don't sum meaningfully for Macro Avg in this context, using placeholders
+            table.add_row([f"{shot}-s", "Avg", f"{macro_f1:.4f}", f"{macro_p:.4f}", f"{macro_r:.4f}", "-", "-", "-", "-", "-", "-", "-", "-"])
+
+            # Class Rows
+            for c in valid_classes:
+                mod_name = MOD_NAMES.get(c, f"C{c}")
+
+                # Fetch metrics
+                f1 = metrics.get(f'{prefix}class_{c}_opt_f1', 0.0)
+                p = metrics.get(f'{prefix}class_{c}_opt_precision', 0.0)
+                r = metrics.get(f'{prefix}class_{c}_opt_recall', 0.0)
+                auc = metrics.get(f'{prefix}class_{c}_auc', 0.0)
+                auprc = metrics.get(f'{prefix}class_{c}_auprc', 0.0)
+                sn = metrics.get(f'{prefix}class_{c}_opt_sensitivity', 0.0)
+                sp = metrics.get(f'{prefix}class_{c}_opt_specificity', 0.0)
+
+                tp = int(metrics.get(f'{prefix}class_{c}_opt_tp', 0))
+                tn = int(metrics.get(f'{prefix}class_{c}_opt_tn', 0))
+                fp = int(metrics.get(f'{prefix}class_{c}_opt_fp', 0))
+                fn = int(metrics.get(f'{prefix}class_{c}_opt_fn', 0))
+
+                table.add_row([
+                    "",
+                    f"{c}({mod_name})",
+                    f"{f1:.4f}",
+                    f"{p:.4f}",
+                    f"{r:.4f}",
+                    f"{auc:.4f}",
                     f"{auprc:.4f}",
                     f"{sn:.4f}",
                     f"{sp:.4f}",
