@@ -8,11 +8,12 @@ Main Model:
     RNA_ClassQuery_Model: Base model with CNN + GCN + Class-Query attention
     RNA_ClassQuery_Model_Large: Larger version with more capacity
 
-Sub-modules (from blocks.py):
+Sub-modules (from main_model.py):
     ParallelCNNBlock: Multi-scale parallel CNN feature extraction
     GCNBlock: Graph Convolutional Network block with residual connections
     ClassQueryHead: Cross-attention based classification head
     ClassQueryHeadPooling: Simplified attention pooling version
+    HierarchicalClassQueryHeadPooling: Hierarchical head with Group-to-Class derivation
 
 Example Usage:
     >>> from model import RNA_ClassQuery_Model
@@ -21,12 +22,14 @@ Example Usage:
     >>> predictions, probs = model.predict(x, edge_index, batch)
 """
 
-from .main_model import RNA_ClassQuery_Model, RNA_ClassQuery_Model_Large
-from .blocks import (
+from .main_model import (
+    RNA_ClassQuery_Model,
+    RNA_ClassQuery_Model_Large,
     ParallelCNNBlock,
     GCNBlock,
     ClassQueryHead,
-    ClassQueryHeadPooling
+    ClassQueryHeadPooling,
+    HierarchicalClassQueryHeadPooling
 )
 
 __all__ = [
@@ -38,6 +41,7 @@ __all__ = [
     'GCNBlock',
     'ClassQueryHead',
     'ClassQueryHeadPooling',
+    'HierarchicalClassQueryHeadPooling',
 ]
 
 __version__ = '1.0.0'

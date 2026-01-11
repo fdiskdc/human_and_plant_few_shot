@@ -31,17 +31,15 @@ from .common import (
     load_checkpoint
 )
 
-# Import sampler classes
-from .sampler import (
+# Import sampler classes and split functions (now in common.py)
+from .common import (
     MultilabelBalancedBatchSampler,
     DynamicBalancedBatchSampler,
-    get_smoothed_pos_weights
+    get_smoothed_pos_weights,
+    multi_label_disjoint_split
 )
 
-# Import split functions
-from .split import multi_label_disjoint_split
-
-# Import metrics functions
+# Import metrics functions (including group-based metrics)
 from .metrics import (
     calculate_metrics,
     find_optimal_threshold,
@@ -51,12 +49,8 @@ from .metrics import (
     evaluate_4class_with_optimal_threshold,
     evaluate_plant_unbalance,
     evaluate_plant_balanceb,
+    evaluate_group_balanceb,
     get_all_predictions
-)
-
-# Import group-based metrics functions
-from .group_metrics import (
-    evaluate_group_balanceb
 )
 
 # Import logging functions
@@ -72,6 +66,13 @@ from .logging import (
 from .common import (
     train_epoch,
     test_epoch
+)
+
+# Import few-shot learning functions
+from .few_shot import (
+    run_few_shot_benchmark,
+    run_few_shot_benchmark_ac4c,
+    apply_advanced_augmentation
 )
 
 __all__ = [
@@ -115,6 +116,11 @@ __all__ = [
     # Training
     'train_epoch',
     'test_epoch',
+
+    # Few-shot learning
+    'run_few_shot_benchmark',
+    'run_few_shot_benchmark_ac4c',
+    'apply_advanced_augmentation',
 
     # Logging
     'setup_logging',
