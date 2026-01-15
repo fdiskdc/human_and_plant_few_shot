@@ -228,54 +228,71 @@ def prepare_training_batch(support_data_list, support_masks, aug_factor, k,
 
 
 def apply_advanced_augmentation(data, protected_mask=None,
-                                mutation_prob=0.01,    # 降低突变率
-                                protection_radius=2,   # [关键] 保护半径 +/- 2bp
-                                cutout_prob=0.1,       # [新增] 区域遮挡
-                                drop_edge_prob=0.15):  # [新增] 图结构丢边
+                                mutation_prob=0.01,
+                                protection_radius=2,
+                                cutout_prob=0.1,
+                                drop_edge_prob=0.15,
+                                # --- 新增参数 ---
+                                noise_std=0.05,       # 高斯噪声标准差
+                                shift_prob=0.2,       # 平移概率
+                                max_shift=2,          # 最大平移距离
+                                add_edge_prob=0.1     # 加边概率
+                                ):
     """
-    综合 RNA 增强：带上下文保护的突变 + 区域遮挡 + 结构丢边
+    综合 RNA 增强：包含突变、遮挡、丢边、加边、高斯噪声和平移
     """
-    from torch_geometric.utils import dropout_adj
+    from torch_geometric.utils import dropout_adj, add_random_edge
 
     aug_data = data.clone()
     device = aug_data.x.device
-    seq_len = aug_data.x.size(0)
+    seq_len, feat_dim = aug_data.x.size()
 
     # ---------------------------------------------------------
-    # 0. 预处理保护掩码 (Dilate Mask)
+    # 0. 预处理保护掩码 (不变)
     # ---------------------------------------------------------
     final_protected = None
     if protected_mask is not None:
-        # 确保 mask 是 Tensor
         if not isinstance(protected_mask, torch.Tensor):
             mask_tensor = torch.tensor(protected_mask, device=device, dtype=torch.float32)
         else:
             mask_tensor = protected_mask.to(device, dtype=torch.float32)
-
         if mask_tensor.dim() == 1:
-            mask_tensor = mask_tensor.view(1, 1, -1) # (1, 1, L)
-
-        # 使用 MaxPool1d 进行膨胀 (Dilation)
-        # Kernel size = 2*r + 1, Stride = 1, Padding = r
+            mask_tensor = mask_tensor.view(1, 1, -1)
         if protection_radius > 0:
             k_size = 2 * protection_radius + 1
             dilated = torch.nn.functional.max_pool1d(
                 mask_tensor, kernel_size=k_size, stride=1, padding=protection_radius
             )
-            final_protected = dilated.view(-1) > 0.5 # 回到 (L, ) Boolean
+            final_protected = dilated.view(-1) > 0.5
         else:
             final_protected = mask_tensor.view(-1) > 0.5
 
     # ---------------------------------------------------------
-    # 1. 序列突变 (Mutation / Flipping)
+    # [新增] 1. 序列平移 (Sequence Shifting)
+    # 模拟对齐偏差，强制模型关注相对位置而非绝对位置
+    # ---------------------------------------------------------
+    if shift_prob > 0 and torch.rand(1).item() < shift_prob:
+        shift = torch.randint(-max_shift, max_shift + 1, (1,)).item()
+        if shift != 0:
+            new_x = torch.zeros_like(aug_data.x)
+            # 平移操作：超出部分填0 (Padding)，空出部分填0
+            if shift > 0: # 向右移 (Index增加)
+                new_x[shift:, :] = aug_data.x[:-shift, :]
+            else: # 向左移 (Index减小)
+                new_x[:shift, :] = aug_data.x[-shift:, :]
+            
+            # 如果有保护位点，我们尽量不平移受保护区域，或者只平移非保护区域
+            # 但这里为了保持结构一致性，通常是对整个序列平移。
+            # 注意：平移会改变 graph 节点的对应关系，通常只微调 x，edge_index 对应关系不变（假设拓扑随序列平移）
+            aug_data.x = new_x
+
+    # ---------------------------------------------------------
+    # 2. 序列突变 (Mutation) - (原有逻辑)
     # ---------------------------------------------------------
     if mutation_prob > 0:
         flip_mask = torch.rand(seq_len, device=device) < mutation_prob
-
-        # 应用扩大的保护掩码
         if final_protected is not None:
             flip_mask = flip_mask & (~final_protected)
-
         num_flips = flip_mask.sum().item()
         if num_flips > 0:
             new_bases = torch.randint(0, 4, (num_flips,), device=device)
@@ -284,31 +301,68 @@ def apply_advanced_augmentation(data, protected_mask=None,
             aug_data.x[flip_mask] = new_one_hot
 
     # ---------------------------------------------------------
-    # 2. 区域遮挡 (Cutout / Span Masking) - 比突变更安全
+    # [新增] 3. 连续高斯噪声 (Continuous Gaussian Noise)
+    # 不改变类别，只改变特征强度，增加鲁棒性
+    # ---------------------------------------------------------
+    if noise_std > 0:
+        # 只在非零位置(有碱基的位置)或者全图加噪声均可
+        # 这里选择加性噪声： x_new = x + noise
+        noise = torch.randn_like(aug_data.x) * noise_std
+        
+        # 保护机制：如果希望保持One-Hot的稀疏性，可以只干扰非0项
+        # 但一般全量干扰效果更好，模拟 embedding 空间的扰动
+        aug_data.x = aug_data.x + noise
+        
+        # 简单的 clip 防止数值过大，保持在 [0, 1] 附近
+        # aug_data.x = torch.clamp(aug_data.x, 0.0, 1.0) 
+
+    # ---------------------------------------------------------
+    # 4. 区域遮挡 (Cutout) - (原有逻辑)
     # ---------------------------------------------------------
     if cutout_prob > 0 and (torch.rand(1).item() < cutout_prob):
         cutout_len = 10
-        # 随机选起点
         if seq_len > cutout_len:
             start_idx = torch.randint(0, seq_len - cutout_len, (1,)).item()
             end_idx = start_idx + cutout_len
-
-            # 检查是否覆盖了受保护区域
             is_safe = True
             if final_protected is not None:
                 if torch.any(final_protected[start_idx:end_idx]):
                     is_safe = False
-
             if is_safe:
-                aug_data.x[start_idx:end_idx] = 0.0 # 遮挡
+                aug_data.x[start_idx:end_idx] = 0.0
 
     # ---------------------------------------------------------
-    # 3. 图结构丢边 (DropEdge) - 增强 GCN 鲁棒性
+    # 5. 图结构扰动 (DropEdge & AddEdge)
     # ---------------------------------------------------------
-    if drop_edge_prob > 0 and aug_data.edge_index.size(1) > 0:
-        aug_data.edge_index, _ = dropout_adj(
-            aug_data.edge_index, p=drop_edge_prob, force_undirected=False
-        )
+    if aug_data.edge_index.size(1) > 0:
+        # DropEdge (原有)
+        if drop_edge_prob > 0:
+            aug_data.edge_index, _ = dropout_adj(
+                aug_data.edge_index, p=drop_edge_prob, force_undirected=False
+            )
+        
+        # [新增] AddEdge
+        # 随机添加一些不存在的边，模拟二级结构预测的不确定性
+        if add_edge_prob > 0:
+            # 这里的 ratio 是相对于节点数的比例，或者现有边数的比例
+            # PyG 的 add_random_edge ratio 是指添加边的数量 / 节点数^2 (稠密) 还是什么需要注意
+            # 通常我们希望添加的边数与 drop 的边数数量级相当
+            
+            # 计算要添加的边数 (例如当前边数的 5%)
+            num_new_edges = int(aug_data.edge_index.size(1) * 0.05) 
+            if num_new_edges > 0:
+                # force_undirected=True 保持无向图性质（如果是有向图则设为False）
+                aug_data.edge_index, _ = add_random_edge(
+                    aug_data.edge_index, 
+                    p=0.0, # 这里p不起作用，因为我们用 num_edges
+                    force_undirected=True,
+                    num_nodes=seq_len
+                )
+                
+                # add_random_edge 可能添加很多，我们通常控制数量
+                # 简单做法：直接用 dropout_adj 的逆向思维比较难，直接用 randint 生成边
+                new_edges = torch.randint(0, seq_len, (2, num_new_edges), device=device)
+                aug_data.edge_index = torch.cat([aug_data.edge_index, new_edges], dim=1)
 
     return aug_data
 
@@ -427,6 +481,7 @@ def run_few_shot_benchmark(model, plant_dataset, device, shots=[0, 1, 3, 5, 7, 1
                 aug_factor = aug_factor_mid
             else:
                 aug_factor = aug_factor_high
+            aug_factor=10
 
             # ------------------------------------------------------------------
             # C. 训练循环 (正常反向传播，无梯度累积)
@@ -887,3 +942,129 @@ def run_few_shot_benchmark_ac4c(model,
         logger.info(f"{'='*80}\n")
 
     return all_results
+
+
+# =============================================================================
+# Plant+Zero Sampling Utilities for Binary Classification
+# =============================================================================
+
+def sample_support_set_with_zero(dataset, plant_train_indices, zero_train_indices, k, target_class):
+    """
+    Sample support set for Plant vs. Zero binary classification with strict 1:1 balance.
+
+    This function is used for "Plant vs. Zero (Background)" binary classification.
+    It samples exactly k positives from Plant (specific class) and k negatives from Zero.
+
+    Sampling Strategy:
+    1. Positives: k samples from Plant Train Indices (specific target class)
+    2. Negatives: k samples from Zero Train Indices (background/negative samples)
+    3. Result: Support set has 2*k samples (k positives + k negatives)
+
+    Args:
+        dataset: PlantSingleDataset instance containing both Plant and Zero data
+        plant_train_indices: List of available Plant training indices
+        zero_train_indices: List of available Zero training indices (global indices)
+        k: Number of shots (total samples = 2*k for binary)
+        target_class: Target class ID (e.g., 5, 8, or 9 for Plant valid classes)
+
+    Returns:
+        list: Support indices (balanced 1:1, total 2*k samples)
+              Positives from Plant + Negatives from Zero
+
+    Example:
+        >>> dataset = PlantSingleDataset(plant_dir='plant', zero_dir='zero')
+        >>> zero_train, zero_test = dataset.get_zero_split(test_ratio=0.2)
+        >>> plant_indices = dataset.get_plant_indices_by_class(target_class=5)
+        >>> support = sample_support_set_with_zero(dataset, plant_indices, zero_train, k=5, target_class=5)
+        >>> # Returns 10 samples: 5 Plant (class 5) + 5 Zero (background)
+    """
+    if k == 0 or k == '0':
+        return []
+
+    # Get y_12class from dataset (this concatenates Plant and Zero labels)
+    y_12class = dataset.y_12class
+
+    # 1. Get Positives from Plant (Intersection of Plant Train Indices AND Target Class)
+    # dataset.get_plant_indices_by_class returns global indices (which are < num_plant)
+    # We must intersect with the allowed train_indices for Plant
+    all_class_positives = dataset.get_plant_indices_by_class(target_class)
+    valid_positives = list(set(all_class_positives) & set(plant_train_indices))
+
+    # 2. Get Negatives from Zero Train Split
+    valid_negatives = zero_train_indices
+
+    # 3. Sample with strict 1:1 balance
+    selected_pos = []
+    selected_neg = []
+
+    # Sample k positives from Plant
+    if len(valid_positives) >= k:
+        selected_pos = np.random.choice(valid_positives, k, replace=False).tolist()
+    else:
+        # If not enough positives, use all available
+        selected_pos = valid_positives
+        print(f"Warning: Only {len(valid_positives)} positive samples available for class {target_class}, requested {k}")
+
+    # Match negative count to positive count (strict 1:1 balance)
+    num_needed = len(selected_pos)
+    if len(valid_negatives) >= num_needed:
+        selected_neg = np.random.choice(valid_negatives, num_needed, replace=False).tolist()
+    else:
+        # If not enough negatives, sample with replacement
+        selected_neg = np.random.choice(valid_negatives, num_needed, replace=True).tolist()
+        print(f"Warning: Only {len(valid_negatives)} negative samples available, using replacement for {num_needed} samples")
+
+    # Combine and shuffle to mix positives and negatives
+    support_indices = selected_pos + selected_neg
+    np.random.shuffle(support_indices)
+
+    return support_indices
+
+
+def sample_support_set_plant_vs_zero_binary(dataset, train_indices, k, target_class,
+                                             zero_test_ratio=0.2, seed=42):
+    """
+    High-level convenience function for Plant vs. Zero binary classification sampling.
+
+    This function handles the complete workflow:
+    1. Gets Plant indices for the target class
+    2. Splits Zero dataset into train/test
+    3. Samples balanced support set with k positives and k negatives
+
+    Args:
+        dataset: PlantSingleDataset instance
+        train_indices: Available Plant training indices
+        k: Number of shots per class (total samples = 2*k)
+        target_class: Target class ID (e.g., 5, 8, or 9)
+        zero_test_ratio: Fraction of Zero data to reserve for testing (default 0.2)
+        seed: Random seed for reproducibility (default 42)
+
+    Returns:
+        tuple: (support_indices, zero_train_indices, zero_test_indices)
+            - support_indices: Balanced support set (2*k samples)
+            - zero_train_indices: All Zero training indices (for reference)
+            - zero_test_indices: All Zero test indices (for reference)
+
+    Example:
+        >>> dataset = PlantSingleDataset()
+        >>> plant_train = [...] # your plant training indices
+        >>> support, zero_train, zero_test = sample_support_set_plant_vs_zero_binary(
+        ...     dataset, plant_train, k=5, target_class=5
+        ... )
+        >>> print(f"Support: {len(support)} samples")
+        >>> print(f"Zero train: {len(zero_train)}, Zero test: {len(zero_test)}")
+    """
+    np.random.seed(seed)
+
+    # Get Zero split (deterministic based on seed)
+    zero_train_indices, zero_test_indices = dataset.get_zero_split(
+        test_ratio=zero_test_ratio,
+        seed=seed
+    )
+
+    # Sample support set with 1:1 balance
+    support_indices = sample_support_set_with_zero(
+        dataset, train_indices, zero_train_indices, k, target_class
+    )
+
+    return support_indices, zero_train_indices, zero_test_indices

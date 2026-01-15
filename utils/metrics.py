@@ -1283,6 +1283,139 @@ def get_all_predictions(model, dataloader, device, use_hierarchical=False):
     return y_true, y_prob, y_4class, y_4prob
 
 
+def get_all_predictions_and_attention(
+    model, dataloader, device, use_hierarchical=False
+):
+    """
+    Run model inference once to get all predictions and attention weights for Top-K evaluation.
+
+    Args:
+        model: The model to evaluate
+        dataloader: DataLoader for test set
+        device: Device to run evaluation on
+        use_hierarchical: If True, model returns tuple (logits_12class, logits_4class)
+
+    Returns:
+        y_true: Ground truth labels (N, 12)
+        y_prob: Predicted probabilities (N, 12)
+        y_4class: 4-class ground truth labels (N, 4)
+        y_4prob: 4-class predicted probabilities (N, 4) - None if not hierarchical
+        attn_weights: Attention weights (N, 12, 1001) - None if model doesn't support it
+        y_site: Site-level labels (N, 1001) - None if not available
+    """
+    # Import INDEX_TO_GROUP for correct mapping
+    from utils.common import INDEX_TO_GROUP
+
+    model.eval()
+    all_y_true = []
+    all_y_prob = []
+    all_y_4prob = []
+    all_attn_weights = []
+    all_y_site = []
+
+    with torch.no_grad():
+        for batch in dataloader:
+            batch = batch.to(device)
+
+            # Check if batch has y_site attribute
+            has_y_site = hasattr(batch, 'y_site')
+
+            # Try to get attention weights
+            try:
+                result = model(batch.x, batch.edge_index, batch.batch, return_attention=True)
+                if isinstance(result, tuple):
+                    if use_hierarchical and len(result) == 3:
+                        # Hierarchical model with attention: (logits_12, logits_4, attn)
+                        logits_12, logits_4, attn = result
+                        all_attn_weights.append(attn.cpu())
+                        # Store as tuple for unified processing
+                        logits = (logits_12, logits_4)
+                    elif len(result) == 2:
+                        # Non-hierarchical with attention: (logits, attn)
+                        logits, attn = result
+                        all_attn_weights.append(attn.cpu())
+                    else:
+                        logits = result
+                        attn = None
+                else:
+                    logits = result
+                    attn = None
+            except:
+                logits = model(batch.x, batch.edge_index, batch.batch)
+                attn = None
+
+            # Process logits based on hierarchical mode
+            if use_hierarchical:
+                # Extract logits for hierarchical mode
+                if isinstance(logits, tuple) and len(logits) >= 2:
+                    # Have tuple with at least 2 elements
+                    logits_12, logits_4 = logits[0], logits[1]
+                elif isinstance(logits, tuple) and len(logits) == 1:
+                    # Have tuple with 1 element - use it
+                    logits_12 = logits[0]
+                    logits_4 = None
+                elif not isinstance(logits, tuple):
+                    # Have single tensor
+                    logits_12 = logits
+                    logits_4 = None
+                else:
+                    # Empty tuple or other unexpected case - skip this batch
+                    continue
+                
+                probs_12 = torch.sigmoid(logits_12)
+                if logits_4 is not None:
+                    probs_4 = torch.sigmoid(logits_4)
+                    all_y_4prob.append(probs_4.cpu())
+            else:
+                # Non-hierarchical mode
+                # Extract logits for non-hierarchical mode
+                if isinstance(logits, tuple) and len(logits) > 0:
+                    # Have tuple - take first element
+                    logits_12 = logits[0]
+                elif not isinstance(logits, tuple):
+                    # Have single tensor
+                    logits_12 = logits
+                else:
+                    # Empty tuple or other unexpected case - skip this batch
+                    continue
+                
+                probs_12 = torch.sigmoid(logits_12)
+
+            all_y_true.append(batch.y)
+            all_y_prob.append(probs_12)
+
+            if has_y_site:
+                all_y_site.append(batch.y_site)
+
+    y_true = torch.cat(all_y_true, dim=0).cpu().numpy()
+    y_prob = torch.cat(all_y_prob, dim=0).cpu().numpy()
+
+    N, C = y_true.shape
+    y_4class = np.zeros((N, 4), dtype=np.float32)
+    # Use INDEX_TO_GROUP to map 4-class index (0-3) to nucleotide (A, C, G, U)
+    for group_idx in range(4):
+        nucleotide = INDEX_TO_GROUP[group_idx]  # 'A', 'C', 'G', or 'U'
+        class_indices = GROUP_TO_CLASS_INDICES[nucleotide]
+        y_4class[:, group_idx] = y_true[:, class_indices].max(axis=1)
+
+    if use_hierarchical and all_y_4prob:
+        y_4prob = torch.cat(all_y_4prob, dim=0).cpu().numpy()
+    else:
+        y_4prob = None
+
+    if all_attn_weights:
+        attn_weights = torch.cat(all_attn_weights, dim=0)
+    else:
+        attn_weights = None
+
+    if all_y_site:
+        y_site = torch.cat(all_y_site, dim=0)
+    else:
+        y_site = None
+
+    return y_true, y_prob, y_4class, y_4prob, attn_weights, y_site
+
+
 # ============================================================================
 # Group-Based Balanced Evaluation
 # ============================================================================

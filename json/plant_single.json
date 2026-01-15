@@ -1,10 +1,11 @@
 {
-  "experiment_name": "rna_classification_ac4c_unbalanced",
+  "experiment_name": "rna_classification_plant",
 
   "data": {
     "human_data_dir": "npy/human3",
     "plant_data_dir": "npy/plant",
-    "cache_dir": "npy/cache"
+    "cache_dir": "npy/cache",
+    "zero_data_dir":"npy/zero"
   },
 
   "model": {
@@ -30,7 +31,7 @@
 
   "training": {
     "batch_size": 240,
-    "num_epochs": 100,
+    "num_epochs": 50,
     "learning_rate": 0.001,
     "weight_decay": 0.0001,
     "warmup_epochs": 2,
@@ -49,13 +50,13 @@
     "enable_dynamic_freezing": false,
     "enable_soft_bias_init": false,
     "enable_weight_interpolation": false,
-    "bias_init_threshold": 5,
-    "full_head_threshold": 10,
+    "bias_init_threshold": 0,
+    "full_head_threshold": 0,
     "weight_interpolation_base_alpha": 0.1,
     "weight_interpolation_alpha_multiplier": 0.1,
-    "bias_init_value": -0.5,
-    "ft_lr": 0.001,
-    "ft_epochs": 30,
+    "bias_init_value": -0.1,
+    "ft_lr": 5e-3,
+    "ft_epochs": 20,
     "aug_factor_low_shot": 8,
     "aug_factor_mid_shot": 4,
     "aug_factor_high_shot": 2,
