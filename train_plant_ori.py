@@ -103,7 +103,7 @@ def train_few_shot(model, support_data_list, valid_classes, config, device, logg
         ft_epochs = 50
     
     optimizer = optim.AdamW(trainable_params, lr=ft_lr, weight_decay=1e-4)
-    criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([2.0]))
+    criterion = nn.BCEWithLogitsLoss()
     
     # Data Augmentation Factor
     aug_factor = 4 if k_shot <= 10 else 2

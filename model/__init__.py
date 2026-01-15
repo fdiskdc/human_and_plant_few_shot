@@ -1,3 +1,17 @@
+'''
+Author: Chao Deng && chaodeng987@outlook.com
+Date: 2026-01-11 10:37:11
+LastEditors: Chao Deng && chaodeng987@outlook.com
+LastEditTime: 2026-01-11 15:48:33
+FilePath: /human_and_plant_few_shot_fastAtten_ac4c/model/__init__.py
+Description: 
+那只是一场游戏一场梦
+ 
+https://orcid.org/0009-0009-8520-1656
+DOI: 10.3390/app15158626
+DOI: 10.3390/rs17142354
+Copyright (c) 2026 by ${Chao Deng}, All Rights Reserved. 
+'''
 """
 RNA_ClassQuery_Model Package
 
@@ -24,7 +38,7 @@ Example Usage:
 
 from .main_model import (
     RNA_ClassQuery_Model,
-    RNA_ClassQuery_Model_Large,
+    # RNA_ClassQuery_Model_Large,
     ParallelCNNBlock,
     GCNBlock,
     ClassQueryHead,

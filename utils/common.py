@@ -218,6 +218,12 @@ def load_config(config_path: str = 'model.json') -> Tuple:
 
     # AMP (Automatic Mixed Precision) settings
     Config.use_amp = train_cfg.get('use_amp', True)
+    # -----------------------------------------------------------
+    # [新增] 读取 Attention Supervision 配置 (这里是你漏掉的部分)
+    # -----------------------------------------------------------
+    Config.use_attention_supervision = train_cfg.get('use_attention_supervision', False)
+    Config.attention_lambda = train_cfg.get('attention_lambda', 1.0)
+    # -----------------------------------------------------------
 
     # Few-shot learning parameters
     few_shot_cfg = config_dict.get('few_shot', {})
@@ -826,7 +832,9 @@ def train_epoch(
     device: torch.device,
     logger: Optional[logging.Logger] = None,
     use_hierarchical: bool = False,
-    use_amp: bool = False
+    use_amp: bool = False,
+    use_attention_supervision: bool = False,
+    attention_lambda: float = 1.0
 ) -> float:
     """
     Train for one epoch with TQDM progress monitoring.
@@ -841,6 +849,8 @@ def train_epoch(
         logger: Optional logger instance
         use_hierarchical: If True, use multi-task learning (4-class + 12-class)
         use_amp: If True, use automatic mixed precision
+        use_attention_supervision: If True, use attention supervision loss
+        attention_lambda: Weight for attention supervision loss
 
     Returns:
         Average loss for the epoch
@@ -852,6 +862,7 @@ def train_epoch(
     total_loss = 0.0
     total_loss_12 = 0.0
     total_loss_4 = 0.0
+    total_loss_attn = 0.0
     num_batches = 0
 
     # Create GradScaler for AMP if enabled
@@ -870,70 +881,112 @@ def train_epoch(
 
         # Forward pass
         optimizer.zero_grad()
+        
+        # Determine if we need attention weights
+        # Only request attention if supervision is enabled AND dataset has site labels
+        should_return_attention = use_attention_supervision and hasattr(batch, 'y_site')
 
         if use_amp:
             # Use AMP for forward pass
             with torch.cuda.amp.autocast():
                 if use_hierarchical:
-                    # Multi-task learning: get both 12-class and 4-class logits
-                    logits_12, logits_4 = model(batch.x, batch.edge_index, batch.batch)
+                    # === Hierarchical Mode (AMP) ===
+                    if should_return_attention:
+                        # Multi-task learning: 12-class + 4-class + Attention Weights
+                        logits_12, logits_4, attn_weights = model(
+                            batch.x, batch.edge_index, batch.batch, return_attention=True
+                        )
+                    else:
+                        # Multi-task learning: 12-class + 4-class
+                        logits_12, logits_4 = model(
+                            batch.x, batch.edge_index, batch.batch, return_attention=False
+                        )
 
                     # Generate 4-class labels from 12-class labels
-                    # y_4class[g] = 1 if any class in group g has modification
-                    y_12 = batch.y  # (Batch, 12)
+                    y_12 = batch.y
                     y_4 = torch.zeros(y_12.size(0), 4, device=y_12.device)
 
-                    # For each group (A=0, C=1, G=2, U=3)
                     for group_idx, group_name in enumerate(['A', 'C', 'G', 'U']):
                         class_indices = GROUP_TO_CLASS_INDICES[group_name]
                         y_4[:, group_idx] = y_12[:, class_indices].max(dim=1)[0]
 
-                    # Calculate losses for both tasks
-                    # Note: criterion has pos_weight for 12 classes, so we can only use it for 12-class loss
-                    # For 4-class loss, we use BCEWithLogitsLoss without pos_weight
+                    # Classification Losses
                     loss_12 = criterion(logits_12, y_12)
                     loss_4 = F.binary_cross_entropy_with_logits(logits_4, y_4)
-                    loss = loss_12 + loss_4
+                    
+                    # Attention Supervision Loss
+                    loss_attn = torch.tensor(0.0, device=device)
+                    if should_return_attention:
+                        loss_attn = compute_attention_supervision_loss(attn_weights, batch.y_site)
+                        total_loss_attn += loss_attn.item()
+
+                    # Total Loss
+                    loss = loss_12 + loss_4 + (attention_lambda * loss_attn)
 
                     total_loss_12 += loss_12.item()
                     total_loss_4 += loss_4.item()
+                    
                 else:
-                    # Single-task learning: only 12-class
-                    logits = model(batch.x, batch.edge_index, batch.batch)
-                    loss = criterion(logits, batch.y)
+                    # === Single Task Mode (AMP) ===
+                    if should_return_attention:
+                        logits, attn_weights = model(batch.x, batch.edge_index, batch.batch, return_attention=True)
+                        loss_cls = criterion(logits, batch.y)
+                        loss_attn = compute_attention_supervision_loss(attn_weights, batch.y_site)
+                        loss = loss_cls + attention_lambda * loss_attn
+                        total_loss_attn += loss_attn.item()
+                    else:
+                        logits = model(batch.x, batch.edge_index, batch.batch)
+                        loss = criterion(logits, batch.y)
 
             # Backward pass with scaler
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
+            
         else:
+            # No AMP (Standard FP32)
             if use_hierarchical:
-                # Multi-task learning: get both 12-class and 4-class logits
-                logits_12, logits_4 = model(batch.x, batch.edge_index, batch.batch)
+                # === Hierarchical Mode (Standard) ===
+                if should_return_attention:
+                    logits_12, logits_4, attn_weights = model(
+                        batch.x, batch.edge_index, batch.batch, return_attention=True
+                    )
+                else:
+                    logits_12, logits_4 = model(
+                        batch.x, batch.edge_index, batch.batch, return_attention=False
+                    )
 
-                # Generate 4-class labels from 12-class labels
-                # y_4class[g] = 1 if any class in group g has modification
-                y_12 = batch.y  # (Batch, 12)
+                y_12 = batch.y
                 y_4 = torch.zeros(y_12.size(0), 4, device=y_12.device)
 
-                # For each group (A=0, C=1, G=2, U=3)
                 for group_idx, group_name in enumerate(['A', 'C', 'G', 'U']):
                     class_indices = GROUP_TO_CLASS_INDICES[group_name]
                     y_4[:, group_idx] = y_12[:, class_indices].max(dim=1)[0]
 
-                # Calculate losses for both tasks
-                # Note: criterion has pos_weight for 12 classes, so we can only use it for 12-class loss
-                # For 4-class loss, we use BCEWithLogitsLoss without pos_weight
                 loss_12 = criterion(logits_12, y_12)
                 loss_4 = F.binary_cross_entropy_with_logits(logits_4, y_4)
-                loss = loss_12 + loss_4
+                
+                loss_attn = torch.tensor(0.0, device=device)
+                if should_return_attention:
+                    loss_attn = compute_attention_supervision_loss(attn_weights, batch.y_site)
+                    total_loss_attn += loss_attn.item()
+
+                loss = loss_12 + loss_4 + (attention_lambda * loss_attn)
 
                 total_loss_12 += loss_12.item()
                 total_loss_4 += loss_4.item()
+                
             else:
-                # Single-task learning: only 12-class
-                logits = model(batch.x, batch.edge_index, batch.batch)
-                loss = criterion(logits, batch.y)
+                # === Single Task Mode (Standard) ===
+                if should_return_attention:
+                    logits, attn_weights = model(batch.x, batch.edge_index, batch.batch, return_attention=True)
+                    loss_cls = criterion(logits, batch.y)
+                    loss_attn = compute_attention_supervision_loss(attn_weights, batch.y_site)
+                    loss = loss_cls + attention_lambda * loss_attn
+                    total_loss_attn += loss_attn.item()
+                else:
+                    logits = model(batch.x, batch.edge_index, batch.batch)
+                    loss = criterion(logits, batch.y)
 
             # Backward pass
             loss.backward()
@@ -942,21 +995,36 @@ def train_epoch(
         total_loss += loss.item()
         num_batches += 1
 
+        # Update Progress Bar
+        postfix_dict = {"loss": f"{loss.item():.4f}"}
+        
         if use_hierarchical:
-            pbar.set_postfix({"loss": f"{loss.item():.4f}", "loss_12": f"{loss_12.item():.4f}", "loss_4": f"{loss_4.item():.4f}"})
-        else:
-            pbar.set_postfix({"loss": f"{loss.item():.4f}"})
+            postfix_dict["l12"] = f"{loss_12.item():.4f}"
+            postfix_dict["l4"] = f"{loss_4.item():.4f}"
+            
+        if should_return_attention and total_loss_attn > 0:
+            postfix_dict["lattn"] = f"{loss_attn.item():.4f}"
+            
+        pbar.set_postfix(postfix_dict)
 
     if scheduler is not None:
         scheduler.step()
 
+    # Final Logging
     avg_loss = total_loss / num_batches
+    msg_parts = [f"Train loss: {avg_loss:.4f}"]
+    
     if use_hierarchical:
         avg_loss_12 = total_loss_12 / num_batches
         avg_loss_4 = total_loss_4 / num_batches
-        msg = f"Train loss: {avg_loss:.4f} (12-class: {avg_loss_12:.4f}, 4-class: {avg_loss_4:.4f})"
-    else:
-        msg = f"Train loss: {avg_loss:.4f}"
+        msg_parts.append(f"12-class: {avg_loss_12:.4f}")
+        msg_parts.append(f"4-class: {avg_loss_4:.4f}")
+        
+    if use_attention_supervision and total_loss_attn > 0:
+        avg_loss_attn = total_loss_attn / num_batches
+        msg_parts.append(f"attn: {avg_loss_attn:.4f}")
+        
+    msg = ", ".join(msg_parts)
 
     if logger:
         logger.info(msg)
@@ -1115,3 +1183,463 @@ def test_epoch(
         print(msg)
 
     return avg_loss
+
+
+# ============================================================================
+# Attention Supervision Loss
+# ============================================================================
+
+# Import LABEL_MAPPING from dataset.human for consistency
+# This mapping converts original label IDs (1-12) to model indices (0-11)
+from dataset.human import LABEL_MAPPING
+
+
+def compute_attention_supervision_loss(
+    attn_weights: torch.Tensor,
+    y_site: torch.Tensor,
+    num_classes: int = 12,
+    seq_len: int = 1001
+) -> torch.Tensor:
+    """
+    Compute attention supervision loss using KL divergence.
+
+    This loss encourages the model to attend to positions where modifications
+    actually occur (as indicated by y_site labels).
+
+    Args:
+        attn_weights: Attention weights [Batch_Size, Num_Classes, Seq_Len]
+        y_site: Site-level labels [Batch_Size * Seq_Len] (from PyG batch)
+        num_classes: Number of classes (default 12)
+        seq_len: Sequence length (default 1001)
+
+    Returns:
+        loss_attn: Attention supervision loss (scalar)
+    """
+    import torch.nn.functional as F
+
+    batch_size = attn_weights.size(0)
+    device = attn_weights.device
+
+    # Reshape y_site from [Batch * Seq_Len] to [Batch, Seq_Len]
+    y_site_reshaped = y_site.view(batch_size, seq_len)
+
+    loss_attn = 0.0
+    num_valid_classes = 0
+
+    # Iterate over each class
+    for class_idx in range(num_classes):
+        # Find the original label ID for this class_idx
+        # LABEL_MAPPING: {1: 0, 2: 1, ..., 12: 11}
+        # We need to reverse this: find k where LABEL_MAPPING[k] == class_idx
+        original_label_id = None
+        for k, v in LABEL_MAPPING.items():
+            if v == class_idx:
+                original_label_id = k
+                break
+
+        if original_label_id is None:
+            continue
+
+        # Generate binary mask: 1 if position has this modification, 0 otherwise
+        target_mask = (y_site_reshaped == original_label_id).float()
+
+        # Only compute loss for samples that have this modification
+        has_mod_mask = target_mask.sum(dim=1) > 0
+
+        if has_mod_mask.sum() > 0:
+            num_valid_classes += 1
+
+            # Get predictions and targets for samples with this modification
+            pred_attn = attn_weights[has_mod_mask, class_idx, :]  # [M, Seq_Len]
+            target_mask_filtered = target_mask[has_mod_mask]  # [M, Seq_Len]
+
+            # Normalize target to probability distribution for KL divergence
+            target_dist = target_mask_filtered / (target_mask_filtered.sum(dim=1, keepdim=True) + 1e-10)
+
+            # Use log_softmax for prediction (KL divergence expects log probabilities)
+            pred_log_dist = torch.log(pred_attn + 1e-10)
+
+            # Compute KL divergence
+            loss_kl = F.kl_div(pred_log_dist, target_dist, reduction='batchmean')
+
+            loss_attn += loss_kl
+
+    # Average over classes that have valid samples
+    if num_valid_classes > 0:
+        loss_attn = loss_attn / num_valid_classes
+    else:
+        loss_attn = torch.tensor(0.0, device=device)
+
+    return loss_attn
+
+
+# ============================================================================
+# Top-K Site Recall Evaluation
+# ============================================================================
+
+def calculate_topk_recall(
+    attn_weights: torch.Tensor,
+    y_site: torch.Tensor,
+    k_list: list = [1, 5, 10, 20, 50],
+    num_classes: int = 12,
+    seq_len: int = 1001
+) -> dict:
+    """
+    Calculate Top-K site recall based on attention weights.
+
+    For each class, compute the recall rate: how many of the true modification
+    sites appear in the top-K positions ranked by attention weights.
+
+    Args:
+        attn_weights: Attention weights [N, Num_Classes, Seq_Len]
+        y_site: Site-level labels [N * Seq_Len] or [N, Seq_Len]
+        k_list: List of K values for top-K recall
+        num_classes: Number of classes (default 12)
+        seq_len: Sequence length (default 1001)
+
+    Returns:
+        dict: {class_idx: {k: recall_value}}
+    """
+    import numpy as np
+
+    # Convert to CPU numpy
+    attn_weights = attn_weights.detach().cpu().numpy()
+    y_site = y_site.detach().cpu().numpy()
+
+    # Reshape y_site if needed
+    if y_site.ndim == 1:
+        batch_size = attn_weights.shape[0]
+        y_site = y_site.reshape(batch_size, seq_len)
+
+    results = {}
+    max_k = max(k_list)
+
+    # Iterate over each class
+    for class_idx in range(num_classes):
+        # Find the original label ID for this class_idx
+        original_label_id = None
+        for k, v in LABEL_MAPPING.items():
+            if v == class_idx:
+                original_label_id = k
+                break
+
+        if original_label_id is None:
+            results[class_idx] = {k: 0.0 for k in k_list}
+            continue
+
+        # Find samples that have this modification
+        has_mod_samples = np.any(y_site == original_label_id, axis=1)
+
+        if np.sum(has_mod_samples) == 0:
+            results[class_idx] = {k: 0.0 for k in k_list}
+            continue
+
+        # Get attention weights and labels for samples with this modification
+        target_attn = attn_weights[has_mod_samples, class_idx, :]  # [M, Seq_Len]
+        target_labels = y_site[has_mod_samples]  # [M, Seq_Len]
+
+        class_recalls = {k: [] for k in k_list}
+
+        # For each sample, compute top-K recall
+        for i in range(len(target_attn)):
+            true_indices = np.where(target_labels[i] == original_label_id)[0]
+            num_true = len(true_indices)
+
+            if num_true == 0:
+                continue
+
+            # Get top-K predictions (indices with highest attention)
+            pred_indices = np.argsort(-target_attn[i])[:max_k]
+
+            # Compute recall for each K
+            for k in k_list:
+                topk_pred = pred_indices[:k]
+                hit_count = len(np.intersect1d(topk_pred, true_indices))
+                recall = hit_count / num_true
+                class_recalls[k].append(recall)
+
+        # Average recall across samples
+        results[class_idx] = {}
+        for k in k_list:
+            if len(class_recalls[k]) > 0:
+                results[class_idx][k] = np.mean(class_recalls[k])
+            else:
+                results[class_idx][k] = 0.0
+
+    return results
+
+
+def print_topk_table(
+    topk_results: dict,
+    k_list: list = [1, 5, 10, 20, 50],
+    logger=None
+):
+    """
+    Print Top-K site recall results in a formatted table.
+
+    Args:
+        topk_results: Results from calculate_topk_recall
+        k_list: List of K values
+        logger: Optional logger instance
+    """
+    from prettytable import PrettyTable
+
+    output = f"\n{'='*80}\n"
+    output += f"Top-K Site Localization Recall (Attention Analysis - Macro-Average)\n"
+    output += f"{'='*80}\n"
+
+    table = PrettyTable()
+    field_names = ["Class", "Name"] + [f"Top-{k}" for k in k_list]
+    table.field_names = field_names
+    table.align = "r"
+    table.align["Class"] = "l"
+    table.align["Name"] = "l"
+
+    for c in range(12):
+        row = [c, MOD_NAMES.get(c, str(c))]
+        metrics = topk_results.get(c, {})
+        for k in k_list:
+            rec = metrics.get(k, 0.0)
+            row.append(f"{rec:.4f}")
+        table.add_row(row)
+
+    output += str(table) + "\n"
+
+    print(output)
+    if logger:
+        logger.info(output)
+
+
+# ============================================================================
+# Comprehensive Localization Metrics Evaluation (Global/Micro-Average)
+# ============================================================================
+
+def calculate_comprehensive_localization_metrics(
+    attn_weights: torch.Tensor,
+    y_site: torch.Tensor,
+    k_list: list = [1, 5, 10],
+    num_classes: int = 12,
+    seq_len: int = 1001
+) -> dict:
+    """
+    Calculate comprehensive localization metrics based on attention weights.
+
+    This function computes multiple evaluation metrics:
+    1. Global Recall@K (Micro-Average): Sum of all hits / Sum of all true sites
+    2. Global Precision@K: Sum of all hits / (Valid samples * K)
+    3. Mean Average Precision (mAP): Average AP across all valid samples
+    4. Mean Reciprocal Rank (MRR): Average of 1/Rank for first correct prediction
+
+    Args:
+        attn_weights: Attention weights [N, Num_Classes, Seq_Len]
+        y_site: Site-level labels [N * Seq_Len] or [N, Seq_Len]
+        k_list: List of K values for top-K recall/precision
+        num_classes: Number of classes (default 12)
+        seq_len: Sequence length (default 1001)
+
+    Returns:
+        dict: {class_idx: {'mAP': float, 'MRR': float, 'R@K': float, 'P@K': float, ...}}
+    """
+    import numpy as np
+
+    # Convert to CPU numpy
+    attn_weights = attn_weights.detach().cpu().numpy()
+    y_site = y_site.detach().cpu().numpy()
+
+    # Reshape y_site if needed
+    if y_site.ndim == 1:
+        batch_size = attn_weights.shape[0]
+        y_site = y_site.reshape(batch_size, seq_len)
+
+    results = {}
+    max_k = max(k_list)
+
+    # Iterate over each class
+    for class_idx in range(num_classes):
+        # Find the original label ID for this class_idx
+        original_label_id = None
+        for k, v in LABEL_MAPPING.items():
+            if v == class_idx:
+                original_label_id = k
+                break
+
+        if original_label_id is None:
+            # No valid label mapping, return zeros
+            results[class_idx] = {
+                'mAP': 0.0,
+                'MRR': 0.0,
+            }
+            for k in k_list:
+                results[class_idx][f'R@{k}'] = 0.0
+                results[class_idx][f'P@{k}'] = 0.0
+            continue
+
+        # Find samples that have this modification
+        has_mod_samples = np.any(y_site == original_label_id, axis=1)
+
+        if np.sum(has_mod_samples) == 0:
+            # No samples with this modification
+            results[class_idx] = {
+                'mAP': 0.0,
+                'MRR': 0.0,
+            }
+            for k in k_list:
+                results[class_idx][f'R@{k}'] = 0.0
+                results[class_idx][f'P@{k}'] = 0.0
+            continue
+
+        # Get attention weights and labels for samples with this modification
+        target_attn = attn_weights[has_mod_samples, class_idx, :]  # [M, Seq_Len]
+        target_labels = y_site[has_mod_samples]  # [M, Seq_Len]
+
+        # Initialize accumulators for global metrics
+        global_hits = {k: 0 for k in k_list}
+        global_true_count = 0
+        global_pred_count = {k: 0 for k in k_list}
+
+        # Initialize accumulators for mAP and MRR
+        ap_list = []
+        mrr_list = []
+
+        # For each sample, compute metrics
+        for i in range(len(target_attn)):
+            true_indices = np.where(target_labels[i] == original_label_id)[0]
+            num_true = len(true_indices)
+
+            if num_true == 0:
+                continue
+
+            global_true_count += num_true
+
+            # Get rankings of all positions (descending by attention)
+            pred_ranks = np.argsort(-target_attn[i])  # Indices sorted by attention
+
+            # ===== Compute Average Precision (AP) for this sample =====
+            # For each true position, find its rank and compute precision at that rank
+            precisions_at_k = []
+            for true_pos in true_indices:
+                # Find rank of this true position (0-indexed)
+                rank = np.where(pred_ranks == true_pos)[0]
+                if len(rank) > 0:
+                    rank = rank[0] + 1  # Convert to 1-indexed
+                    # Precision at this rank = (number of correct items up to rank) / rank
+                    # Since we're looking at true positions, count how many true positions are in top-rank
+                    correct_in_topk = np.sum(np.isin(pred_ranks[:rank], true_indices))
+                    precision_at_rank = correct_in_topk / rank
+                    precisions_at_k.append(precision_at_rank)
+
+            if precisions_at_k:
+                ap_list.append(np.mean(precisions_at_k))
+
+            # ===== Compute Reciprocal Rank (RR) for this sample =====
+            # Find the rank of the first correct prediction
+            for rank, pos_idx in enumerate(pred_ranks):
+                if pos_idx in true_indices:
+                    mrr_list.append(1.0 / (rank + 1))  # rank is 0-indexed
+                    break
+
+            # ===== Compute Global Hits for each K =====
+            for k in k_list:
+                topk_pred = pred_ranks[:k]
+                hit_count = len(np.intersect1d(topk_pred, true_indices))
+                global_hits[k] += hit_count
+                global_pred_count[k] += k  # Each sample contributes K predictions
+
+        # ===== Compute Final Metrics =====
+        class_results = {}
+
+        # mAP: Mean Average Precision
+        if len(ap_list) > 0:
+            class_results['mAP'] = np.mean(ap_list)
+        else:
+            class_results['mAP'] = 0.0
+
+        # MRR: Mean Reciprocal Rank
+        if len(mrr_list) > 0:
+            class_results['MRR'] = np.mean(mrr_list)
+        else:
+            class_results['MRR'] = 0.0
+
+        # Global Recall@K: Micro-Average (Sum of hits / Sum of true sites)
+        for k in k_list:
+            if global_true_count > 0:
+                class_results[f'R@{k}'] = global_hits[k] / global_true_count
+            else:
+                class_results[f'R@{k}'] = 0.0
+
+        # Global Precision@K: Sum of hits / (Valid samples * K)
+        num_valid_samples = len(target_attn)
+        for k in k_list:
+            if global_pred_count[k] > 0:
+                class_results[f'P@{k}'] = global_hits[k] / global_pred_count[k]
+            else:
+                class_results[f'P@{k}'] = 0.0
+
+        results[class_idx] = class_results
+
+    return results
+
+
+def print_comprehensive_table(
+    comprehensive_results: dict,
+    k_list: list = [1, 5, 10],
+    logger=None
+):
+    """
+    Print comprehensive localization metrics in a formatted table.
+
+    The table includes:
+    - mAP: Mean Average Precision
+    - MRR: Mean Reciprocal Rank
+    - R@K: Global Recall at K (Micro-Average)
+    - P@K: Global Precision at K
+
+    Args:
+        comprehensive_results: Results from calculate_comprehensive_localization_metrics
+        k_list: List of K values for Recall/Precision columns
+        logger: Optional logger instance
+    """
+    from prettytable import PrettyTable
+
+    output = f"\n{'='*100}\n"
+    output += f"Comprehensive Localization Metrics (Global/Micro-Average)\n"
+    output += f"{'='*100}\n"
+
+    table = PrettyTable()
+
+    # Build column names dynamically based on k_list
+    field_names = ["Class", "Name", "mAP", "MRR"]
+    for k in k_list:
+        field_names.extend([f"R@{k}", f"P@{k}"])
+
+    table.field_names = field_names
+    table.align = "r"
+    table.align["Class"] = "l"
+    table.align["Name"] = "l"
+    table.align["mAP"] = "r"
+    table.align["MRR"] = "r"
+
+    for c in range(12):
+        row = [c, MOD_NAMES.get(c, str(c))]
+        metrics = comprehensive_results.get(c, {})
+
+        # Add mAP and MRR
+        row.append(f"{metrics.get('mAP', 0.0):.4f}")
+        row.append(f"{metrics.get('MRR', 0.0):.4f}")
+
+        # Add Recall and Precision for each K
+        for k in k_list:
+            recall = metrics.get(f'R@{k}', 0.0)
+            precision = metrics.get(f'P@{k}', 0.0)
+            row.append(f"{recall:.4f}")
+            row.append(f"{precision:.4f}")
+
+        table.add_row(row)
+
+    output += str(table) + "\n"
+    output += f"Note: R@K = Global Recall (Micro-Average), P@K = Global Precision\n"
+    output += f"      mAP = Mean Average Precision, MRR = Mean Reciprocal Rank\n"
+
+    print(output)
+    if logger:
+        logger.info(output)

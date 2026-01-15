@@ -50,7 +50,8 @@ from .metrics import (
     evaluate_plant_unbalance,
     evaluate_plant_balanceb,
     evaluate_group_balanceb,
-    get_all_predictions
+    get_all_predictions,
+    get_all_predictions_and_attention
 )
 
 # Import logging functions
@@ -65,7 +66,12 @@ from .logging import (
 # Import training functions
 from .common import (
     train_epoch,
-    test_epoch
+    test_epoch,
+    compute_attention_supervision_loss,
+    calculate_topk_recall,
+    print_topk_table,
+    calculate_comprehensive_localization_metrics,
+    print_comprehensive_table
 )
 
 # Import few-shot learning functions
@@ -112,10 +118,16 @@ __all__ = [
     'evaluate_plant_balanceb',
     'evaluate_group_balanceb',
     'get_all_predictions',
+    'get_all_predictions_and_attention',
 
     # Training
     'train_epoch',
     'test_epoch',
+    'compute_attention_supervision_loss',
+    'calculate_topk_recall',
+    'print_topk_table',
+    'calculate_comprehensive_localization_metrics',
+    'print_comprehensive_table',
 
     # Few-shot learning
     'run_few_shot_benchmark',

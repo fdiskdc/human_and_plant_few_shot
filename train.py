@@ -44,8 +44,10 @@ from utils import (
     DynamicBalancedBatchSampler,
     load_config, print_evaluation_results, print_few_shot_results, train_epoch, test_epoch,
     GROUP_TO_INDEX, INDEX_TO_NUCLEOTIDE, GROUP_TO_CLASS_INDICES,
-    get_center_nucleotide, get_all_predictions,
-    run_few_shot_benchmark, run_few_shot_benchmark_ac4c
+    get_center_nucleotide, get_all_predictions, get_all_predictions_and_attention,
+    run_few_shot_benchmark, run_few_shot_benchmark_ac4c,
+    calculate_topk_recall, print_topk_table,
+    calculate_comprehensive_localization_metrics, print_comprehensive_table
 )
 
 
@@ -148,14 +150,14 @@ def main(config_path='json/human.json'):
     train_loader = DataLoader(
         train_subset,
         batch_sampler=train_batch_sampler,  # Use our custom batch sampler
-        num_workers=8,
+        num_workers=16,
         pin_memory=True
     )
     test_loader = DataLoader(
         test_subset,
         batch_size=Config.batch_size,
         shuffle=False,
-        num_workers=2,
+        num_workers=8,
         pin_memory=True
     )
 
@@ -408,10 +410,13 @@ def main(config_path='json/human.json'):
             criterion = nn.BCEWithLogitsLoss(pos_weight=new_pos_weight, reduction='mean')
 
         # Train
+        # print(getattr(Config, 'use_attention_supervision', False))
         train_loss = train_epoch(
             model, train_loader, criterion, optimizer, scheduler, Config.device, logger,
             use_hierarchical=Config.use_hierarchical,
-            use_amp=Config.use_amp and torch.cuda.is_available()
+            use_amp=Config.use_amp and torch.cuda.is_available(),
+            use_attention_supervision=getattr(Config, 'use_attention_supervision', False),
+            attention_lambda=getattr(Config, 'attention_lambda', 1.0)
         )
 
         # Log train loss to tensorboard
@@ -435,39 +440,82 @@ def main(config_path='json/human.json'):
             # Log test loss to tensorboard
             tb_writer.add_scalar('test/loss', test_loss, epoch)
 
-            # Get evaluation metrics for human data
+            # ========================================================================
+            # Evaluation Phase - Get predictions and compute metrics
+            # ========================================================================
+            logger.info(f"\n{'='*60} Epoch {epoch} Testing {'='*60}")
+
+            # 1. Get evaluation metrics for human data
             # OPTIMIZATION: Run inference once and get all predictions
             logger.info(f"\n  Getting predictions for human data...")
             y_true, y_prob, y_4class, y_4prob = get_all_predictions(model, test_loader, Config.device, Config.use_hierarchical)
 
-            # Pass predictions to evaluation functions (no additional inference needed)
+            # 2. Compute basic classification metrics (keep original logic)
+            # Human metrics
             metrics_unbalance = evaluate_unbalance(y_true, y_prob, Config.device, y_4class, Config.random_seed, y_4prob)
             metrics_balanceb = evaluate_balanceb(y_true, y_prob, y_4class, Config.device, Config.random_seed, y_4prob)
             metrics_group_balanceb = evaluate_group_balanceb(y_true, y_prob, y_4class, Config.random_seed)
             metrics_opt = evaluate_with_optimal_threshold(model, test_loader, Config.device, Config.use_hierarchical)
             metrics_4class = evaluate_4class_with_optimal_threshold(model, test_loader, Config.device, Config.use_hierarchical)
 
-            # # Evaluate on plant data
+            # 3. Compute Top-K Attention Recall (Train.py unique logic)
+            topk_results = {}
+            comprehensive_results = {}
+            if Config.use_attention_supervision:
+                logger.info(f"\n  Computing Top-K site recall...")
+                y_true, y_prob, y_4class, y_4prob, attn_weights, y_site = get_all_predictions_and_attention(
+                    model, test_loader, Config.device, Config.use_hierarchical
+                )
+                if attn_weights is not None and y_site is not None:
+                    # Original Macro-Average Top-K Recall
+                    topk_results = calculate_topk_recall(attn_weights, y_site, k_list=[1, 3, 5, 7, 10, 20, 50])
+                    # New Comprehensive Localization Metrics (Global/Micro-Average)
+                    logger.info(f"  Computing comprehensive localization metrics...")
+                    comprehensive_results = calculate_comprehensive_localization_metrics(
+                        attn_weights, y_site, k_list=[1, 3, 5, 7, 10]
+                    )
+                else:
+                    logger.info(f"  Attention weights or site labels not available, skipping Top-K evaluation.")
+
+            # 4. Evaluate on plant data (if available)
+            plant_metrics_unbalance = None
+            plant_metrics_balanceb = None
+            plant_metrics_4class = None
+            plant_metrics_opt = None
+            # Uncomment below to enable plant evaluation
             # logger.info(f"\n  Getting predictions for plant data...")
             # y_true_plant, y_prob_plant, y_4class_plant, y_4prob_plant = get_all_predictions(model, plant_test_loader, Config.device, Config.use_hierarchical)
-
             # plant_metrics_unbalance = evaluate_plant_unbalance(y_true_plant, y_prob_plant, Config.device, y_4class_plant, Config.random_seed, y_4prob_plant)
             # plant_metrics_balanceb = evaluate_plant_balanceb(y_true_plant, y_prob_plant, y_4class_plant, Config.device, Config.random_seed, y_4prob_plant)
-            # # For plant data, use 4-class metrics already computed in plant_metrics_unbalance/balanceb
-            # # These contain the 'group_plant_4class_*' keys needed for the tables
             # plant_metrics_4class = plant_metrics_unbalance if plant_metrics_unbalance else plant_metrics_balanceb
             # plant_metrics_opt = evaluate_with_optimal_threshold(model, plant_test_loader, Config.device, Config.use_hierarchical)
 
-            # # Print and log results (including plant metrics and 4-class metrics)
-            # print_evaluation_results(
-            #     metrics_unbalance, metrics_balanceb, epoch, logger, metrics_opt=metrics_opt,
-            #     plant_metrics_unbalance=plant_metrics_unbalance,
-            #     plant_metrics_balanceb=plant_metrics_balanceb,
-            #     metrics_4class=metrics_4class,
-            #     plant_metrics_4class=plant_metrics_4class,
-            #     plant_metrics_opt=plant_metrics_opt,
-            #     metrics_group_balanceb=metrics_group_balanceb
-            # )
+            # =========================================================
+            # 5. Output Tables (Modified: Match train_plant_single2.py style)
+            # =========================================================
+
+            # (A) Output all classification performance tables
+            print_evaluation_results(
+                metrics_unbalance=metrics_unbalance,
+                metrics_balanceb=metrics_balanceb,
+                epoch=epoch,
+                logger=logger,
+                metrics_opt=metrics_opt,
+                metrics_group_balanceb=metrics_group_balanceb,
+                plant_metrics_unbalance=plant_metrics_unbalance,
+                plant_metrics_balanceb=plant_metrics_balanceb,
+                metrics_4class=metrics_4class,
+                plant_metrics_4class=plant_metrics_4class,
+                plant_metrics_opt=plant_metrics_opt
+            )
+
+            # (B) Output Top-K performance table (Train.py specific)
+            if topk_results:
+                print_topk_table(topk_results, k_list=[1, 3, 5, 7, 10, 20, 50], logger=logger)
+
+            # (C) Output Comprehensive Localization Metrics table (New)
+            if comprehensive_results:
+                print_comprehensive_table(comprehensive_results, k_list=[1, 3, 5, 7, 10], logger=logger)
 
             # Log metrics to tensorboard
             log_metrics_to_tensorboard(tb_writer, metrics_unbalance, 'test_unbalance', epoch)
@@ -542,4 +590,3 @@ def main(config_path='json/human.json'):
 
 if __name__ == "__main__":
     main()
-

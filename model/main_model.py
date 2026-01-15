@@ -1,3 +1,4 @@
+
 """
 RNA_ClassQuery_Model - Multi-scale Class-Query Classification Model for RNA
 
@@ -21,6 +22,9 @@ from torch_geometric.nn import GCNConv, global_add_pool
 from torch_geometric.utils import softmax
 from typing import Optional, Tuple
 
+# Import GROUP_TO_CLASS_INDICES for hierarchical head
+from utils.common import GROUP_TO_CLASS_INDICES
+
 
 # ============================================================================
 # Sub-modules for RNA_ClassQuery_Model
@@ -29,15 +33,6 @@ from typing import Optional, Tuple
 class ParallelCNNBlock(nn.Module):
     """
     Multi-scale CNN feature extraction block
-
-    Architecture:
-    - Input: (Batch, 4, 1001) - one-hot encoded RNA sequence
-    - 4 parallel 1D convolution branches with kernel sizes [1, 3, 5, 7]
-    - Each branch maintains sequence length via padding='same'
-    - Concatenate outputs along channel dimension
-    - Layer normalization
-
-    Output: (Batch, 4 * hidden_dim, 1001) then transposed to (Batch * 1001, 4 * hidden_dim)
     """
 
     def __init__(
@@ -48,14 +43,6 @@ class ParallelCNNBlock(nn.Module):
         use_layer_norm: bool = True,
         dropout: float = 0.1
     ):
-        """
-        Args:
-            in_channels: Input channels (4 for one-hot A, C, G, U)
-            hidden_dim: Hidden dimension for each convolution branch
-            kernel_sizes: Kernel sizes for parallel branches
-            use_layer_norm: If True, use LayerNorm; otherwise use BatchNorm1d
-            dropout: Dropout probability
-        """
         super().__init__()
 
         self.in_channels = in_channels
@@ -63,85 +50,50 @@ class ParallelCNNBlock(nn.Module):
         self.kernel_sizes = kernel_sizes
         self.out_channels = len(kernel_sizes) * hidden_dim
 
-        # Create parallel convolution branches
         self.conv_branches = nn.ModuleList([
             nn.Conv1d(
                 in_channels=in_channels,
                 out_channels=hidden_dim,
                 kernel_size=k,
-                padding='same',  # Maintain sequence length
+                padding='same',
                 bias=True
             )
             for k in kernel_sizes
         ])
 
-        # Normalization layer (applied after concatenation)
         if use_layer_norm:
-            # LayerNorm normalizes over (C, L) dimensions
             self.norm = nn.LayerNorm(normalized_shape=(self.out_channels, 1001))
         else:
-            # BatchNorm1d normalizes over C dimension
             self.norm = nn.BatchNorm1d(self.out_channels)
 
         self.dropout = nn.Dropout(dropout)
         self.activation = nn.ReLU()
 
     def forward(self, x: torch.Tensor, batch: Optional[torch.Tensor] = None) -> torch.Tensor:
-        """
-        Forward pass
-
-        Args:
-            x: Input tensor, shape (Batch, 4, 1001) or (Batch * 1001, 4)
-               If shape is (Batch, 1001, 4), will be transposed automatically
-            batch: Batch assignment vector for PyG batch objects, shape (Batch * 1001,)
-
-        Returns:
-            Node features for GCN, shape (Total_Nodes, out_channels)
-        """
-        # Handle different input shapes
         if x.dim() == 3 and x.size(1) == 1001 and x.size(2) == 4:
-            # Shape: (Batch, 1001, 4) -> (Batch, 4, 1001)
             x = x.transpose(1, 2)
         elif x.dim() == 2 and x.size(1) == 4:
-            # Shape: (Total_Nodes, 4) -> (1, 4, Total_Nodes)
-            # Need to reshape for conv1d
             if batch is not None:
-                # Reshape from (Total_Nodes, 4) to (Batch, 4, 1001)
                 batch_size = batch.max().item() + 1
                 x = x.view(batch_size, 1001, 4).transpose(1, 2)
             else:
-                # Single sample case
-                x = x.t().unsqueeze(0)  # (1, 4, seq_len)
+                x = x.t().unsqueeze(0)
 
-        # Input shape: (Batch, 4, 1001)
-        batch_size = x.size(0)
-
-        # Apply parallel convolutions
         branch_outputs = []
         for conv in self.conv_branches:
-            # Each branch output: (Batch, hidden_dim, 1001)
             out = conv(x)
             branch_outputs.append(out)
 
-        # Concatenate along channel dimension
-        # Shape: (Batch, 4 * hidden_dim, 1001)
         concatenated = torch.cat(branch_outputs, dim=1)
 
-        # Apply normalization
         if isinstance(self.norm, nn.LayerNorm):
-            # LayerNorm expects (Batch, C, L)
             normalized = self.norm(concatenated)
         else:
-            # BatchNorm1d expects (Batch, C, L)
             normalized = self.norm(concatenated)
 
-        # Apply activation and dropout
         features = self.dropout(self.activation(normalized))
-        # Shape: (Batch, 4 * hidden_dim, 1001)
-
-        # Reshape for PyG: (Batch, 4 * hidden_dim, 1001) -> (Total_Nodes, 4 * hidden_dim)
-        features = features.transpose(1, 2)  # (Batch, 1001, 4 * hidden_dim)
-        features = features.reshape(-1, self.out_channels)  # (Batch * 1001, 4 * hidden_dim)
+        features = features.transpose(1, 2)
+        features = features.reshape(-1, self.out_channels)
 
         return features
 
@@ -149,13 +101,6 @@ class ParallelCNNBlock(nn.Module):
 class GCNBlock(nn.Module):
     """
     Graph Convolutional Network block
-
-    Architecture:
-    - Input: Node features from CNN + edge_index
-    - 2-3 GCN layers with residual connections
-    - Dropout between layers
-
-    Output: Node features, shape (Total_Nodes, hidden_dim)
     """
 
     def __init__(
@@ -167,15 +112,6 @@ class GCNBlock(nn.Module):
         dropout: float = 0.3,
         use_residual: bool = True
     ):
-        """
-        Args:
-            in_channels: Input feature dimension (4 * hidden_dim from CNN)
-            hidden_dim: Hidden dimension for GCN layers
-            out_channels: Output feature dimension
-            num_layers: Number of GCN layers (2-3 recommended)
-            dropout: Dropout probability
-            use_residual: Whether to use residual connections
-        """
         super().__init__()
 
         self.in_channels = in_channels
@@ -184,85 +120,52 @@ class GCNBlock(nn.Module):
         self.num_layers = num_layers
         self.use_residual = use_residual
 
-        # Input projection layer (if in_channels != hidden_dim)
         self.input_proj = None
         if in_channels != hidden_dim:
             self.input_proj = nn.Linear(in_channels, hidden_dim)
 
-        # GCN layers
         self.gcn_layers = nn.ModuleList()
         self.norms = nn.ModuleList()
 
         for i in range(num_layers):
-            # FIX: When input_proj is used, all layers take hidden_dim as input
-            # Otherwise, first layer takes in_channels, subsequent layers take hidden_dim
             if self.input_proj is not None:
-                # input_proj will project in_channels to hidden_dim
                 in_dim = hidden_dim
             else:
                 in_dim = hidden_dim if i > 0 or (in_channels == hidden_dim) else in_channels
             self.gcn_layers.append(
                 GCNConv(in_dim, out_channels if i == num_layers - 1 else hidden_dim)
             )
-            # LayerNorm for each GCN layer
             self.norms.append(nn.LayerNorm(out_channels if i == num_layers - 1 else hidden_dim))
 
         self.dropout = nn.Dropout(dropout)
         self.activation = nn.ReLU()
 
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
-        """
-        Forward pass
-
-        Args:
-            x: Node features, shape (Total_Nodes, in_channels)
-            edge_index: Edge indices, shape (2, Num_Edges)
-
-        Returns:
-            Node features, shape (Total_Nodes, out_channels)
-        """
-        # Input projection if needed
         if self.input_proj is not None:
             x = self.input_proj(x)
-        # Shape: (Total_Nodes, hidden_dim)
 
-        # Store input for residual connection
         residual = x
 
-        # Apply GCN layers
         for i, (gcn, norm) in enumerate(zip(self.gcn_layers, self.norms)):
-            # GCN forward
             x = gcn(x, edge_index)
-            # Shape: (Total_Nodes, hidden_dim or out_channels)
-
-            # Apply normalization, activation, and dropout (except for final layer)
+            
             if i < self.num_layers - 1:
                 x = norm(x)
                 x = self.activation(x)
                 x = self.dropout(x)
 
-                # Residual connection
                 if self.use_residual and x.shape == residual.shape:
                     x = x + residual
                     residual = x
             else:
-                # Final layer - only normalization
                 x = norm(x)
 
-        return x  # Shape: (Total_Nodes, out_channels)
+        return x
 
 
 class ClassQueryHead(nn.Module):
     """
     Class-Query classification head using Cross-Attention
-
-    Architecture:
-    - Query: 12 learnable class embeddings, shape (12, hidden_dim)
-    - Key/Value: GCN output node features, shape (Total_Nodes, hidden_dim)
-    - Cross-attention between queries and node features
-    - Output: (Batch, 12) logits
-
-    This allows each class query to attend to relevant positions in the sequence.
     """
 
     def __init__(
@@ -273,24 +176,16 @@ class ClassQueryHead(nn.Module):
         dropout: float = 0.1,
         use_decoder: bool = True
     ):
-        """
-        Args:
-            hidden_dim: Hidden dimension for queries and node features
-            num_classes: Number of classes (12 for this task)
-            num_heads: Number of attention heads
-            dropout: Dropout probability
-            use_decoder: If True, use TransformerDecoderLayer; otherwise use MultiheadAttention
-        """
         super().__init__()
 
         self.hidden_dim = hidden_dim
         self.num_classes = num_classes
+        self.use_decoder = use_decoder
 
         # Learnable class queries
         self.class_queries = nn.Parameter(torch.randn(num_classes, hidden_dim))
 
         if use_decoder:
-            # Using TransformerDecoderLayer for cross-attention
             decoder_layer = nn.TransformerDecoderLayer(
                 d_model=hidden_dim,
                 nhead=num_heads,
@@ -300,22 +195,17 @@ class ClassQueryHead(nn.Module):
                 norm_first=True
             )
             self.cross_attention = nn.TransformerDecoder(decoder_layer, num_layers=1)
-
-            # Output projection
             self.output_proj = nn.Sequential(
                 nn.LayerNorm(hidden_dim),
                 nn.Linear(hidden_dim, 1)
             )
         else:
-            # Using MultiheadAttention directly
             self.cross_attention = nn.MultiheadAttention(
                 embed_dim=hidden_dim,
                 num_heads=num_heads,
                 dropout=dropout,
                 batch_first=True
             )
-
-            # Output projection
             self.output_proj = nn.Sequential(
                 nn.LayerNorm(hidden_dim),
                 nn.Linear(hidden_dim, hidden_dim // 2),
@@ -323,84 +213,56 @@ class ClassQueryHead(nn.Module):
                 nn.Dropout(dropout),
                 nn.Linear(hidden_dim // 2, 1)
             )
+    
+    def prune_heads(self, valid_class_indices):
+        """
+        Physically prune the class queries to only include valid indices.
+        """
+        with torch.no_grad():
+            new_queries = self.class_queries.data[valid_class_indices].clone()
+            self.class_queries = nn.Parameter(new_queries)
+            self.num_classes = len(valid_class_indices)
+            print(f"ClassQueryHead Pruned: {len(valid_class_indices)} classes remaining.")
 
     def forward(
         self,
         node_features: torch.Tensor,
         batch: torch.Tensor
     ) -> torch.Tensor:
-        """
-        Forward pass
-
-        Args:
-            node_features: Node features from GCN, shape (Total_Nodes, hidden_dim)
-            batch: Batch assignment vector, shape (Total_Nodes,)
-
-        Returns:
-            Class logits, shape (Batch, num_classes)
-        """
         batch_size = batch.max().item() + 1
-        num_nodes = batch.size(0)
         device = node_features.device
 
-        # Expand class queries for each sample in batch
-        # Shape: (Batch, num_classes, hidden_dim)
         queries = self.class_queries.unsqueeze(0).expand(batch_size, -1, -1).to(device)
+        max_nodes = 1001 
 
-        # Prepare memory (node features) for cross-attention
-        # Need to organize nodes by batch and pad to same length
-        # PyG provides a convenient way with global pooling, but we need sequence structure
-
-        # Group nodes by batch
-        max_nodes = 1001  # Fixed sequence length
-
-        # Create padded tensor: (Batch, max_nodes, hidden_dim)
         memory = torch.zeros(batch_size, max_nodes, self.hidden_dim, device=device)
         mask = torch.zeros(batch_size, max_nodes, dtype=torch.bool, device=device)
 
         for b in range(batch_size):
-            # Get nodes for this batch
             batch_mask = batch == b
-            batch_nodes = node_features[batch_mask]  # (num_nodes_in_batch, hidden_dim)
+            batch_nodes = node_features[batch_mask] 
 
             num_batch_nodes = batch_nodes.size(0)
             memory[b, :num_batch_nodes, :] = batch_nodes
-            mask[b, num_batch_nodes:] = True  # True means masked/padding
+            mask[b, num_batch_nodes:] = True
 
-        # Transpose mask for TransformerDecoder (True = ignore)
-        # TransformerDecoder expects mask in different format, so we use key_padding_mask
-        # key_padding_mask: (Batch, Seq) where True indicates padding
-        memory_mask = mask  # (Batch, max_nodes)
+        memory_mask = mask
 
-        # Cross-attention: queries attend to memory (node features)
-        # queries: (Batch, num_classes, hidden_dim)
-        # memory: (Batch, max_nodes, hidden_dim)
         attended_features = self.cross_attention(
             tgt=queries,
             memory=memory,
             memory_key_padding_mask=memory_mask
         )
-        # Shape: (Batch, num_classes, hidden_dim)
 
-        # Apply output projection
         logits = self.output_proj(attended_features)
-        # Shape: (Batch, num_classes, 1)
-
-        # Squeeze last dimension
         logits = logits.squeeze(-1)
-        # Shape: (Batch, num_classes)
 
-        # Ensure logits is on the same device as input
         return logits.to(node_features.device)
 
 
-# Alternative pooling-based class query head (simpler version)
 class ClassQueryHeadPooling(nn.Module):
     """
     Simplified Class-Query head using attention pooling
-
-    This version computes attention weights between class queries and node features,
-    then aggregates node features via weighted pooling.
     """
 
     def __init__(
@@ -409,24 +271,13 @@ class ClassQueryHeadPooling(nn.Module):
         num_classes: int = 12,
         dropout: float = 0.1
     ):
-        """
-        Args:
-            hidden_dim: Hidden dimension for queries and node features
-            num_classes: Number of classes (12 for this task)
-            dropout: Dropout probability
-        """
         super().__init__()
 
         self.hidden_dim = hidden_dim
         self.num_classes = num_classes
-
-        # Learnable class queries
         self.class_queries = nn.Parameter(torch.randn(num_classes, hidden_dim))
-
-        # Attention scoring function
         self.attention_scale = hidden_dim ** 0.5
 
-        # Output projection
         self.output_proj = nn.Sequential(
             nn.LayerNorm(hidden_dim),
             nn.Linear(hidden_dim, hidden_dim // 2),
@@ -434,353 +285,369 @@ class ClassQueryHeadPooling(nn.Module):
             nn.Dropout(dropout),
             nn.Linear(hidden_dim // 2, 1)
         )
+    
+    def prune_heads(self, valid_class_indices):
+        with torch.no_grad():
+            new_queries = self.class_queries.data[valid_class_indices].clone()
+            self.class_queries = nn.Parameter(new_queries)
+            self.num_classes = len(valid_class_indices)
 
     def forward(
         self,
         node_features: torch.Tensor,
         batch: torch.Tensor
-    ) -> torch.Tensor:
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        Forward pass
+        Forward pass with attention weight return for supervision.
 
         Args:
-            node_features: Node features from GCN, shape (Total_Nodes, hidden_dim)
-            batch: Batch assignment vector, shape (Total_Nodes,)
+            node_features: Node features from GCN
+            batch: Batch assignment vector
 
         Returns:
-            Class logits, shape (Batch, num_classes)
+            logits: Classification logits [Batch_Size, Num_Classes]
+            attn_weights: Attention weights [Batch_Size, Num_Classes, Seq_Len=1001]
         """
         batch_size = batch.max().item() + 1
         device = node_features.device
 
-        # Class queries: (num_classes, hidden_dim)
-        queries = self.class_queries.to(device)  # (num_classes, hidden_dim)
+        queries = self.class_queries.to(device)
 
-        # Compute attention scores for each batch
         logits_list = []
+        attn_weights_list = []
 
         for b in range(batch_size):
-            # Get nodes for this batch
             batch_mask = batch == b
-            batch_nodes = node_features[batch_mask]  # (num_nodes, hidden_dim)
+            batch_nodes = node_features[batch_mask]
 
-            num_nodes = batch_nodes.size(0)
-
-            # Compute attention scores: (num_classes, num_nodes)
-            # score[i, j] = query[i] @ node[j] / scale
+            # scores: [Num_Classes, Seq_Len]
             scores = torch.matmul(queries, batch_nodes.t()) / self.attention_scale
-            # Shape: (num_classes, num_nodes)
-
-            # Apply softmax over nodes for each class
-            attn_weights = torch.softmax(scores, dim=1)  # (num_classes, num_nodes)
-
-            # Aggregate node features via attention weights
-            # aggregated[i] = sum_j attn_weights[i, j] * batch_nodes[j]
+            # attn_weights: [Num_Classes, Seq_Len]
+            attn_weights = torch.softmax(scores, dim=1)
             aggregated = torch.matmul(attn_weights, batch_nodes)
-            # Shape: (num_classes, hidden_dim)
-
-            # Apply output projection
             class_logits = self.output_proj(aggregated)
-            # Shape: (num_classes, 1)
 
-            logits_list.append(class_logits.squeeze(-1))  # (num_classes,)
+            logits_list.append(class_logits.squeeze(-1))
+            attn_weights_list.append(attn_weights)
 
-        # Stack logits from all batches
         logits = torch.stack(logits_list, dim=0)
-        # Shape: (Batch, num_classes)
+        # Stack attention weights: [Batch_Size, Num_Classes, Seq_Len]
+        all_attn_weights = torch.stack(attn_weights_list, dim=0)
 
-        # Ensure logits is on the same device as input
-        return logits.to(node_features.device)
+        return logits.to(node_features.device), all_attn_weights.to(node_features.device)
 
 
-# ============================================================================
-# Hierarchical Class-Query Head (Group-to-Class Derivation)
-# ============================================================================
+# class HierarchicalClassQueryHeadPooling(nn.Module):
+#     """
+#     Hierarchical Class-Query head with Group-to-Class derivation.
+#     """
+
+#     GROUP_TO_CLASS_INDICES = {
+#         'A': [0, 1, 7, 9, 10], 
+#         'C': [2, 6, 8],
+#         'G': [3, 11],
+#         'U': [4, 5] 
+#     }
+
+#     GROUP_SIZES = {'A': 5, 'C': 3, 'G': 2, 'U': 2}
+#     GROUP_ORDER = ['A', 'C', 'G', 'U']
+
+#     def __init__(
+#         self,
+#         hidden_dim: int = 128,
+#         dropout: float = 0.1
+#     ):
+#         super().__init__()
+
+#         self.hidden_dim = hidden_dim
+#         self.num_groups = 4
+#         self.num_classes = 12
+
+#         self.group_queries = nn.Parameter(torch.randn(self.num_groups, hidden_dim))
+
+#         self.group_mlps = nn.ModuleDict({
+#             'A': self._make_derivation_mlp(hidden_dim, self.GROUP_SIZES['A'], dropout),
+#             'C': self._make_derivation_mlp(hidden_dim, self.GROUP_SIZES['C'], dropout),
+#             'G': self._make_derivation_mlp(hidden_dim, self.GROUP_SIZES['G'], dropout),
+#             'U': self._make_derivation_mlp(hidden_dim, self.GROUP_SIZES['U'], dropout)
+#         })
+
+#         self.attention_scale = hidden_dim ** 0.5
+
+#         self.output_proj_4class = nn.Sequential(
+#             nn.LayerNorm(hidden_dim),
+#             nn.Linear(hidden_dim, hidden_dim // 2),
+#             nn.ReLU(),
+#             nn.Dropout(dropout),
+#             nn.Linear(hidden_dim // 2, 1)
+#         )
+
+#         self.output_proj_12class = nn.Sequential(
+#             nn.LayerNorm(hidden_dim),
+#             nn.Linear(hidden_dim, hidden_dim // 2),
+#             nn.ReLU(),
+#             nn.Dropout(dropout),
+#             nn.Linear(hidden_dim // 2, 1)
+#         )
+
+#     def _make_derivation_mlp(self, hidden_dim: int, num_outputs: int, dropout: float) -> nn.Module:
+#         return nn.Sequential(
+#             nn.Linear(hidden_dim, hidden_dim * 2),
+#             nn.ReLU(),
+#             nn.Dropout(dropout),
+#             nn.Linear(hidden_dim * 2, hidden_dim * num_outputs)
+#         )
+
+#     def _derive_class_queries(self) -> torch.Tensor:
+#         derived_queries = {}
+
+#         for group_idx, group_name in enumerate(self.GROUP_ORDER):
+#             group_query = self.group_queries[group_idx] 
+#             mlp = self.group_mlps[group_name]
+#             output = mlp(group_query) 
+#             class_queries = output.view(self.GROUP_SIZES[group_name], self.hidden_dim) 
+#             derived_queries[group_name] = class_queries
+
+#         all_queries = []
+#         for group_name in self.GROUP_ORDER:
+#             all_queries.append(derived_queries[group_name])
+
+#         concatenated = torch.cat(all_queries, dim=0)
+
+#         reorder_indices = []
+#         for group_name in self.GROUP_ORDER:
+#             reorder_indices.extend(self.GROUP_TO_CLASS_INDICES[group_name])
+
+#         ordered_queries = torch.zeros_like(concatenated)
+#         for i, idx in enumerate(reorder_indices):
+#             ordered_queries[idx] = concatenated[i]
+
+#         return ordered_queries 
+
+#     def prune_heads(self, valid_class_indices, valid_group_indices):
+#         """
+#         Prune the head to only compute specific classes and groups via index masking.
+#         """
+#         self.register_buffer('valid_class_indices', torch.tensor(valid_class_indices, dtype=torch.long))
+#         self.register_buffer('valid_group_indices', torch.tensor(valid_group_indices, dtype=torch.long))
+#         print(f"Hierarchical Head Pruned: Active Classes={valid_class_indices}, Active Groups={valid_group_indices}")
+
+#     def forward(
+#         self,
+#         node_features: torch.Tensor,
+#         batch: torch.Tensor
+#     ) -> tuple:
+#         all_group_queries = self.group_queries 
+#         all_class_queries = self._derive_class_queries() 
+
+#         # [Pruning Logic]
+#         if hasattr(self, 'valid_group_indices'):
+#             group_queries = all_group_queries[self.valid_group_indices] 
+#         else:
+#             group_queries = all_group_queries
+
+#         if hasattr(self, 'valid_class_indices'):
+#             class_queries = all_class_queries[self.valid_class_indices] 
+#         else:
+#             class_queries = all_class_queries
+
+#         # Group Task
+#         scores_4 = torch.matmul(node_features, group_queries.t()) / self.attention_scale
+#         attn_weights_4 = softmax(scores_4, batch, dim=0)
+#         weighted_4 = attn_weights_4.unsqueeze(-1) * node_features.unsqueeze(1)
+#         num_active_groups = group_queries.size(0)
+#         agg_4 = global_add_pool(weighted_4.flatten(1), batch).view(-1, num_active_groups, self.hidden_dim)
+#         logits_4class = self.output_proj_4class(agg_4).squeeze(-1)
+
+#         # Class Task
+#         scores_12 = torch.matmul(node_features, class_queries.t()) / self.attention_scale
+#         attn_weights_12 = softmax(scores_12, batch, dim=0)
+#         weighted_12 = attn_weights_12.unsqueeze(-1) * node_features.unsqueeze(1)
+#         num_active_classes = class_queries.size(0)
+#         agg_12 = global_add_pool(weighted_12.flatten(1), batch).view(-1, num_active_classes, self.hidden_dim)
+#         logits_12class = self.output_proj_12class(agg_12).squeeze(-1)
+
+#         return logits_12class, logits_4class
+
 
 class HierarchicalClassQueryHeadPooling(nn.Module):
-    """
-    Hierarchical Class-Query head with Group-to-Class derivation.
-
-    Architecture:
-    - Level 1: 4 learnable group queries (A, C, G, U)
-    - Level 2: Each group query is passed through an MLP to derive class queries
-    - Output: Both 4-class and 12-class logits
-
-    Group sizes: A=5, C=3, G=2, U=2 (total 12 classes)
-
-    The derivation order ensures the final 12 queries follow LABEL_MAPPING:
-    [Am, Atol, Cm, Gm, Tm, Y, ac4C, m1A, m5C, m6A, m6Am, m7G]
-    """
-
-    # Group to class indices mapping (ensures correct order)
-    GROUP_TO_CLASS_INDICES = {
-        'A': [0, 1, 7, 9, 10],    # Am, Atol, m1A, m6A, m6Am
-        'C': [2, 6, 8],           # Cm, ac4C, m5C
-        'G': [3, 11],             # Gm, m7G
-        'U': [4, 5]               # Tm, Y
-    }
-
-    GROUP_SIZES = {'A': 5, 'C': 3, 'G': 2, 'U': 2}
-    GROUP_ORDER = ['A', 'C', 'G', 'U']
-
-    def __init__(
-        self,
-        hidden_dim: int = 128,
-        dropout: float = 0.1
-    ):
+    def __init__(self, hidden_dim, num_classes, group_to_class_indices, dropout=0.1, use_layer_norm=True):
         """
-        Args:
-            hidden_dim: Hidden dimension for queries and node features
-            dropout: Dropout probability
+        Hierarchical Head with Attention Pooling and Query Derivation.
         """
         super().__init__()
-
         self.hidden_dim = hidden_dim
-        self.num_groups = 4
-        self.num_classes = 12
+        self.num_classes = num_classes
+        self.group_to_class_indices = group_to_class_indices
+        self.num_groups = 4 # A, C, G, U
 
-        # Level 1: Learnable group queries (4 groups: A, C, G, U)
+        # Map group indices to group names: 0->'A', 1->'C', 2->'G', 3->'U'
+        self.group_names = ['A', 'C', 'G', 'U']
+
+        # 1. Group Queries (Trainable parameters) [4, Hidden_Dim]
         self.group_queries = nn.Parameter(torch.randn(self.num_groups, hidden_dim))
 
-        # Level 2: Group-specific MLPs for deriving class queries
-        # Each MLP takes a group query and outputs class-specific queries
-        self.group_mlps = nn.ModuleDict({
-            'A': self._make_derivation_mlp(hidden_dim, self.GROUP_SIZES['A'], dropout),
-            'C': self._make_derivation_mlp(hidden_dim, self.GROUP_SIZES['C'], dropout),
-            'G': self._make_derivation_mlp(hidden_dim, self.GROUP_SIZES['G'], dropout),
-            'U': self._make_derivation_mlp(hidden_dim, self.GROUP_SIZES['U'], dropout)
-        })
+        # 2. Group-wise Independent Projectors (Derivation)
+        self.group_projectors = nn.ModuleList()
+        print(f"Initializing HierarchicalClassQueryHeadPooling with group_to_class_indices: {group_to_class_indices}")
+        for g_idx in range(self.num_groups):
+            group_name = self.group_names[g_idx]
+            if group_name in group_to_class_indices:
+                num_subclasses = len(group_to_class_indices[group_name])
+                print(f"  Group {g_idx} ('{group_name}'): {num_subclasses} subclasses, indices: {group_to_class_indices[group_name]}")
+            else:
+                num_subclasses = 0
+                print(f"  Group {g_idx} ('{group_name}'): NOT found in group_to_class_indices")
+            
+            # MLP: Group_Query -> Subclass_Queries
+            projector = nn.Sequential(
+                nn.Linear(hidden_dim, hidden_dim * 2),
+                nn.ReLU(),
+                nn.Linear(hidden_dim * 2, num_subclasses * hidden_dim)
+            )
+            self.group_projectors.append(projector)
 
-        # Attention scoring function
+        # 3. Output Projections
+        self.output_proj_12 = nn.Sequential(
+            nn.LayerNorm(hidden_dim) if use_layer_norm else nn.Identity(),
+            nn.Linear(hidden_dim, hidden_dim // 2),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim // 2, 1)
+        )
+        
+        self.output_proj_4 = nn.Sequential(
+            nn.LayerNorm(hidden_dim) if use_layer_norm else nn.Identity(),
+            nn.Linear(hidden_dim, hidden_dim // 2),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim // 2, 1)
+        )
+
+        # Scale factor for attention
         self.attention_scale = hidden_dim ** 0.5
 
-        # Output projections (separate for 4-class and 12-class)
-        self.output_proj_4class = nn.Sequential(
-            nn.LayerNorm(hidden_dim),
-            nn.Linear(hidden_dim, hidden_dim // 2),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim // 2, 1)
-        )
-
-        self.output_proj_12class = nn.Sequential(
-            nn.LayerNorm(hidden_dim),
-            nn.Linear(hidden_dim, hidden_dim // 2),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim // 2, 1)
-        )
-
-    def _make_derivation_mlp(self, hidden_dim: int, num_outputs: int, dropout: float) -> nn.Module:
+    def _derive_class_queries(self):
         """
-        Create an MLP that derives class queries from a group query.
+        Derive Class Queries from Group Queries using projectors.
+        """
+        all_sub_queries = []
+        all_global_indices = []
 
+        for g_idx in range(self.num_groups):
+            group_name = self.group_names[g_idx]
+            if group_name not in self.group_to_class_indices:
+                continue
+            
+            g_query = self.group_queries[g_idx].unsqueeze(0) 
+            sub_flat = self.group_projectors[g_idx](g_query)
+            
+            num_subs = len(self.group_to_class_indices[group_name])
+            sub_queries = sub_flat.view(num_subs, self.hidden_dim)
+            
+            all_sub_queries.append(sub_queries)
+            all_global_indices.extend(self.group_to_class_indices[group_name])
+
+        flat_queries = torch.cat(all_sub_queries, dim=0)
+        indices_tensor = torch.tensor(all_global_indices, device=flat_queries.device)
+        
+        # Use the same dtype as flat_queries to handle mixed precision (AMP)
+        ordered_queries = torch.zeros(self.num_classes, self.hidden_dim, 
+                                   dtype=flat_queries.dtype, 
+                                   device=flat_queries.device)
+        ordered_queries.index_copy_(0, indices_tensor, flat_queries)
+        
+        return ordered_queries
+
+    def forward(self, node_features: torch.Tensor, batch: torch.Tensor):
+        """
         Args:
-            hidden_dim: Input and output hidden dimension
-            num_outputs: Number of class queries to derive
-            dropout: Dropout probability
-
+            node_features: [Total_Nodes, Dim]
+            batch: [Total_Nodes]
         Returns:
-            MLP module
+            logits_12: [Batch, 12]
+            logits_4: [Batch, 4]
+            attn_weights_12: [Batch, 12, Seq_Len] (For supervision/visualization)
         """
-        return nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim * 2),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim * 2, hidden_dim * num_outputs)
-        )
-
-    def _derive_class_queries(self) -> torch.Tensor:
-        """
-        Derive 12 class queries from 4 group queries using group-specific MLPs.
-
-        The derived queries are ordered according to LABEL_MAPPING indices 0-11:
-        [Am, Atol, Cm, Gm, Tm, Y, ac4C, m1A, m5C, m6A, m6Am, m7G]
-
-        Returns:
-            Derived class queries, shape (12, hidden_dim)
-        """
-        device = self.group_queries.device
-
-        # Derive class queries for each group
-        derived_queries = {}
-
-        for group_idx, group_name in enumerate(self.GROUP_ORDER):
-            group_query = self.group_queries[group_idx]  # (hidden_dim,)
-
-            # Pass through group-specific MLP
-            mlp = self.group_mlps[group_name]
-            output = mlp(group_query)  # (num_classes_in_group * hidden_dim,)
-
-            # Reshape to separate class queries
-            num_classes = self.GROUP_SIZES[group_name]
-            class_queries = output.view(num_classes, self.hidden_dim)  # (num_classes_in_group, hidden_dim)
-
-            derived_queries[group_name] = class_queries
-
-        # Concatenate in the correct order to match LABEL_MAPPING
-        # Order: Am(0), Atol(1), Cm(2), Gm(3), Tm(4), Y(5), ac4C(6), m1A(7), m5C(8), m6A(9), m6Am(10), m7G(11)
-        all_queries = []
-        for group_name in self.GROUP_ORDER:
-            all_queries.append(derived_queries[group_name])
-
-        # Concatenate: A's 5 + C's 3 + G's 2 + U's 2 = 12
-        concatenated = torch.cat(all_queries, dim=0)  # (12, hidden_dim)
-
-        # Reorder to match LABEL_MAPPING order
-        # Current order after concat: A[0,1,7,9,10], C[2,6,8], G[3,11], U[4,5]
-        # We need: [0,1,2,3,4,5,6,7,8,9,10,11]
-        reorder_indices = []
-        for group_name in self.GROUP_ORDER:
-            reorder_indices.extend(self.GROUP_TO_CLASS_INDICES[group_name])
-
-        # Create properly ordered tensor
-        ordered_queries = torch.zeros_like(concatenated)
-        for i, idx in enumerate(reorder_indices):
-            ordered_queries[idx] = concatenated[i]
-
-        return ordered_queries  # (12, hidden_dim) in correct order [0,1,2,3,4,5,6,7,8,9,10,11]
-
-    def prune_heads(self, valid_class_indices, valid_group_indices):
-        """
-        Prune the head to only compute specific classes and groups.
-        Args:
-            valid_class_indices (list): Indices of classes to keep (e.g., [5, 8, 9])
-            valid_group_indices (list): Indices of groups to keep (e.g., [0, 1, 3])
-        """
-        # Register indices as buffers so they are saved with the model but not trained
-        self.register_buffer('valid_class_indices', torch.tensor(valid_class_indices, dtype=torch.long))
-        self.register_buffer('valid_group_indices', torch.tensor(valid_group_indices, dtype=torch.long))
-        print(f"Head Pruned: Active Classes={valid_class_indices}, Active Groups={valid_group_indices}")
-
-    def forward(
-        self,
-        node_features: torch.Tensor,
-        batch: torch.Tensor
-    ) -> tuple:
-        """
-        Optimized Forward pass with support for Head Pruning
-        """
+        batch_size = batch.max().item() + 1
+        device = node_features.device
+        
         # 1. Prepare Queries
-        all_group_queries = self.group_queries  # (4, D)
-        all_class_queries = self._derive_class_queries()  # (12, D)
+        class_queries = self._derive_class_queries() # [12, Dim]
+        group_queries = self.group_queries           # [4, Dim]
 
-        # [Pruning Logic]: Select only relevant queries if pruning is active
-        if hasattr(self, 'valid_group_indices'):
-            group_queries = all_group_queries[self.valid_group_indices] # (3, D)
-        else:
-            group_queries = all_group_queries
+        logits_12_list = []
+        logits_4_list = []
+        attn_weights_12_list = []
 
-        if hasattr(self, 'valid_class_indices'):
-            class_queries = all_class_queries[self.valid_class_indices] # (3, D)
-        else:
-            class_queries = all_class_queries
+        # 2. Iterate over batch (Attention Pooling)
+        for b in range(batch_size):
+            batch_mask = batch == b
+            batch_nodes = node_features[batch_mask] # [Seq_Len, Dim]
+            
+            # --- 12-Class Task ---
+            # Score: [12, Dim] @ [Dim, Seq_Len] -> [12, Seq_Len]
+            scores_12 = torch.matmul(class_queries, batch_nodes.t()) / self.attention_scale
+            attn_12 = torch.softmax(scores_12, dim=1) # Attention Weights
+            
+            # Pooling: [12, Seq_Len] @ [Seq_Len, Dim] -> [12, Dim]
+            weighted_nodes_12 = torch.matmul(attn_12, batch_nodes)
+            
+            # Predict
+            logits_12 = self.output_proj_12(weighted_nodes_12).squeeze(-1) # [12]
+            
+            # --- 4-Class Task (Group) ---
+            # Score: [4, Dim] @ [Dim, Seq_Len] -> [4, Seq_Len]
+            scores_4 = torch.matmul(group_queries, batch_nodes.t()) / self.attention_scale
+            attn_4 = torch.softmax(scores_4, dim=1)
+            
+            # Pooling
+            weighted_nodes_4 = torch.matmul(attn_4, batch_nodes)
+            
+            # Predict
+            logits_4 = self.output_proj_4(weighted_nodes_4).squeeze(-1) # [4]
 
-        # 2. Parallel Computation for Group Task (Dynamic Class Number)
-        # Score: (N_nodes, D) @ (D, N_groups) -> (N_nodes, N_groups)
-        scores_4 = torch.matmul(node_features, group_queries.t()) / self.attention_scale
+            # Collect results
+            logits_12_list.append(logits_12)
+            logits_4_list.append(logits_4)
+            attn_weights_12_list.append(attn_12)
 
-        # Softmax: (N_nodes, N_groups)
-        attn_weights_4 = softmax(scores_4, batch, dim=0)
+        # Stack results
+        logits_12_final = torch.stack(logits_12_list, dim=0) # [Batch, 12]
+        logits_4_final = torch.stack(logits_4_list, dim=0)   # [Batch, 4]
+        attn_weights_12_final = torch.stack(attn_weights_12_list, dim=0) # [Batch, 12, Seq_Len]
 
-        # Weighted Features: (N_nodes, N_groups, D)
-        weighted_4 = attn_weights_4.unsqueeze(-1) * node_features.unsqueeze(1)
-
-        # Pooling: Aggregate weighted features per graph
-        num_active_groups = group_queries.size(0)
-        agg_4 = global_add_pool(weighted_4.flatten(1), batch).view(-1, num_active_groups, self.hidden_dim)
-
-        # Logits: (Batch, N_groups)
-        logits_4class = self.output_proj_4class(agg_4).squeeze(-1)
-
-        # 3. Parallel Computation for Class Task (Dynamic Class Number)
-        # Score: (N_nodes, N_classes)
-        scores_12 = torch.matmul(node_features, class_queries.t()) / self.attention_scale
-
-        # Softmax: (N_nodes, N_classes)
-        attn_weights_12 = softmax(scores_12, batch, dim=0)
-
-        # Weighted: (N_nodes, N_classes, D)
-        weighted_12 = attn_weights_12.unsqueeze(-1) * node_features.unsqueeze(1)
-
-        # Pooling
-        num_active_classes = class_queries.size(0)
-        agg_12 = global_add_pool(weighted_12.flatten(1), batch).view(-1, num_active_classes, self.hidden_dim)
-
-        # Logits: (Batch, N_classes)
-        logits_12class = self.output_proj_12class(agg_12).squeeze(-1)
-
-        return logits_12class, logits_4class
-
-
-# ============================================================================
-# Main Model Classes
-# ============================================================================
+        # 返回三个值：12类Logits, 4类Logits, 12类Attention权重
+        return logits_12_final, logits_4_final, attn_weights_12_final
 
 class RNA_ClassQuery_Model(nn.Module):
     """
     RNA Classification Model using Multi-scale CNN + GCN + Class-Query Attention
-
-    Architecture:
-        Input (Batch, 1001, 4) -> ParallelCNN -> GCN -> ClassQueryHead -> Output (Batch, 12)
-
-    Forward pass flow:
-        1. Input: one-hot RNA sequence (Batch, 1001, 4) or PyG Batch object
-        2. ParallelCNN: Extract multi-scale local features
-           - Output shape: (Total_Nodes, cnn_out_channels)
-        3. GCN: Propagate features on secondary structure graph
-           - Output shape: (Total_Nodes, gcn_hidden_dim)
-        4. ClassQueryHead: Cross-attention between class queries and node features
-           - Output shape: (Batch, 12) or (Batch, 12), (Batch, 4) for hierarchical
     """
 
     def __init__(
         self,
-        # CNN parameters
         cnn_hidden_dim: int = 64,
         cnn_kernel_sizes: Tuple[int, ...] = (1, 3, 5, 7),
         cnn_dropout: float = 0.1,
-        # GCN parameters
         gcn_hidden_dim: int = 128,
         gcn_out_channels: int = 128,
         gcn_num_layers: int = 3,
         gcn_dropout: float = 0.3,
-        # Class-Query parameters
         num_classes: int = 12,
         num_attn_heads: int = 4,
         attn_dropout: float = 0.1,
         use_simple_pooling: bool = False,
         use_hierarchical: bool = False,
-        # Other
         use_layer_norm: bool = True
     ):
-        """
-        Args:
-            cnn_hidden_dim: Hidden dimension for each CNN branch
-            cnn_kernel_sizes: Kernel sizes for parallel CNN branches
-            cnn_dropout: Dropout for CNN block
-            gcn_hidden_dim: Hidden dimension for GCN layers
-            gcn_out_channels: Output dimension for GCN block
-            gcn_num_layers: Number of GCN layers (2-3 recommended)
-            gcn_dropout: Dropout for GCN block
-            num_classes: Number of output classes (12)
-            num_attn_heads: Number of attention heads in Class-Query
-            attn_dropout: Dropout for Class-Query attention
-            use_simple_pooling: If True, use simple pooling attention; otherwise use Transformer decoder
-            use_hierarchical: If True, use hierarchical head (returns 12-class and 4-class logits)
-            use_layer_norm: If True, use LayerNorm in CNN; otherwise use BatchNorm1d
-        """
         super().__init__()
 
-        # Store configuration
         self.cnn_out_channels = len(cnn_kernel_sizes) * cnn_hidden_dim
         self.gcn_out_channels = gcn_out_channels
         self.num_classes = num_classes
         self.use_hierarchical = use_hierarchical
 
-        # 1. Parallel CNN Block
-        # Input: (Batch, 4, 1001) or (Total_Nodes, 4)
-        # Output: (Total_Nodes, cnn_out_channels)
         self.cnn_block = ParallelCNNBlock(
             in_channels=4,
             hidden_dim=cnn_hidden_dim,
@@ -789,9 +656,6 @@ class RNA_ClassQuery_Model(nn.Module):
             dropout=cnn_dropout
         )
 
-        # 2. GCN Block
-        # Input: (Total_Nodes, cnn_out_channels) + edge_index
-        # Output: (Total_Nodes, gcn_out_channels)
         self.gcn_block = GCNBlock(
             in_channels=self.cnn_out_channels,
             hidden_dim=gcn_hidden_dim,
@@ -801,12 +665,11 @@ class RNA_ClassQuery_Model(nn.Module):
             use_residual=True
         )
 
-        # 3. Class-Query Classification Head
-        # Input: (Total_Nodes, gcn_out_channels) + batch
-        # Output: (Batch, num_classes) or (Batch, 12), (Batch, 4) for hierarchical
         if use_hierarchical:
             self.class_query_head = HierarchicalClassQueryHeadPooling(
                 hidden_dim=gcn_out_channels,
+                num_classes=num_classes,
+                group_to_class_indices=GROUP_TO_CLASS_INDICES,
                 dropout=attn_dropout
             )
         elif use_simple_pooling:
@@ -824,231 +687,40 @@ class RNA_ClassQuery_Model(nn.Module):
                 use_decoder=True
             )
 
-    def forward(
-        self,
-        x: torch.Tensor,
-        edge_index: torch.Tensor,
-        batch: Optional[torch.Tensor] = None
-    ) -> tuple:
-        """
-        Forward pass
-
-        Args:
-            x: Node features
-               - Shape: (Batch, 1001, 4) for batched tensor input
-               - Shape: (Total_Nodes, 4) for PyG Batch object input
-            edge_index: Edge indices for graph structure, shape (2, Num_Edges)
-            batch: Batch assignment vector for PyG, shape (Total_Nodes,)
-                    Required when x is in PyG format (Total_Nodes, 4)
-
-        Returns:
-            If use_hierarchical=True: (logits_12class, logits_4class) tuple
-            Otherwise: logits_12class only
-        """
-        # Handle PyG Batch object
-        if isinstance(x, Data) or isinstance(x, Batch):
-            # x is a PyG Data/Batch object
-            batch_obj = x
-            x = batch_obj.x
-            edge_index = batch_obj.edge_index
-            batch = batch_obj.batch
-
-        # Verify input dimensions
-        if x.dim() == 3:
-            # Shape: (Batch, 1001, 4)
-            batch_size = x.size(0)
-            seq_len = x.size(1)
-            assert seq_len == 1001, f"Expected sequence length 1001, got {seq_len}"
-
-            # Create batch vector for PyG compatibility
-            if batch is None:
-                batch = torch.arange(
-                    batch_size, device=x.device
-                ).repeat_interleave(seq_len)
-
-        elif x.dim() == 2:
-            # Shape: (Total_Nodes, 4) - PyG format
-            assert batch is not None, "batch vector must be provided for PyG format input"
-        else:
-            raise ValueError(f"Unexpected input shape: {x.shape}")
-
-        # Step 1: Parallel CNN feature extraction
-        # Input: x shape depends on format
-        # Output: (Total_Nodes, cnn_out_channels)
-        node_features = self.cnn_block(x, batch)
-
-        # Step 2: GCN for graph-structured feature propagation
-        # Input: (Total_Nodes, cnn_out_channels), edge_index
-        # Output: (Total_Nodes, gcn_out_channels)
-        node_features = self.gcn_block(node_features, edge_index)
-
-        # Step 3: Class-Query attention for classification
-        # Input: (Total_Nodes, gcn_out_channels), batch
-        # Output: (Batch, num_classes) or (Batch, 12), (Batch, 4)
-        if self.use_hierarchical:
-            logits_12class, logits_4class = self.class_query_head(node_features, batch)
-            return logits_12class, logits_4class
-        else:
-            logits = self.class_query_head(node_features, batch)
-            return logits
-
-    def predict(
-        self,
-        x: torch.Tensor,
-        edge_index: torch.Tensor,
-        batch: Optional[torch.Tensor] = None,
-        threshold: float = 0.5
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Make predictions with optional thresholding for multi-label classification
-
-        Args:
-            x: Node features
-            edge_index: Edge indices
-            batch: Batch assignment vector
-            threshold: Threshold for binary prediction (default 0.5)
-
-        Returns:
-            If use_hierarchical=True:
-                predictions_12class, probs_12class, predictions_4class, probs_4class
-            Otherwise:
-                predictions, probabilities
-        """
-        self.eval()
-        with torch.no_grad():
-            if self.use_hierarchical:
-                logits_12, logits_4 = self.forward(x, edge_index, batch)
-                probs_12 = torch.sigmoid(logits_12)
-                preds_12 = (probs_12 >= threshold).long()
-                probs_4 = torch.sigmoid(logits_4)
-                preds_4 = (probs_4 >= threshold).long()
-                return preds_12, probs_12, preds_4, probs_4
-            else:
-                logits = self.forward(x, edge_index, batch)
-                probabilities = torch.sigmoid(logits)
-                predictions = (probabilities >= threshold).long()
-                return predictions, probabilities
-
     def prune_heads(self, valid_class_indices, valid_group_indices=None):
         """
-        Interface to prune the classification head.
+        Public interface to prune the classification head for specific tasks.
         """
         if self.use_hierarchical:
             if valid_group_indices is None:
                 raise ValueError("Hierarchical model requires valid_group_indices for pruning.")
             self.class_query_head.prune_heads(valid_class_indices, valid_group_indices)
         else:
-            # Fallback for non-hierarchical models (simple parameter slicing)
-            if hasattr(self.class_query_head, 'class_queries'):
-                 # Physically slice parameters for simple head
-                 with torch.no_grad():
-                     original_queries = self.class_query_head.class_queries.data
-                     new_queries = original_queries[valid_class_indices].clone()
-                     self.class_query_head.class_queries = nn.Parameter(new_queries)
-                     self.class_query_head.num_classes = len(valid_class_indices)
-                 print(f"Simple Head Pruned: Kept classes {valid_class_indices}")
-
-    def get_attention_weights(
-        self,
-        x: torch.Tensor,
-        edge_index: torch.Tensor,
-        batch: Optional[torch.Tensor] = None
-    ) -> torch.Tensor:
-        """
-        Extract attention weights for interpretability (requires modified forward)
-
-        Args:
-            x: Node features
-            edge_index: Edge indices
-            batch: Batch assignment vector
-
-        Returns:
-            attention_weights: Attention weights per class per node
-                               shape (Batch, num_classes, 1001)
-        """
-        # This would require hooking into the attention mechanism
-        # For now, return placeholder
-        raise NotImplementedError("Attention weight extraction not yet implemented")
-
-
-class RNA_ClassQuery_Model_Large(nn.Module):
-    """
-    Larger version of RNA_ClassQuery_Model with more capacity
-
-    Uses wider and deeper networks for potentially better performance.
-    """
-
-    def __init__(
-        self,
-        cnn_hidden_dim: int = 128,
-        cnn_kernel_sizes: Tuple[int, ...] = (1, 3, 5, 7, 9),
-        cnn_dropout: float = 0.1,
-        gcn_hidden_dim: int = 256,
-        gcn_out_channels: int = 256,
-        gcn_num_layers: int = 4,
-        gcn_dropout: float = 0.3,
-        num_classes: int = 12,
-        num_attn_heads: int = 8,
-        attn_dropout: float = 0.1,
-        use_simple_pooling: bool = False,
-        use_hierarchical: bool = False,
-        use_layer_norm: bool = True
-    ):
-        super().__init__()
-
-        self.cnn_out_channels = len(cnn_kernel_sizes) * cnn_hidden_dim
-        self.gcn_out_channels = gcn_out_channels
-        self.num_classes = num_classes
-        self.use_hierarchical = use_hierarchical
-
-        # 1. Parallel CNN Block (larger)
-        self.cnn_block = ParallelCNNBlock(
-            in_channels=4,
-            hidden_dim=cnn_hidden_dim,
-            kernel_sizes=cnn_kernel_sizes,
-            use_layer_norm=use_layer_norm,
-            dropout=cnn_dropout
-        )
-
-        # 2. GCN Block (deeper and wider)
-        self.gcn_block = GCNBlock(
-            in_channels=self.cnn_out_channels,
-            hidden_dim=gcn_hidden_dim,
-            out_channels=gcn_out_channels,
-            num_layers=gcn_num_layers,
-            dropout=gcn_dropout,
-            use_residual=True
-        )
-
-        # 3. Class-Query Classification Head
-        if use_hierarchical:
-            self.class_query_head = HierarchicalClassQueryHeadPooling(
-                hidden_dim=gcn_out_channels,
-                dropout=attn_dropout
-            )
-        elif use_simple_pooling:
-            self.class_query_head = ClassQueryHeadPooling(
-                hidden_dim=gcn_out_channels,
-                num_classes=num_classes,
-                dropout=attn_dropout
-            )
-        else:
-            self.class_query_head = ClassQueryHead(
-                hidden_dim=gcn_out_channels,
-                num_classes=num_classes,
-                num_heads=num_attn_heads,
-                dropout=attn_dropout,
-                use_decoder=True
-            )
+            # For standard head, we just pass the class indices
+            if hasattr(self.class_query_head, 'prune_heads'):
+                 self.class_query_head.prune_heads(valid_class_indices)
 
     def forward(
         self,
         x: torch.Tensor,
         edge_index: torch.Tensor,
-        batch: Optional[torch.Tensor] = None
+        batch: Optional[torch.Tensor] = None,
+        return_attention: bool = False
     ) -> tuple:
-        """Forward pass - same as base model"""
-        # Handle PyG Batch object
+        """
+        Forward pass with optional attention weight return.
+
+        Args:
+            x: Input features
+            edge_index: Graph edge indices
+            batch: Batch assignment vector
+            return_attention: If True, return attention weights (only works with use_simple_pooling=True)
+
+        Returns:
+            If use_hierarchical: (logits_12class, logits_4class)
+            Elif use_simple_pooling and return_attention: (logits, attn_weights)
+            Else: logits
+        """
         if isinstance(x, Data) or isinstance(x, Batch):
             batch_obj = x
             x = batch_obj.x
@@ -1064,36 +736,29 @@ class RNA_ClassQuery_Model_Large(nn.Module):
                     batch_size, device=x.device
                 ).repeat_interleave(seq_len)
 
-        # Forward through blocks
+        elif x.dim() == 2:
+            assert batch is not None, "batch vector must be provided for PyG format input"
+        else:
+            raise ValueError(f"Unexpected input shape: {x.shape}")
+
         node_features = self.cnn_block(x, batch)
         node_features = self.gcn_block(node_features, edge_index)
 
         if self.use_hierarchical:
-            logits_12, logits_4 = self.class_query_head(node_features, batch)
-            return logits_12, logits_4
+            # Hierarchical head returns 3 values: logits_12class, logits_4class, attn_weights_12
+            logits_12class, logits_4class, attn_weights_12 = self.class_query_head(node_features, batch)
+
+            if return_attention:
+                return logits_12class, logits_4class, attn_weights_12
+            else:
+                # Training typically only needs logits
+                return logits_12class, logits_4class
+
+        elif self.use_simple_pooling:
+            logits, attn_weights = self.class_query_head(node_features, batch)
+            if return_attention:
+                return logits, attn_weights
+            return logits
         else:
             logits = self.class_query_head(node_features, batch)
             return logits
-
-    def predict(
-        self,
-        x: torch.Tensor,
-        edge_index: torch.Tensor,
-        batch: Optional[torch.Tensor] = None,
-        threshold: float = 0.5
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Make predictions with thresholding"""
-        self.eval()
-        with torch.no_grad():
-            if self.use_hierarchical:
-                logits_12, logits_4 = self.forward(x, edge_index, batch)
-                probs_12 = torch.sigmoid(logits_12)
-                preds_12 = (probs_12 >= threshold).long()
-                probs_4 = torch.sigmoid(logits_4)
-                preds_4 = (probs_4 >= threshold).long()
-                return preds_12, probs_12, preds_4, probs_4
-            else:
-                logits = self.forward(x, edge_index, batch)
-                probabilities = torch.sigmoid(logits)
-                predictions = (probabilities >= threshold).long()
-                return predictions, probabilities
