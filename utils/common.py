@@ -1417,28 +1417,27 @@ def print_topk_table(
 def calculate_comprehensive_localization_metrics(
     attn_weights: torch.Tensor,
     y_site: torch.Tensor,
-    k_list: list = [1, 5, 10],
+    k_list: list = [1, 3, 5, 10],
     num_classes: int = 12,
     seq_len: int = 1001
 ) -> dict:
     """
     Calculate comprehensive localization metrics based on attention weights.
-
     This function computes multiple evaluation metrics:
-    1. Global Recall@K (Micro-Average): Sum of all hits / Sum of all true sites
-    2. Global Precision@K: Sum of all hits / (Valid samples * K)
-    3. Mean Average Precision (mAP): Average AP across all valid samples
-    4. Mean Reciprocal Rank (MRR): Average of 1/Rank for first correct prediction
-
+    1.  Global Recall@K (Micro-Average): Sum of all hits / Sum of all true sites
+    2.  Mean Average Precision (mAP): Average AP across all valid samples
+    3.  Mean Reciprocal Rank (MRR): Average of 1/Rank for first correct prediction
+    4.  R-Precision: Precision at R, where R is the number of true sites for the sample.
+    5.  NDCG@K: Normalized Discounted Cumulative Gain, measuring ranking quality.
+    6.  MDE (Mean Distance Error): Average distance of Top-1 false positives to the nearest true site.
     Args:
         attn_weights: Attention weights [N, Num_Classes, Seq_Len]
         y_site: Site-level labels [N * Seq_Len] or [N, Seq_Len]
         k_list: List of K values for top-K recall/precision
         num_classes: Number of classes (default 12)
         seq_len: Sequence length (default 1001)
-
     Returns:
-        dict: {class_idx: {'mAP': float, 'MRR': float, 'R@K': float, 'P@K': float, ...}}
+        dict: {class_idx: {'mAP': float, 'MRR': float, 'R@K': float, 'R-Precision': float, 'NDCG@K': float, 'MDE': float}}
     """
     import numpy as np
 
@@ -1452,7 +1451,6 @@ def calculate_comprehensive_localization_metrics(
         y_site = y_site.reshape(batch_size, seq_len)
 
     results = {}
-    max_k = max(k_list)
 
     # Iterate over each class
     for class_idx in range(num_classes):
@@ -1464,14 +1462,13 @@ def calculate_comprehensive_localization_metrics(
                 break
 
         if original_label_id is None:
-            # No valid label mapping, return zeros
+            # No valid label mapping, return zeros for all metrics
             results[class_idx] = {
-                'mAP': 0.0,
-                'MRR': 0.0,
+                'mAP': 0.0, 'MRR': 0.0, 'R-Precision': 0.0, 'MDE': 0.0
             }
             for k in k_list:
                 results[class_idx][f'R@{k}'] = 0.0
-                results[class_idx][f'P@{k}'] = 0.0
+                results[class_idx][f'NDCG@{k}'] = 0.0
             continue
 
         # Find samples that have this modification
@@ -1480,26 +1477,22 @@ def calculate_comprehensive_localization_metrics(
         if np.sum(has_mod_samples) == 0:
             # No samples with this modification
             results[class_idx] = {
-                'mAP': 0.0,
-                'MRR': 0.0,
+                'mAP': 0.0, 'MRR': 0.0, 'R-Precision': 0.0, 'MDE': 0.0
             }
             for k in k_list:
                 results[class_idx][f'R@{k}'] = 0.0
-                results[class_idx][f'P@{k}'] = 0.0
+                results[class_idx][f'NDCG@{k}'] = 0.0
             continue
 
         # Get attention weights and labels for samples with this modification
-        target_attn = attn_weights[has_mod_samples, class_idx, :]  # [M, Seq_Len]
-        target_labels = y_site[has_mod_samples]  # [M, Seq_Len]
+        target_attn = attn_weights[has_mod_samples, class_idx, :]
+        target_labels = y_site[has_mod_samples]
 
-        # Initialize accumulators for global metrics
+        # Initialize accumulators
+        ap_list, mrr_list, r_precision_list, mde_list = [], [], [], []
+        ndcg_scores = {k: [] for k in k_list}
         global_hits = {k: 0 for k in k_list}
         global_true_count = 0
-        global_pred_count = {k: 0 for k in k_list}
-
-        # Initialize accumulators for mAP and MRR
-        ap_list = []
-        mrr_list = []
 
         # For each sample, compute metrics
         for i in range(len(target_attn)):
@@ -1510,70 +1503,71 @@ def calculate_comprehensive_localization_metrics(
                 continue
 
             global_true_count += num_true
+            pred_ranks = np.argsort(-target_attn[i])
 
-            # Get rankings of all positions (descending by attention)
-            pred_ranks = np.argsort(-target_attn[i])  # Indices sorted by attention
+            # R-Precision
+            r = num_true
+            top_r_preds = pred_ranks[:r]
+            r_precision_hits = np.sum(np.isin(top_r_preds, true_indices))
+            r_precision_list.append(r_precision_hits / r)
 
-            # ===== Compute Average Precision (AP) for this sample =====
-            # For each true position, find its rank and compute precision at that rank
+            # NDCG@K
+            relevance = np.zeros_like(target_attn[i])
+            relevance[true_indices] = 1
+            
+            def dcg_at_k(r, k):
+                r = np.asarray(r)[:k]
+                if r.size:
+                    return np.sum(r / np.log2(np.arange(2, r.size + 2)))
+                return 0.
+
+            for k in k_list:
+                pred_rel_at_k = relevance[pred_ranks]
+                dcg_val = dcg_at_k(pred_rel_at_k, k)
+                
+                ideal_rel_at_k = np.sort(relevance)[::-1]
+                idcg_val = dcg_at_k(ideal_rel_at_k, k)
+
+                if idcg_val > 0:
+                    ndcg_scores[k].append(dcg_val / idcg_val)
+
+            # MDE (Mean Distance Error) for Top-1 False Positives
+            top_1_pred = pred_ranks[0]
+            if top_1_pred not in true_indices:
+                distances = np.abs(true_indices - top_1_pred)
+                mde_list.append(np.min(distances))
+
+            # mAP and MRR
             precisions_at_k = []
-            for true_pos in true_indices:
-                # Find rank of this true position (0-indexed)
-                rank = np.where(pred_ranks == true_pos)[0]
-                if len(rank) > 0:
-                    rank = rank[0] + 1  # Convert to 1-indexed
-                    # Precision at this rank = (number of correct items up to rank) / rank
-                    # Since we're looking at true positions, count how many true positions are in top-rank
-                    correct_in_topk = np.sum(np.isin(pred_ranks[:rank], true_indices))
-                    precision_at_rank = correct_in_topk / rank
-                    precisions_at_k.append(precision_at_rank)
-
+            for rank_idx, pred_pos in enumerate(pred_ranks):
+                if pred_pos in true_indices:
+                    # Found a true positive, calculate precision at this rank
+                    hit_count = np.sum(np.isin(pred_ranks[:rank_idx+1], true_indices))
+                    precisions_at_k.append(hit_count / (rank_idx + 1))
+            
             if precisions_at_k:
                 ap_list.append(np.mean(precisions_at_k))
 
-            # ===== Compute Reciprocal Rank (RR) for this sample =====
-            # Find the rank of the first correct prediction
             for rank, pos_idx in enumerate(pred_ranks):
                 if pos_idx in true_indices:
-                    mrr_list.append(1.0 / (rank + 1))  # rank is 0-indexed
+                    mrr_list.append(1.0 / (rank + 1))
                     break
-
-            # ===== Compute Global Hits for each K =====
+            
+            # Global Hits for R@K
             for k in k_list:
-                topk_pred = pred_ranks[:k]
-                hit_count = len(np.intersect1d(topk_pred, true_indices))
+                hit_count = len(np.intersect1d(pred_ranks[:k], true_indices))
                 global_hits[k] += hit_count
-                global_pred_count[k] += k  # Each sample contributes K predictions
 
         # ===== Compute Final Metrics =====
         class_results = {}
+        class_results['mAP'] = np.mean(ap_list) if ap_list else 0.0
+        class_results['MRR'] = np.mean(mrr_list) if mrr_list else 0.0
+        class_results['R-Precision'] = np.mean(r_precision_list) if r_precision_list else 0.0
+        class_results['MDE'] = np.mean(mde_list) if mde_list else 0.0
 
-        # mAP: Mean Average Precision
-        if len(ap_list) > 0:
-            class_results['mAP'] = np.mean(ap_list)
-        else:
-            class_results['mAP'] = 0.0
-
-        # MRR: Mean Reciprocal Rank
-        if len(mrr_list) > 0:
-            class_results['MRR'] = np.mean(mrr_list)
-        else:
-            class_results['MRR'] = 0.0
-
-        # Global Recall@K: Micro-Average (Sum of hits / Sum of true sites)
         for k in k_list:
-            if global_true_count > 0:
-                class_results[f'R@{k}'] = global_hits[k] / global_true_count
-            else:
-                class_results[f'R@{k}'] = 0.0
-
-        # Global Precision@K: Sum of hits / (Valid samples * K)
-        num_valid_samples = len(target_attn)
-        for k in k_list:
-            if global_pred_count[k] > 0:
-                class_results[f'P@{k}'] = global_hits[k] / global_pred_count[k]
-            else:
-                class_results[f'P@{k}'] = 0.0
+            class_results[f'R@{k}'] = global_hits[k] / global_true_count if global_true_count > 0 else 0.0
+            class_results[f'NDCG@{k}'] = np.mean(ndcg_scores[k]) if ndcg_scores.get(k) else 0.0
 
         results[class_idx] = class_results
 
@@ -1582,64 +1576,83 @@ def calculate_comprehensive_localization_metrics(
 
 def print_comprehensive_table(
     comprehensive_results: dict,
-    k_list: list = [1, 5, 10],
+    k_list: list = [1, 3, 5, 10],
     logger=None
 ):
     """
-    Print comprehensive localization metrics in a formatted table.
-
-    The table includes:
-    - mAP: Mean Average Precision
-    - MRR: Mean Reciprocal Rank
-    - R@K: Global Recall at K (Micro-Average)
-    - P@K: Global Precision at K
-
-    Args:
-        comprehensive_results: Results from calculate_comprehensive_localization_metrics
-        k_list: List of K values for Recall/Precision columns
-        logger: Optional logger instance
+    Print comprehensive localization metrics in multiple formatted tables.
+    - Table A: General Accuracy (mAP, MRR, R-Precision)
+    - Table B: Recall Analysis (R@K)
+    - Table C: Ranking Quality (NDCG@K)
+    - Table D: Error Analysis (MDE)
     """
     from prettytable import PrettyTable
 
-    output = f"\n{'='*100}\n"
-    output += f"Comprehensive Localization Metrics (Global/Micro-Average)\n"
-    output += f"{'='*100}\n"
+    # Helper to print a table
+    def _print_table(title, table, note=""):
+        output = f"\n{'='*80}\n"
+        output += f"=== {title} ===\n"
+        output += f"{'='*80}\n"
+        output += str(table) + "\n"
+        if note:
+            output += f"Note: {note}\n"
+        print(output)
+        if logger:
+            logger.info(output)
 
-    table = PrettyTable()
-
-    # Build column names dynamically based on k_list
-    field_names = ["Class", "Name", "mAP", "MRR"]
-    for k in k_list:
-        field_names.extend([f"R@{k}", f"P@{k}"])
-
-    table.field_names = field_names
-    table.align = "r"
-    table.align["Class"] = "l"
-    table.align["Name"] = "l"
-    table.align["mAP"] = "r"
-    table.align["MRR"] = "r"
-
+    # --- Table A: General Accuracy ---
+    table_a = PrettyTable()
+    table_a.field_names = ["Class", "Name", "mAP", "MRR", "R-Prec"]
+    table_a.align = "r"
+    table_a.align["Class"] = "l"
+    table_a.align["Name"] = "l"
     for c in range(12):
-        row = [c, MOD_NAMES.get(c, str(c))]
         metrics = comprehensive_results.get(c, {})
+        table_a.add_row([
+            c, MOD_NAMES.get(c, str(c)),
+            f"{metrics.get('mAP', 0.0):.4f}",
+            f"{metrics.get('MRR', 0.0):.4f}",
+            f"{metrics.get('R-Precision', 0.0):.4f}"
+        ])
+    _print_table("Table A: Localization Accuracy (mAP, MRR, R-Precision)", table_a, 
+                 "mAP: Mean Avg Precision, MRR: Mean Reciprocal Rank, R-Prec: R-Precision")
 
-        # Add mAP and MRR
-        row.append(f"{metrics.get('mAP', 0.0):.4f}")
-        row.append(f"{metrics.get('MRR', 0.0):.4f}")
+    # --- Table B: Recall Analysis ---
+    table_b = PrettyTable()
+    table_b.field_names = ["Class", "Name"] + [f"R@{k}" for k in k_list]
+    table_b.align = "r"
+    table_b.align["Class"] = "l"
+    table_b.align["Name"] = "l"
+    for c in range(12):
+        metrics = comprehensive_results.get(c, {})
+        row = [c, MOD_NAMES.get(c, str(c))]
+        row.extend([f"{metrics.get(f'R@{k}', 0.0):.4f}" for k in k_list])
+        table_b.add_row(row)
+    _print_table("Table B: Recall Analysis (R@K)", table_b, "R@K = Global Recall (Micro-Average)")
 
-        # Add Recall and Precision for each K
-        for k in k_list:
-            recall = metrics.get(f'R@{k}', 0.0)
-            precision = metrics.get(f'P@{k}', 0.0)
-            row.append(f"{recall:.4f}")
-            row.append(f"{precision:.4f}")
+    # --- Table C: Ranking Quality ---
+    table_c = PrettyTable()
+    table_c.field_names = ["Class", "Name"] + [f"NDCG@{k}" for k in k_list]
+    table_c.align = "r"
+    table_c.align["Class"] = "l"
+    table_c.align["Name"] = "l"
+    for c in range(12):
+        metrics = comprehensive_results.get(c, {})
+        row = [c, MOD_NAMES.get(c, str(c))]
+        row.extend([f"{metrics.get(f'NDCG@{k}', 0.0):.4f}" for k in k_list])
+        table_c.add_row(row)
+    _print_table("Table C: Ranking Quality (NDCG@K)", table_c, "NDCG = Normalized Discounted Cumulative Gain")
 
-        table.add_row(row)
-
-    output += str(table) + "\n"
-    output += f"Note: R@K = Global Recall (Micro-Average), P@K = Global Precision\n"
-    output += f"      mAP = Mean Average Precision, MRR = Mean Reciprocal Rank\n"
-
-    print(output)
-    if logger:
-        logger.info(output)
+    # --- Table D: Error Analysis ---
+    table_d = PrettyTable()
+    table_d.field_names = ["Class", "Name", "MDE (bp)"]
+    table_d.align = "r"
+    table_d.align["Class"] = "l"
+    table_d.align["Name"] = "l"
+    for c in range(12):
+        metrics = comprehensive_results.get(c, {})
+        table_d.add_row([
+            c, MOD_NAMES.get(c, str(c)),
+            f"{metrics.get('MDE', 0.0):.2f}"
+        ])
+    _print_table("Table D: Error Analysis", table_d, "MDE = Mean Distance Error for Top-1 False Positives (in base pairs)")
