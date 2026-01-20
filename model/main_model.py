@@ -527,6 +527,18 @@ class HierarchicalClassQueryHeadPooling(nn.Module):
         # Scale factor for attention
         self.attention_scale = hidden_dim ** 0.5
 
+    def prune_heads(self, valid_class_indices, valid_group_indices):
+        """
+        Prune the head to only compute specific classes and groups via index masking.
+        
+        Args:
+            valid_class_indices: List of valid class indices to keep
+            valid_group_indices: List of valid group indices to keep
+        """
+        self.register_buffer('valid_class_indices', torch.tensor(valid_class_indices, dtype=torch.long))
+        self.register_buffer('valid_group_indices', torch.tensor(valid_group_indices, dtype=torch.long))
+        print(f"Hierarchical Head Pruned: Active Classes={valid_class_indices}, Active Groups={valid_group_indices}")
+
     def _derive_class_queries(self):
         """
         Derive Class Queries from Group Queries using projectors.
@@ -565,9 +577,9 @@ class HierarchicalClassQueryHeadPooling(nn.Module):
             node_features: [Total_Nodes, Dim]
             batch: [Total_Nodes]
         Returns:
-            logits_12: [Batch, 12]
-            logits_4: [Batch, 4]
-            attn_weights_12: [Batch, 12, Seq_Len] (For supervision/visualization)
+            logits_12: [Batch, 12] or [Batch, Num_Valid_Classes] if pruned
+            logits_4: [Batch, 4] or [Batch, Num_Valid_Groups] if pruned
+            attn_weights_12: [Batch, 12, Seq_Len] or [Batch, Num_Valid_Classes, Seq_Len] if pruned
         """
         batch_size = batch.max().item() + 1
         device = node_features.device
@@ -575,6 +587,13 @@ class HierarchicalClassQueryHeadPooling(nn.Module):
         # 1. Prepare Queries
         class_queries = self._derive_class_queries() # [12, Dim]
         group_queries = self.group_queries           # [4, Dim]
+        
+        # 2. Apply pruning if valid indices are registered
+        if hasattr(self, 'valid_class_indices'):
+            class_queries = class_queries[self.valid_class_indices]
+        
+        if hasattr(self, 'valid_group_indices'):
+            group_queries = group_queries[self.valid_group_indices]
 
         logits_12_list = []
         logits_4_list = []
@@ -717,7 +736,8 @@ class RNA_ClassQuery_Model(nn.Module):
             return_attention: If True, return attention weights (only works with use_simple_pooling=True)
 
         Returns:
-            If use_hierarchical: (logits_12class, logits_4class)
+            If use_hierarchical and return_attention: (logits_12class, logits_4class, attn_weights_12)
+            If use_hierarchical and not return_attention: (logits_12class, logits_4class)
             Elif use_simple_pooling and return_attention: (logits, attn_weights)
             Else: logits
         """
@@ -748,17 +768,19 @@ class RNA_ClassQuery_Model(nn.Module):
             # Hierarchical head returns 3 values: logits_12class, logits_4class, attn_weights_12
             logits_12class, logits_4class, attn_weights_12 = self.class_query_head(node_features, batch)
 
-            if return_attention:
+            if self.training:
                 return logits_12class, logits_4class, attn_weights_12
             else:
-                # Training typically only needs logits
-                return logits_12class, logits_4class
+                return logits_12class, logits_4class, attn_weights_12
 
         elif self.use_simple_pooling:
             logits, attn_weights = self.class_query_head(node_features, batch)
-            if return_attention:
+            if self.training:
                 return logits, attn_weights
             return logits
         else:
             logits = self.class_query_head(node_features, batch)
+            # For compatibility, we assume non-pooling heads don't return attention in this setup
+            if self.training:
+                return logits, None 
             return logits

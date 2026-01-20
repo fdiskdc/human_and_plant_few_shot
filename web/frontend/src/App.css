@@ -1,0 +1,257 @@
+#root {
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+}
+
+.logo {
+  height: 6em;
+  padding: 1.5em;
+  will-change: filter;
+  transition: filter 300ms;
+}
+.logo:hover {
+  filter: drop-shadow(0 0 2em #646cffaa);
+}
+.logo.react:hover {
+  filter: drop-shadow(0 0 2em #61dafbaa);
+}
+
+@keyframes logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  a:nth-of-type(2) .logo {
+    animation: logo-spin infinite 20s linear;
+  }
+}
+
+.card {
+  padding: 2em;
+}
+
+.read-the-docs {
+  color: #888;
+}
+
+/* Ensure footer stays at the bottom */
+.site-layout {
+  min-height: 100vh;
+}
+
+/* Attention Visualization Styles - Viewport Centered Layout */
+.sequence-viewport-container {
+  width: 100%;
+  max-width: 100%;
+  height: 75vh; /* 占据3/4的屏幕高度 */
+  background-color: #f0f2f5;
+  padding: 20px 10px;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 16px;
+  text-align: center; /* 让内容居中 */
+  line-height: 1.5;
+  overflow-x: auto; /* 保留水平滚动以应对极小屏幕 */
+  overflow-y: auto; /* 添加垂直滚动 */
+  display: flex;
+  align-items: center; /* 垂直居中内容 */
+  justify-content: center; /* 水平居中内容 */
+  box-sizing: border-box;
+}
+
+.sequence-base {
+  display: inline-block;
+  padding: 5px 1px;
+  width: 1ch; /* 每个字符大约占一个字符宽度 */
+}
+
+.highlight-container {
+  display: inline-block;
+  position: relative;
+  text-align: center;
+}
+
+.highlighted-base {
+  background-color: #ffc069;
+  color: #000;
+  border-radius: 3px;
+  font-weight: bold;
+}
+
+.annotation-label {
+  position: absolute;
+  bottom: 120%;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: #001529;
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  z-index: 10;
+}
+
+/* Responsive container for all visualization content */
+.viz-content-wrapper {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  box-sizing: border-box;
+}
+
+/* Chart containers with proper overflow handling */
+.chart-container {
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+/* Classification visualization container */
+.classification-viz-container {
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+/* GCN visualization container */
+.gcn-viz-container {
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+/* Space component wrapper for proper overflow */
+.space-wrapper {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  box-sizing: border-box;
+}
+
+/* Ant Design Card wrapper to prevent overflow */
+.card-wrapper {
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+/* ====== 新的彩色方块序列视图样式 ====== */
+
+/* 方块序列视口容器 - 横向滚动布局 */
+.sequence-viewport-container-block {
+  width: 100%;
+  max-width: 100%;
+  height: 60vh;
+  background-color: #fafafa;
+  padding: 40px 20px;
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  box-sizing: border-box;
+  /* 自定义滚动条样式 */
+  scrollbar-width: thin;
+  scrollbar-color: #888 #f0f0f0;
+}
+
+/* Webkit浏览器滚动条样式 */
+.sequence-viewport-container-block::-webkit-scrollbar {
+  height: 10px;
+}
+
+.sequence-viewport-container-block::-webkit-scrollbar-track {
+  background: #f0f0f0;
+  border-radius: 5px;
+}
+
+.sequence-viewport-container-block::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 5px;
+}
+
+.sequence-viewport-container-block::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* 单个序列方块 */
+.sequence-block {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 18px;
+  font-weight: 600;
+  color: #333333;
+  border-radius: 6px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  flex-shrink: 0;
+}
+
+.sequence-block:hover {
+  transform: scale(1.1);
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.15);
+}
+
+/* 高亮方块的容器 */
+.highlight-container-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  margin: 0 4px;
+}
+
+/* 高亮方块的标签 */
+.annotation-label-block {
+  background-color: #001529;
+  color: white;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  margin-bottom: 12px;
+  box-shadow: 0 2px 8px rgba(0, 21, 41, 0.3);
+  z-index: 10;
+}
+
+/* 高亮方块 - 带有外围高亮效果 */
+.highlighted-block {
+  outline: 4px solid #ff4d4f !important;
+  box-shadow: 0 0 20px rgba(255, 77, 79, 0.8), 0 4px 12px rgba(0, 0, 0, 0.2) !important;
+  transform: scale(1.15);
+  z-index: 5;
+  animation: pulse-highlight 2s ease-in-out infinite;
+}
+
+/* 高亮脉冲动画 */
+@keyframes pulse-highlight {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(255, 77, 79, 0.8), 0 4px 12px rgba(0, 0, 0, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(255, 77, 79, 1), 0 4px 16px rgba(0, 0, 0, 0.3);
+  }
+}

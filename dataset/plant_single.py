@@ -168,6 +168,7 @@ class PlantSingleDataset(Dataset):
             Data: PyG Data object with x, edge_index, y, y_4class, is_plant, real_idx
         """
         is_plant = idx < self.num_plant
+        full_label = None
 
         if is_plant:
             # Fetch from Plant
@@ -175,6 +176,8 @@ class PlantSingleDataset(Dataset):
             seq_bytes = self.plant_seq[real_idx].copy()
             y12 = self.plant_y12[real_idx].copy()
             y4 = self.plant_y4[real_idx].copy()
+            if self.plant_full_labels is not None:
+                full_label = self.plant_full_labels[real_idx].copy()
             # Cache retrieval for Plant
             edge_index = self._get_edge_index(real_idx, is_plant=True, seq_bytes=seq_bytes)
         else:
@@ -183,8 +186,14 @@ class PlantSingleDataset(Dataset):
             seq_bytes = self.zero_seq[real_idx].copy()
             y12 = self.zero_y12[real_idx].copy()
             y4 = self.zero_y4[real_idx].copy()
+            if self.zero_full_labels is not None:
+                full_label = self.zero_full_labels[real_idx].copy()
             # Cache retrieval for Zero
             edge_index = self._get_edge_index(real_idx, is_plant=False, seq_bytes=seq_bytes)
+
+        # If full_label (site-level) is not available, create a zero array
+        if full_label is None:
+            full_label = np.zeros(TARGET_LENGTH, dtype=np.int64)
 
         # Common processing
         one_hot_seq = self._one_hot_encode_optimized(seq_bytes)
@@ -194,7 +203,8 @@ class PlantSingleDataset(Dataset):
             x=node_features,
             edge_index=edge_index,
             y=torch.FloatTensor(y12).unsqueeze(0),
-            y_4class=torch.FloatTensor(y4).unsqueeze(0)
+            y_4class=torch.FloatTensor(y4).unsqueeze(0),
+            y_site=torch.LongTensor(full_label)  # Add site-level labels
         )
 
         # Add metadata for tracking
