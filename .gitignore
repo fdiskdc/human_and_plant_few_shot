@@ -18,6 +18,9 @@ logs/
 npy/
 cache/
 
+# 忽略所有名为node_modules的文件夹（无论在哪个目录下）
+**/node_modules
+
 # Web frontend logs and build artifacts
 /web/node_modules
 /web/dist
