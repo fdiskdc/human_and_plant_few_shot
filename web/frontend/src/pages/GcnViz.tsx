@@ -233,6 +233,7 @@ const GcnViz: React.FC = () => {
           onNodeClick={handleNodeClick}
           onBackgroundClick={handleBackgroundClick}
           enableNodeDrag={true}
+          cooldownTicks={200}
         />
       )}
 
