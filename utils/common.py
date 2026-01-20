@@ -1089,7 +1089,7 @@ def test_epoch(
                 with torch.cuda.amp.autocast():
                     if use_hierarchical:
                         # Multi-task learning: get both 12-class and 4-class logits
-                        logits_12, logits_4 = model(batch.x, batch.edge_index, batch.batch)
+                        logits_12, logits_4,_ = model(batch.x, batch.edge_index, batch.batch)
 
                         # Generate 4-class labels from 12-class labels
                         y_12 = batch.y  # (Batch, 12)

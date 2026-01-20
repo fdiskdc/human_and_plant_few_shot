@@ -20,7 +20,7 @@ import copy
 from datetime import datetime
 
 # Set GPU to use first device
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Subset

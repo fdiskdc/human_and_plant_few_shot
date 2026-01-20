@@ -490,17 +490,27 @@ def apply_hybrid_strategy(model, k_shot, logger):
         trainable_params.append(head.group_queries)
         logger.info(f"  ✓ UNFROZEN: class_query_head.group_queries ({head.group_queries.numel():,} params)")
 
-    total_trainable = sum(p.numel() for p in trainable_params)
+    total_model_params = sum(p.numel() for p in model.parameters())
+    trainable_count = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    frozen_count = total_model_params - trainable_count
+
+    # Distinguish weights and biases among trainable params based on dimensionality
+    # This assumes weights are typically 2D or higher, and biases are 1D
+    trainable_weights_count = sum(p.numel() for p in trainable_params if p.dim() > 1)
+    trainable_biases_count = sum(p.numel() for p in trainable_params if p.dim() == 1)
 
     logger.info(f"\n{'='*80}")
     logger.info("SUMMARY:")
-    logger.info(f"  Total Parameters:     {frozen_count + unfrozen_weight_count:,}")
-    logger.info(f"  Frozen Parameters:    {frozen_count:,} ({100*frozen_count/(frozen_count+unfrozen_weight_count+unfrozen_bias_count):.2f}%)")
-    logger.info(f"  Trainable Weights:    {unfrozen_weight_count:,} ({100*unfrozen_weight_count/(frozen_count+unfrozen_weight_count+unfrozen_bias_count):.2f}%)")
-    if unfrozen_bias_count > 0:
-        logger.info(f"  Trainable Bias:       {unfrozen_bias_count:,} ({100*unfrozen_bias_count/(frozen_count+unfrozen_weight_count+unfrozen_bias_count):.2f}%) [UPDATING PRIORS]")
+    logger.info(f"  Total Parameters:     {total_model_params:,}")
+    if total_model_params > 0: # Avoid division by zero
+        logger.info(f"  Frozen Parameters:    {frozen_count:,} ({frozen_count/total_model_params*100:.2f}%)")
+        logger.info(f"  Trainable Parameters: {trainable_count:,} ({trainable_count/total_model_params*100:.2f}%)")
     else:
-        logger.info(f"  Frozen Bias Terms:    {frozen_bias_count:,} [PRESERVING CLASS PRIORS]")
+        logger.info(f"  Frozen Parameters:    {frozen_count:,} (0.00%)")
+        logger.info(f"  Trainable Parameters: {trainable_count:,} (0.00%)")
+    
+    logger.info(f"    └─ Trainable Weights: {trainable_weights_count:,}")
+    logger.info(f"    └─ Trainable Biases:  {trainable_biases_count:,}")
     logger.info(f"{'='*80}\n")
 
     return trainable_params
@@ -622,11 +632,23 @@ def train_binary_model(model, support_data_list, target_class, config, device, l
 
                 # Forward pass
                 if config.use_hierarchical:
-                    logits_class, logits_group = model(batch.x, batch.edge_index, batch.batch)
+                    # Model returns 3 values when in training mode: (logits_12class, logits_4class, attn_weights_12)
+                    out = model(batch.x, batch.edge_index, batch.batch)
+                    if isinstance(out, tuple):
+                        if len(out) == 3:
+                            logits_class, logits_group, _ = out
+                        else:
+                            logits_class, logits_group = out
+                    else:
+                        logits_class = out
                     # Use the target class logit for binary classification
                     binary_logits = logits_class[:, target_class].unsqueeze(1)
                 else:
-                    logits_class = model(batch.x, batch.edge_index, batch.batch)
+                    out = model(batch.x, batch.edge_index, batch.batch)
+                    if isinstance(out, tuple):
+                        logits_class = out[0]
+                    else:
+                        logits_class = out
                     binary_logits = logits_class[:, target_class].unsqueeze(1)
 
                 # Binary focal loss
@@ -1074,6 +1096,6 @@ if __name__ == "__main__":
     parser.add_argument('--config', type=str, default='json/plant_single.json', help='Path to config file')
     parser.add_argument('--checkpoint', type=str, required=False,
                        help='Path to pre-trained checkpoint',
-                       default="logs/rna_classification_20260111_111223/checkpoints/epoch_010.pt")
+                       default="logs/rna_classification_20260116_101325/checkpoints/epoch_030.pt")
     args = parser.parse_args()
     main(config_path=args.config, checkpoint_path=args.checkpoint)
