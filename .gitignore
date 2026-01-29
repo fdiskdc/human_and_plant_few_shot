@@ -17,7 +17,7 @@ __pycache__/
 logs/
 npy/
 cache/
-
+gen3process/
 # 忽略所有名为node_modules的文件夹（无论在哪个目录下）
 **/node_modules
 
