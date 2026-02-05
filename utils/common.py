@@ -1203,71 +1203,193 @@ def compute_attention_supervision_loss(
     """
     Compute attention supervision loss using KL divergence.
 
-    This loss encourages the model to attend to positions where modifications
-    actually occur (as indicated by y_site labels).
-
-    Args:
-        attn_weights: Attention weights [Batch_Size, Num_Classes, Seq_Len]
-        y_site: Site-level labels [Batch_Size * Seq_Len] (from PyG batch)
-        num_classes: Number of classes (default 12)
-        seq_len: Sequence length (default 1001)
-
+    [English]
+    Purpose:
+        This loss function encourages the model to attend to positions where modifications
+        actually occur (as indicated by y_site labels). It uses KL divergence to measure
+        the difference between the attention distribution and the true modification sites.
+        
+        The loss is computed separately for each class and then averaged across classes.
+        Only classes that have at least one sample with modifications contribute to the loss.
+        
+    Inputs:
+        attn_weights (torch.Tensor): Model's attention weights
+            - Shape: [Batch_Size, Num_Classes, Seq_Len]
+            - Represents attention weights for each position, class, and sample
+            - Values should be in [0, 1] and sum to 1 across positions for each class
+            
+        y_site (torch.Tensor): Site-level modification labels
+            - Shape: [Batch_Size * Seq_Len] (flattened from PyG batch format)
+            - Contains original label IDs (1-12) indicating the modification type at each position
+            - 0 indicates no modification at that position
+            
+        num_classes (int): Number of modification classes
+            - Default: 12 (for RNA modifications)
+            - Should match the number of classes in the model
+            
+        seq_len (int): Length of the RNA sequence
+            - Default: 1001 (typical length centered around modification site)
+            - Must match the sequence length used in the dataset
+            
     Returns:
-        loss_attn: Attention supervision loss (scalar)
+        loss_attn (torch.Tensor): Scalar attention supervision loss
+            - Shape: [] (scalar tensor)
+            - Lower values indicate better alignment between attention and true sites
+            - Returns 0.0 if no valid samples have modifications
+            
+    Key Algorithm:
+        1. Reshape y_site from flattened format to [Batch, Seq_Len]
+        2. For each class:
+           a. Map class_idx (0-11) to original label ID (1-12) using LABEL_MAPPING
+           b. Create binary mask where position has this modification
+           c. Filter samples that have this modification
+           d. Normalize target mask to probability distribution
+           e. Convert attention to log probabilities
+           f. Compute KL divergence between predicted and target distributions
+        3. Average KL divergence across all valid classes
+        
+    [Chinese]
+    函数作用:
+        计算注意力监督损失，使用KL散度衡量模型注意力分布与真实修饰位点之间的差异。
+        该损失函数鼓励模型将注意力集中在实际发生修饰的位置上（由y_site标签指示）。
+        
+        该损失函数分别对每个类别计算损失，然后在所有有效类别上取平均。
+        只有包含至少一个带有修饰的样本的类别才会对损失产生贡献。
+        
+    输入:
+        attn_weights (torch.Tensor): 模型的注意力权重
+            - 形状: [Batch_Size, Num_Classes, Seq_Len]
+            - 表示每个位置、类别和样本的注意力权重
+            - 数值应在[0, 1]范围内，且对于每个类别在位置维度上和为1
+            
+        y_site (torch.Tensor): 位点级别的修饰标签
+            - 形状: [Batch_Size * Seq_Len] (来自PyG批次的扁平化格式)
+            - 包含原始标签ID (1-12)，指示每个位置的修饰类型
+            - 0表示该位置没有修饰
+            
+        num_classes (int): 修饰类别的数量
+            - 默认值: 12 (用于RNA修饰)
+            - 应与模型中的类别数匹配
+            
+        seq_len (int): RNA序列的长度
+            - 默认值: 1001 (以修饰位点为中心的典型长度)
+            - 必须与数据集中使用的序列长度匹配
+            
+    输出:
+        loss_attn (torch.Tensor): 标量注意力监督损失
+            - 形状: [] (标量张量)
+            - 较低的值表示注意力与真实位点之间更好的对齐
+            - 如果没有有效的样本包含修饰，则返回0.0
+            
+    关键算法:
+        1. 将y_site从扁平化格式重塑为[Batch, Seq_Len]
+        2. 对每个类别:
+           a. 使用LABEL_MAPPING将class_idx (0-11)映射到原始标签ID (1-12)
+           b. 创建二进制掩码，标记该类别修饰出现的位置
+           c. 筛选包含该类别修饰的样本
+           d. 将目标掩码归一化为概率分布
+           e. 将注意力转换为对数概率
+           f. 计算预测分布与目标分布之间的KL散度
+        3. 在所有有效类别上平均KL散度
     """
     import torch.nn.functional as F
 
+    # Get batch size and device from attention weights
+    # [English] Extract batch size from the first dimension of attention weights
+    # [Chinese] 从注意力权重的第一维提取批次大小
     batch_size = attn_weights.size(0)
     device = attn_weights.device
 
-    # Reshape y_site from [Batch * Seq_Len] to [Batch, Seq_Len]
+    # Reshape y_site from flattened PyG format to [Batch, Seq_Len]
+    # [English] Reshape site labels from [Batch*Seq_Len] to [Batch, Seq_Len] for easier indexing
+    # [Chinese] 将位点标签从[Batch*Seq_Len]重塑为[Batch, Seq_Len]以便于索引
     y_site_reshaped = y_site.view(batch_size, seq_len)
 
+    # Initialize loss accumulator and valid class counter
+    # [English] Initialize variables to accumulate total loss and count valid classes
+    # [Chinese] 初始化变量以累积总损失和统计有效类别数
     loss_attn = 0.0
     num_valid_classes = 0
 
-    # Iterate over each class
+    # Iterate over each modification class
+    # [English] Loop through each class to compute class-specific attention supervision loss
+    # [Chinese] 遍历每个类别以计算特定类别的注意力监督损失
     for class_idx in range(num_classes):
-        # Find the original label ID for this class_idx
+        # Find the original label ID (1-12) for this class_idx (0-11)
+        # [English] Map model class index (0-11) back to original label ID (1-12) using LABEL_MAPPING
         # LABEL_MAPPING: {1: 0, 2: 1, ..., 12: 11}
         # We need to reverse this: find k where LABEL_MAPPING[k] == class_idx
+        # [Chinese] 使用LABEL_MAPPING将模型类别索引(0-11)映射回原始标签ID(1-12)
+        # LABEL_MAPPING: {1: 0, 2: 1, ..., 12: 11}
+        # 需要反向查找：找到满足LABEL_MAPPING[k] == class_idx的k
         original_label_id = None
         for k, v in LABEL_MAPPING.items():
             if v == class_idx:
                 original_label_id = k
                 break
 
+        # Skip if no valid mapping found
+        # [English] Continue to next class if no valid label ID mapping exists
+        # [Chinese] 如果没有找到有效的标签ID映射，则跳过此类
         if original_label_id is None:
             continue
 
         # Generate binary mask: 1 if position has this modification, 0 otherwise
+        # [English] Create binary mask where 1 indicates presence of this modification at each position
+        # [Chinese] 创建二进制掩码，1表示每个位置存在此修饰
         target_mask = (y_site_reshaped == original_label_id).float()
 
         # Only compute loss for samples that have this modification
+        # [English] Filter to only include samples that have at least one occurrence of this modification
+        # [Chinese] 只筛选至少包含一次此修饰的样本
         has_mod_mask = target_mask.sum(dim=1) > 0
 
+        # Check if there are any valid samples with this modification
+        # [English] Only compute KL divergence if there are samples with this modification
+        # [Chinese] 只有存在包含此修饰的样本时才计算KL散度
         if has_mod_mask.sum() > 0:
+            # Increment valid class counter
+            # [English] Count this class as valid since it has samples with the modification
+            # [Chinese] 增加有效类别计数器，因为此类包含修饰样本
             num_valid_classes += 1
 
-            # Get predictions and targets for samples with this modification
-            pred_attn = attn_weights[has_mod_mask, class_idx, :]  # [M, Seq_Len]
-            target_mask_filtered = target_mask[has_mod_mask]  # [M, Seq_Len]
+            # Get attention predictions and target masks for samples with this modification
+            # [English] Extract attention weights and target masks for samples containing this modification
+            # [Chinese] 提取包含此修饰的样本的注意力权重和目标掩码
+            pred_attn = attn_weights[has_mod_mask, class_idx, :]  # [M, Seq_Len] - attention for valid samples
+            target_mask_filtered = target_mask[has_mod_mask]  # [M, Seq_Len] - binary target for valid samples
 
             # Normalize target to probability distribution for KL divergence
+            # [English] Normalize binary target mask to sum to 1 for each sample (convert to probability distribution)
+            # [Chinese] 将二进制目标掩码归一化为每个样本和为1（转换为概率分布）
             target_dist = target_mask_filtered / (target_mask_filtered.sum(dim=1, keepdim=True) + 1e-10)
 
-            # Use log_softmax for prediction (KL divergence expects log probabilities)
+            # Use log for prediction (KL divergence expects log probabilities)
+            # [English] Apply logarithm to attention weights (KL divergence requires log probabilities for predictions)
+            # [Chinese] 对注意力权重应用对数（KL散度要求预测值使用对数概率）
             pred_log_dist = torch.log(pred_attn + 1e-10)
 
-            # Compute KL divergence
+            # Compute KL divergence between predicted and target distributions
+            # [English] Calculate KL divergence measuring difference between attention and true site distribution
+            # reduction='batchmean' computes the mean of the batch results
+            # [Chinese] 计算KL散度，衡量注意力分布与真实位点分布之间的差异
+            # reduction='batchmean'计算批次结果的平均值
             loss_kl = F.kl_div(pred_log_dist, target_dist, reduction='batchmean')
 
+            # Accumulate loss for this class
+            # [English] Add the KL divergence loss for this class to the total loss
+            # [中文] 将此类的KL散度损失加到总损失中
             loss_attn += loss_kl
 
     # Average over classes that have valid samples
+    # [English] Compute the average loss across all classes that had valid samples
+    # [中文] 计算所有有效类别的平均损失
     if num_valid_classes > 0:
         loss_attn = loss_attn / num_valid_classes
     else:
+        # Return zero loss if no valid classes found
+        # [English] Return zero tensor if no samples contained any modifications
+        # [中文] 如果没有样本包含任何修饰，则返回零张量
         loss_attn = torch.tensor(0.0, device=device)
 
     return loss_attn
@@ -1656,3 +1778,263 @@ def print_comprehensive_table(
             f"{metrics.get('MDE', 0.0):.2f}"
         ])
     _print_table("Table D: Error Analysis", table_d, "MDE = Mean Distance Error for Top-1 False Positives (in base pairs)")
+
+
+
+# ============================================================================
+# Tolerated Localization Metrics (Within Radius M)
+# ============================================================================
+# ============================================================================
+# Tolerated Localization Metrics (Within Radius M) - 修正版 (基于站点覆盖逻辑)
+# ============================================================================
+
+
+def apply_nms_1d(scores: np.ndarray, k: int, radius: int) -> np.ndarray:
+    """
+    1D 非极大值抑制 (NMS)。
+    
+    Args:
+        scores: 1D 注意力权重数组 (SeqLen,)
+        k: 需要提取的 Top-K 数量
+        radius: 抑制半径 (通常取 M 或 2M)
+        
+    Returns:
+        indices: 经过 NMS 筛选后的前 K 个索引
+    """
+    indices = []
+    temp_scores = scores.copy()
+    seq_len = len(temp_scores)
+    
+    for _ in range(k):
+        p = np.argmax(temp_scores)
+        if temp_scores[p] <= 0:
+            break
+        indices.append(p)
+        
+        # 抑制周围区域
+        start = max(0, p - radius)
+        end = min(seq_len, p + radius + 1)
+        temp_scores[start:end] = 0
+        
+    return np.array(indices)
+
+
+
+def calculate_topk_recall_tolerateM(
+    attn_weights: torch.Tensor,
+    y_site: torch.Tensor,
+    k_list: list = [1, 5, 10, 20, 50],
+    M: int = 5,
+    num_classes: int = 12,
+    seq_len: int = 1001
+) -> dict:
+    """
+    集成 NMS 的 Top-K 召回率计算。
+    使用 NMS 提取独立的预测峰，并计算真实位点的覆盖率。
+    """
+    import numpy as np
+
+    attn_weights = attn_weights.detach().cpu().numpy()
+    y_site = y_site.detach().cpu().numpy()
+
+    if y_site.ndim == 1:
+        batch_size = attn_weights.shape[0]
+        y_site = y_site.reshape(batch_size, seq_len)
+
+    results = {}
+    max_k = max(k_list)
+    # NMS 抑制半径建议设置为 M，确保预测点之间至少间隔 M，避免重复命中同一区域
+    nms_radius = M 
+
+    for class_idx in range(num_classes):
+        original_label_id = next((k for k, v in LABEL_MAPPING.items() if v == class_idx), None)
+        has_mod_samples = np.any(y_site == original_label_id, axis=1)
+        
+        if original_label_id is None or np.sum(has_mod_samples) == 0:
+            results[class_idx] = {k: 0.0 for k in k_list}
+            continue
+
+        target_attn = attn_weights[has_mod_samples, class_idx, :]
+        target_labels = y_site[has_mod_samples]
+        class_recalls = {k: [] for k in k_list}
+
+        for i in range(len(target_attn)):
+            true_indices = np.where(target_labels[i] == original_label_id)[0]
+            num_true = len(true_indices)
+            if num_true == 0: continue
+
+            # --- [核心修改 1] 使用 NMS 提取 Top-K 索引 ---
+            # 这样选出的点不会挤在一起
+            topk_indices_nms = apply_nms_1d(target_attn[i], max_k, nms_radius)
+
+            for k in k_list:
+                current_topk = topk_indices_nms[:k]
+                
+                # --- [核心修改 2] 站点覆盖逻辑 ---
+                covered_true_sites = 0
+                for t_idx in true_indices:
+                    # 如果 NMS 选出的前 K 个点中有任何一个落入该位点 M 范围内
+                    if np.any(np.abs(current_topk - t_idx) <= M):
+                        covered_true_sites += 1
+                
+                recall = covered_true_sites / num_true
+                class_recalls[k].append(recall)
+
+        results[class_idx] = {k: np.mean(class_recalls[k]) if class_recalls[k] else 0.0 for k in k_list}
+
+    return results
+
+
+def calculate_comprehensive_localization_metrics_tolerateM(
+    attn_weights: torch.Tensor,
+    y_site: torch.Tensor,
+    k_list: list = [1, 3, 5, 10],
+    M: int = 5,
+    num_classes: int = 12,
+    seq_len: int = 1001
+) -> dict:
+    """
+    集成 NMS 的综合评估指标。
+    """
+    import numpy as np
+
+    attn_weights = attn_weights.detach().cpu().numpy()
+    y_site = y_site.detach().cpu().numpy()
+
+    if y_site.ndim == 1:
+        batch_size = attn_weights.shape[0]
+        y_site = y_site.reshape(batch_size, seq_len)
+
+    results = {}
+    nms_radius = M
+
+    for class_idx in range(num_classes):
+        original_label_id = next((k for k, v in LABEL_MAPPING.items() if v == class_idx), None)
+        has_mod_samples = np.any(y_site == original_label_id, axis=1)
+
+        if original_label_id is None or np.sum(has_mod_samples) == 0:
+            results[class_idx] = {'mAP': 0.0, 'MRR': 0.0, 'R-Precision': 0.0}
+            for k in k_list: results[class_idx][f'R@{k}'] = 0.0; results[class_idx][f'NDCG@{k}'] = 0.0
+            continue
+
+        target_attn = attn_weights[has_mod_samples, class_idx, :]
+        target_labels = y_site[has_mod_samples]
+
+        ap_list, mrr_list, r_prec_list = [], [], []
+        ndcg_scores = {k: [] for k in k_list}
+        global_hits = {k: 0 for k in k_list}
+        global_true_count = 0
+
+        for i in range(len(target_attn)):
+            true_indices = np.where(target_labels[i] == original_label_id)[0]
+            num_true = len(true_indices)
+            if num_true == 0: continue
+            
+            global_true_count += num_true
+            
+            # --- 使用 NMS 获取全序列排名 (提取所有可能的独立峰) ---
+            pred_ranks_nms = apply_nms_1d(target_attn[i], k=seq_len, radius=nms_radius)
+
+            # 1. R-Precision (基于 NMS 覆盖)
+            top_r_preds = pred_ranks_nms[:num_true]
+            r_covered = sum(1 for t_idx in true_indices if np.any(np.abs(top_r_preds - t_idx) <= M))
+            r_prec_list.append(r_covered / num_true)
+
+            # 2. mAP & MRR (基于 NMS 覆盖)
+            precisions = []
+            hit_count = 0
+            first_hit_rank = None
+            covered_mask = np.zeros(num_true, dtype=bool)
+            
+            for rank_idx, p in enumerate(pred_ranks_nms):
+                distances = np.abs(true_indices - p)
+                match = (distances <= M) & (~covered_mask)
+                if np.any(match):
+                    # 发现了一个新的、尚未被覆盖的真实位点
+                    target_idx = np.where(match)[0][0]
+                    covered_mask[target_idx] = True
+                    hit_count += 1
+                    precisions.append(hit_count / (rank_idx + 1))
+                    if first_hit_rank is None: 
+                        first_hit_rank = rank_idx + 1
+                if np.all(covered_mask): break
+            
+            if precisions: ap_list.append(np.mean(precisions))
+            if first_hit_rank: mrr_list.append(1.0 / first_hit_rank)
+
+            # 3. NDCG@K & Recall@K
+            for k in k_list:
+                topk = pred_ranks_nms[:k]
+                k_covered = sum(1 for t_idx in true_indices if np.any(np.abs(topk - t_idx) <= M))
+                global_hits[k] += k_covered
+                
+                # NDCG
+                actual_dcg = 0
+                k_covered_mask = np.zeros(num_true, dtype=bool)
+                for rank_idx, p in enumerate(topk):
+                    dist = np.abs(true_indices - p)
+                    match = (dist <= M) & (~k_covered_mask)
+                    if np.any(match):
+                        target_idx = np.where(match)[0][0]
+                        k_covered_mask[target_idx] = True
+                        actual_dcg += 1.0 / np.log2(rank_idx + 2)
+                
+                ideal_dcg = sum(1.0 / np.log2(j + 2) for j in range(min(k, num_true)))
+                if ideal_dcg > 0: ndcg_scores[k].append(actual_dcg / ideal_dcg)
+
+        # 汇总
+        res = {'mAP': np.mean(ap_list) if ap_list else 0.0, 'MRR': np.mean(mrr_list) if mrr_list else 0.0, 'R-Precision': np.mean(r_prec_list) if r_prec_list else 0.0}
+        for k in k_list:
+            res[f'R@{k}'] = min(global_hits[k] / global_true_count, 1.0) if global_true_count > 0 else 0.0
+            res[f'NDCG@{k}'] = np.mean(ndcg_scores[k]) if ndcg_scores[k] else 0.0
+        results[class_idx] = res
+
+    return results
+def print_topk_table_tolerateM(topk_results: dict, k_list: list = [1, 5, 10, 20, 50], M: int = 5, logger=None):
+    """Prints Top-K recall table with tolerance M."""
+    from prettytable import PrettyTable
+    output = f"\n{'='*80}\n"
+    output += f"Top-K Site Localization Recall (Tolerate Radius M={M})\n"
+    output += f"{'='*80}\n"
+
+    table = PrettyTable()
+    table.field_names = ["Class", "Name"] + [f"Top-{k}" for k in k_list]
+    table.align = "r"
+    table.align["Class"] = "l"; table.align["Name"] = "l"
+
+    for c in range(12):
+        row = [c, MOD_NAMES.get(c, str(c))]
+        metrics = topk_results.get(c, {})
+        row.extend([f"{metrics.get(k, 0.0):.4f}" for k in k_list])
+        table.add_row(row)
+
+    output += str(table) + "\n"
+    print(output)
+    if logger: logger.info(output)
+
+
+
+def print_comprehensive_table_tolerateM(comp_results: dict, k_list: list = [1, 3, 5, 10], M: int = 5, logger=None):
+    """Prints comprehensive localization tables with tolerance M."""
+    from prettytable import PrettyTable
+    
+    def _output(title, table):
+        out = f"\n{'='*80}\n=== {title} (M={M}) ===\n{'='*80}\n{table}\n"
+        print(out); 
+        if logger: logger.info(out)
+
+    # Table A: Accuracy
+    ta = PrettyTable(["Class", "Name", "mAP", "MRR", "R-Prec"])
+    ta.align = "r"; ta.align["Class"] = "l"; ta.align["Name"] = "l"
+    for c in range(12):
+        m = comp_results.get(c, {})
+        ta.add_row([c, MOD_NAMES.get(c, str(c)), f"{m.get('mAP',0):.4f}", f"{m.get('MRR',0):.4f}", f"{m.get('R-Precision',0):.4f}"])
+    _output("Table A: Localization Accuracy", ta)
+
+    # Table B: Recall
+    tb = PrettyTable(["Class", "Name"] + [f"R@{k}" for k in k_list])
+    tb.align = "r"; tb.align["Class"] = "l"; tb.align["Name"] = "l"
+    for c in range(12):
+        m = comp_results.get(c, {})
+        tb.add_row([c, MOD_NAMES.get(c, str(c))] + [f"{m.get(f'R@{k}',0):.4f}" for k in k_list])
+    _output("Table B: Recall Analysis", tb)

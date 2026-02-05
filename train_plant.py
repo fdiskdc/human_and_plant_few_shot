@@ -37,6 +37,7 @@ from utils.few_shot import (
 # [REMOVED] reset_hierarchical_head function is removed to preserve pre-trained knowledge.
 
 def sample_support_set(full_dataset, train_indices, k, valid_classes, random_seed=None):
+
     if k == 0 or k == '0':
         return []
 
@@ -465,6 +466,6 @@ def main(config_path='json/plant.json', checkpoint_path=None):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', default='json/plant.json')
-    parser.add_argument('--checkpoint', default="logs/rna_classification_20260111_111223/checkpoints/epoch_010.pt")
+    parser.add_argument('--checkpoint', default="logs/rna_classification_20260129_164810/checkpoints/epoch_030.pt")
     args = parser.parse_args()
     main(args.config, args.checkpoint)

@@ -362,6 +362,13 @@ def print_evaluation_results(
     output += f"Evaluation Results - Epoch {epoch}\n"
     output += f"{'='*120}\n"
 
+    # Table 0: Human - 12 Class (Optimal Threshold)
+    if metrics_opt:
+        output += f"\n### Table 0: Human - 12 Class (Optimal Threshold) ###\n"
+        table = create_evaluation_table(metrics_opt, "12class", "unbalance", "Human")
+        output += str(table) + "\n"
+        output += f"Human - Optimal Threshold Macro F1: {metrics_opt.get('group_opt_macro_f1', 0.0):.4f}\n"
+
     # Table 1: Human - 12 Class (Unbalanced)
     if metrics_unbalance:
         output += f"\n### Table 1: Human - 12 Class (Unbalanced/Real Distribution) ###\n"
