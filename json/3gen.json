@@ -1,5 +1,5 @@
 {
-  "experiment_name": "rna_classification",
+  "experiment_name": "3gen_rna_test",
   
   "data": {
     "human_data_dir": "npy/human3",
@@ -9,11 +9,16 @@
 
   "model": {
     "use_hierarchical": true,
-    "cnn_hidden_dim": 64,
-    "cnn_kernel_sizes": [1, 3, 5, 7],
+    "cnn_hidden_dim": 128,
+    "cnn_kernel_sizes": [
+      1,
+      3,
+      5,
+      7
+    ],
     "cnn_dropout": 0.1,
-    "gcn_hidden_dim": 128,
-    "gcn_out_channels": 128,
+    "gcn_hidden_dim": 256,
+    "gcn_out_channels": 256,
     "gcn_num_layers": 3,
     "gcn_dropout": 0.3,
     "num_classes": 12,
@@ -25,7 +30,7 @@
 
   "training": {
     "batch_size": 240,
-    "num_epochs": 100,
+    "num_epochs": 40,
     "learning_rate": 0.001,
     "weight_decay": 0.0001,
     "warmup_epochs": 2,
@@ -39,7 +44,7 @@
     "balance_ratio": 0.9,
     "use_amp": true,
     "use_attention_supervision": true,
-    "attention_lambda": 0.5
+    "attention_lambda": 1.0
   },
 
   "few_shot": {
