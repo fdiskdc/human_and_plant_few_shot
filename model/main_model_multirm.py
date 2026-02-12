@@ -1,8 +1,15 @@
-
 """
-RNA_ClassQuery_Model - Multi-scale Class-Query Classification Model for RNA
+RNA_ClassQuery_Model for MultIRM - Multi-scale Class-Query Classification Model
 
-This module implements the main model for RNA 12-class multi-label classification.
+This module implements main model for MultIRM 12-class multi-label classification
+with 4-class hierarchical grouping.
+
+The 4-class grouping rule:
+- A (Adenine): m6A, m1A, m6Am, Am, AtoI
+- C (Cytosine): m5C, Cm
+- G (Guanine): m7G, Gm
+- U (Uracil): m5U, Psi (Ψ), Um
+
 The model combines:
 1. Parallel CNN for multi-scale local feature extraction
 2. GCN for graph-structured feature propagation
@@ -11,7 +18,6 @@ The model combines:
 Sub-modules:
 - ParallelCNNBlock: Multi-scale CNN feature extraction
 - GCNBlock: Graph Convolutional Network block
-- ClassQueryHead: Class-Query classification head using Cross-Attention
 - HierarchicalClassQueryHeadPooling: Hierarchical head with Group-to-Class derivation
 """
 
@@ -21,9 +27,6 @@ from torch_geometric.data import Data, Batch
 from torch_geometric.nn import GCNConv, global_add_pool
 from torch_geometric.utils import softmax
 from typing import Optional, Tuple
-
-# Import GROUP_TO_CLASS_INDICES for hierarchical head
-from utils.common import GROUP_TO_CLASS_INDICES
 
 
 # ============================================================================
@@ -42,7 +45,7 @@ class ParallelCNNBlock(nn.Module):
         kernel_sizes: Tuple[int, ...] = (1, 3, 5, 7),
         use_layer_norm: bool = True,
         dropout: float = 0.1,
-        seq_len: int = 1001
+        seq_len: int = 51  # MultIRM sequence length
     ):
         super().__init__()
 
@@ -78,11 +81,8 @@ class ParallelCNNBlock(nn.Module):
             x = x.transpose(1, 2)
         elif x.dim() == 2 and x.size(1) == 4:
             if batch is not None:
-                # Dynamic calculation of batch_size and seq_len for variable-length sequences
                 batch_size = batch.max().item() + 1
-                num_nodes_per_sample = batch.bincount()
-                seq_len = num_nodes_per_sample[0].item()  # Assume all samples have same length
-                x = x.view(batch_size, seq_len, 4).transpose(1, 2)
+                x = x.view(batch_size, self.seq_len, 4).transpose(1, 2)
             else:
                 x = x.t().unsqueeze(0)
 
@@ -170,216 +170,50 @@ class GCNBlock(nn.Module):
         return x
 
 
-class ClassQueryHead(nn.Module):
-    """
-    Class-Query classification head using Cross-Attention
-    """
-
-    def __init__(
-        self,
-        hidden_dim: int = 128,
-        num_classes: int = 12,
-        num_heads: int = 4,
-        dropout: float = 0.1,
-        use_decoder: bool = True,
-        seq_len: int = 1001
-    ):
-        super().__init__()
-
-        self.hidden_dim = hidden_dim
-        self.num_classes = num_classes
-        self.use_decoder = use_decoder
-        self.seq_len = seq_len
-
-        # Learnable class queries
-        self.class_queries = nn.Parameter(torch.randn(num_classes, hidden_dim))
-
-        if use_decoder:
-            decoder_layer = nn.TransformerDecoderLayer(
-                d_model=hidden_dim,
-                nhead=num_heads,
-                dim_feedforward=hidden_dim * 4,
-                dropout=dropout,
-                batch_first=True,
-                norm_first=True
-            )
-            self.cross_attention = nn.TransformerDecoder(decoder_layer, num_layers=1)
-            self.output_proj = nn.Sequential(
-                nn.LayerNorm(hidden_dim),
-                nn.Linear(hidden_dim, 1)
-            )
-        else:
-            self.cross_attention = nn.MultiheadAttention(
-                embed_dim=hidden_dim,
-                num_heads=num_heads,
-                dropout=dropout,
-                batch_first=True
-            )
-            self.output_proj = nn.Sequential(
-                nn.LayerNorm(hidden_dim),
-                nn.Linear(hidden_dim, hidden_dim // 2),
-                nn.ReLU(),
-                nn.Dropout(dropout),
-                nn.Linear(hidden_dim // 2, 1)
-            )
-    
-    def prune_heads(self, valid_class_indices):
-        """
-        Physically prune the class queries to only include valid indices.
-        """
-        with torch.no_grad():
-            new_queries = self.class_queries.data[valid_class_indices].clone()
-            self.class_queries = nn.Parameter(new_queries)
-            self.num_classes = len(valid_class_indices)
-            print(f"ClassQueryHead Pruned: {len(valid_class_indices)} classes remaining.")
-
-    def forward(
-        self,
-        node_features: torch.Tensor,
-        batch: torch.Tensor
-    ) -> torch.Tensor:
-        batch_size = batch.max().item() + 1
-        device = node_features.device
-
-        # Calculate actual max_nodes from batch
-        num_nodes_per_sample = batch.bincount()
-        max_nodes = num_nodes_per_sample[0].item()  # Assume all samples have same length
-
-        queries = self.class_queries.unsqueeze(0).expand(batch_size, -1, -1).to(device)
-
-        memory = torch.zeros(batch_size, max_nodes, self.hidden_dim, device=device)
-        mask = torch.zeros(batch_size, max_nodes, dtype=torch.bool, device=device)
-
-        for b in range(batch_size):
-            batch_mask = batch == b
-            batch_nodes = node_features[batch_mask] 
-
-            num_batch_nodes = batch_nodes.size(0)
-            memory[b, :num_batch_nodes, :] = batch_nodes
-            mask[b, num_batch_nodes:] = True
-
-        memory_mask = mask
-
-        attended_features = self.cross_attention(
-            tgt=queries,
-            memory=memory,
-            memory_key_padding_mask=memory_mask
-        )
-
-        logits = self.output_proj(attended_features)
-        logits = logits.squeeze(-1)
-
-        return logits.to(node_features.device)
-
-
-class ClassQueryHeadPooling(nn.Module):
-    """
-    Simplified Class-Query head using attention pooling
-    """
-
-    def __init__(
-        self,
-        hidden_dim: int = 128,
-        num_classes: int = 12,
-        dropout: float = 0.1
-    ):
-        super().__init__()
-
-        self.hidden_dim = hidden_dim
-        self.num_classes = num_classes
-        self.class_queries = nn.Parameter(torch.randn(num_classes, hidden_dim))
-        self.attention_scale = hidden_dim ** 0.5
-
-        self.output_proj = nn.Sequential(
-            nn.LayerNorm(hidden_dim),
-            nn.Linear(hidden_dim, hidden_dim // 2),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim // 2, 1)
-        )
-    
-    def prune_heads(self, valid_class_indices):
-        with torch.no_grad():
-            new_queries = self.class_queries.data[valid_class_indices].clone()
-            self.class_queries = nn.Parameter(new_queries)
-            self.num_classes = len(valid_class_indices)
-
-    def forward(
-        self,
-        node_features: torch.Tensor,
-        batch: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Forward pass with attention weight return for supervision.
-
-        Args:
-            node_features: Node features from GCN
-            batch: Batch assignment vector
-
-        Returns:
-            logits: Classification logits [Batch_Size, Num_Classes]
-            attn_weights: Attention weights [Batch_Size, Num_Classes, Seq_Len=1001]
-        """
-        batch_size = batch.max().item() + 1
-        device = node_features.device
-
-        queries = self.class_queries.to(device)
-
-        logits_list = []
-        attn_weights_list = []
-
-        for b in range(batch_size):
-            batch_mask = batch == b
-            batch_nodes = node_features[batch_mask]
-
-            # scores: [Num_Classes, Seq_Len]
-            scores = torch.matmul(queries, batch_nodes.t()) / self.attention_scale
-            # attn_weights: [Num_Classes, Seq_Len]
-            attn_weights = torch.softmax(scores, dim=1)
-            aggregated = torch.matmul(attn_weights, batch_nodes)
-            class_logits = self.output_proj(aggregated)
-
-            logits_list.append(class_logits.squeeze(-1))
-            attn_weights_list.append(attn_weights)
-
-        logits = torch.stack(logits_list, dim=0)
-        # Stack attention weights: [Batch_Size, Num_Classes, Seq_Len]
-        all_attn_weights = torch.stack(attn_weights_list, dim=0)
-
-        return logits.to(node_features.device), all_attn_weights.to(node_features.device)
-
-
 class HierarchicalClassQueryHeadPooling(nn.Module):
-    def __init__(self, hidden_dim, num_classes, group_to_class_indices, dropout=0.1, use_layer_norm=True, num_heads=8, seq_len=1001):
+    def __init__(self, hidden_dim, num_classes=12, dropout=0.1, use_layer_norm=True, num_heads=8):
         """
-        Hierarchical Head with Attention Pooling and Query Derivation.
+        Hierarchical Head with Attention Pooling and Query Derivation for MultIRM.
         Uses PyTorch MultiheadAttention for efficient parallel computation.
+        
+        4-class grouping rule:
+        - A (Adenine): Am(0), m1A(4), m6A(7), m6Am(8), AtoI(11)
+        - C (Cytosine): Cm(1), m5C(5)
+        - G (Guanine): Gm(2), m7G(9)
+        - U (Uracil): Um(3), m5U(6), Psi(10)
         """
         super().__init__()
         self.hidden_dim = hidden_dim
         self.num_classes = num_classes
-        self.group_to_class_indices = group_to_class_indices
-        self.num_groups = 4 # A, C, G, U
         self.num_heads = num_heads
-        self.seq_len = seq_len  # Sequence length for dense batch processing
+        self.seq_len = 51  # MultIRM sequence length
 
         # Map group indices to group names: 0->'A', 1->'C', 2->'G', 3->'U'
         self.group_names = ['A', 'C', 'G', 'U']
 
+        # Group to class indices mapping for MultIRM (new order)
+        # Group 0 (A): Am(0), m1A(4), m6A(7), m6Am(8), AtoI(11)
+        # Group 1 (C): Cm(1), m5C(5)
+        # Group 2 (G): Gm(2), m7G(9)
+        # Group 3 (U): Um(3), m5U(6), Psi(10)
+        self.group_to_class_indices = {
+            'A': [0, 4, 7, 8, 11],    # Am, m1A, m6A, m6Am, AtoI
+            'C': [1, 5],               # Cm, m5C
+            'G': [2, 9],               # Gm, m7G
+            'U': [3, 6, 10]            # Um, m5U, Psi
+        }
+
         # 1. Group Queries (Trainable parameters) [4, Hidden_Dim]
-        self.group_queries = nn.Parameter(torch.randn(self.num_groups, hidden_dim))
+        self.group_queries = nn.Parameter(torch.randn(4, hidden_dim))
 
         # 2. Group-wise Independent Projectors (Derivation)
         self.group_projectors = nn.ModuleList()
-        print(f"Initializing HierarchicalClassQueryHeadPooling with group_to_class_indices: {group_to_class_indices}")
-        for g_idx in range(self.num_groups):
+        print(f"Initializing HierarchicalClassQueryHeadPooling for MultIRM with group_to_class_indices: {self.group_to_class_indices}")
+        for g_idx in range(4):
             group_name = self.group_names[g_idx]
-            if group_name in group_to_class_indices:
-                num_subclasses = len(group_to_class_indices[group_name])
-                print(f"  Group {g_idx} ('{group_name}'): {num_subclasses} subclasses, indices: {group_to_class_indices[group_name]}")
-            else:
-                num_subclasses = 0
-                print(f"  Group {g_idx} ('{group_name}'): NOT found in group_to_class_indices")
+            class_indices = self.group_to_class_indices[group_name]
+            num_subclasses = len(class_indices)
+            print(f"  Group {g_idx} ('{group_name}'): {num_subclasses} subclasses, indices: {class_indices}")
 
             # MLP: Group_Query -> Subclass_Queries
             projector = nn.Sequential(
@@ -425,7 +259,7 @@ class HierarchicalClassQueryHeadPooling(nn.Module):
 
     def prune_heads(self, valid_class_indices, valid_group_indices):
         """
-        Prune the head to only compute specific classes and groups via index masking.
+        Prune head to only compute specific classes and groups via index masking.
         
         Args:
             valid_class_indices: List of valid class indices to keep
@@ -438,25 +272,33 @@ class HierarchicalClassQueryHeadPooling(nn.Module):
     def _derive_class_queries(self):
         """
         Derive Class Queries from Group Queries using projectors.
+        
+        This function implements the 4query-12query generation logic according to the rule:
+        - A (Adenine): m6A, m1A, m6Am, Am, AtoI
+        - C (Cytosine): m5C, Cm
+        - G (Guanine): m7G, Gm
+        - U (Uracil): m5U, Psi (Ψ), Um
         """
         all_sub_queries = []
         all_global_indices = []
 
-        for g_idx in range(self.num_groups):
+        for g_idx in range(4):
             group_name = self.group_names[g_idx]
-            if group_name not in self.group_to_class_indices:
-                continue
+            class_indices = self.group_to_class_indices[group_name]
             
-            g_query = self.group_queries[g_idx].unsqueeze(0) 
+            g_query = self.group_queries[g_idx].unsqueeze(0)  # [1, Hidden_Dim]
             sub_flat = self.group_projectors[g_idx](g_query)
             
-            num_subs = len(self.group_to_class_indices[group_name])
-            sub_queries = sub_flat.view(num_subs, self.hidden_dim)
+            num_subs = len(class_indices)
+            sub_queries = sub_flat.view(num_subs, self.hidden_dim)  # [Num_Subclasses, Hidden_Dim]
             
             all_sub_queries.append(sub_queries)
-            all_global_indices.extend(self.group_to_class_indices[group_name])
+            all_global_indices.extend(class_indices)
 
-        flat_queries = torch.cat(all_sub_queries, dim=0)
+        # Concatenate all subclass queries
+        flat_queries = torch.cat(all_sub_queries, dim=0)  # [12, Hidden_Dim]
+        
+        # Reorder to match global class index order [0, 1, 2, ..., 11]
         indices_tensor = torch.tensor(all_global_indices, device=flat_queries.device)
         
         # Use the same dtype as flat_queries to handle mixed precision (AMP)
@@ -480,10 +322,6 @@ class HierarchicalClassQueryHeadPooling(nn.Module):
         batch_size = batch.max().item() + 1
         device = node_features.device
 
-        # Calculate actual sequence length from batch
-        num_nodes_per_sample = batch.bincount()
-        actual_seq_len = num_nodes_per_sample[0].item()  # Assume all samples have same length
-
         # 1. Prepare Queries
         class_queries = self._derive_class_queries()  # [12, Dim]
         group_queries = self.group_queries            # [4, Dim]
@@ -497,7 +335,7 @@ class HierarchicalClassQueryHeadPooling(nn.Module):
 
         # 3. Prepare Inputs (Dense Batch)
         # Reshape node_features from [Total_Nodes, Dim] to [Batch, Seq_Len, Dim]
-        dense_nodes = node_features.view(batch_size, actual_seq_len, -1)
+        dense_nodes = node_features.view(batch_size, self.seq_len, -1)
 
         # 4. Prepare Queries - Expand to batch dimension
         # [Num_Classes, Dim] -> [Batch, Num_Classes, Dim]
@@ -531,9 +369,11 @@ class HierarchicalClassQueryHeadPooling(nn.Module):
         # Return: 12-class Logits, 4-class Logits, 12-class Attention Weights
         return logits_12_final.to(device), logits_4_final.to(device), attn_weights_12.to(device)
 
+
 class RNA_ClassQuery_Model(nn.Module):
     """
     RNA Classification Model using Multi-scale CNN + GCN + Class-Query Attention
+    Designed for MultIRM dataset with 12-class hierarchical classification
     """
 
     def __init__(
@@ -548,18 +388,15 @@ class RNA_ClassQuery_Model(nn.Module):
         num_classes: int = 12,
         num_attn_heads: int = 4,
         attn_dropout: float = 0.1,
-        use_simple_pooling: bool = False,
-        use_hierarchical: bool = False,
-        use_layer_norm: bool = True,
-        seq_len: int = 1001
+        use_hierarchical: bool = True,
+        use_layer_norm: bool = True
     ):
         super().__init__()
 
-        self.cnn_out_channels = cnn_hidden_dim  # CNN output is now cnn_hidden_dim, not len(kernel_sizes) * cnn_hidden_dim
+        self.cnn_out_channels = cnn_hidden_dim
         self.gcn_out_channels = gcn_out_channels
         self.num_classes = num_classes
         self.use_hierarchical = use_hierarchical
-        self.seq_len = seq_len
 
         self.cnn_block = ParallelCNNBlock(
             in_channels=4,
@@ -567,7 +404,7 @@ class RNA_ClassQuery_Model(nn.Module):
             kernel_sizes=cnn_kernel_sizes,
             use_layer_norm=use_layer_norm,
             dropout=cnn_dropout,
-            seq_len=seq_len
+            seq_len=51  # MultIRM sequence length
         )
 
         self.gcn_block = GCNBlock(
@@ -579,29 +416,13 @@ class RNA_ClassQuery_Model(nn.Module):
             use_residual=True
         )
 
-        if use_hierarchical:
-            self.class_query_head = HierarchicalClassQueryHeadPooling(
-                hidden_dim=gcn_out_channels,
-                num_classes=num_classes,
-                group_to_class_indices=GROUP_TO_CLASS_INDICES,
-                dropout=attn_dropout,
-                seq_len=seq_len
-            )
-        elif use_simple_pooling:
-            self.class_query_head = ClassQueryHeadPooling(
-                hidden_dim=gcn_out_channels,
-                num_classes=num_classes,
-                dropout=attn_dropout
-            )
-        else:
-            self.class_query_head = ClassQueryHead(
-                hidden_dim=gcn_out_channels,
-                num_classes=num_classes,
-                num_heads=num_attn_heads,
-                dropout=attn_dropout,
-                use_decoder=True,
-                seq_len=seq_len
-            )
+        # Use HierarchicalClassQueryHeadPooling for MultIRM
+        self.class_query_head = HierarchicalClassQueryHeadPooling(
+            hidden_dim=gcn_out_channels,
+            num_classes=num_classes,
+            dropout=attn_dropout,
+            use_layer_norm=use_layer_norm
+        )
 
     def prune_heads(self, valid_class_indices, valid_group_indices=None):
         """
@@ -612,9 +433,7 @@ class RNA_ClassQuery_Model(nn.Module):
                 raise ValueError("Hierarchical model requires valid_group_indices for pruning.")
             self.class_query_head.prune_heads(valid_class_indices, valid_group_indices)
         else:
-            # For standard head, we just pass the class indices
-            if hasattr(self.class_query_head, 'prune_heads'):
-                 self.class_query_head.prune_heads(valid_class_indices)
+            raise NotImplementedError("Pruning is only supported for hierarchical mode")
 
     def forward(
         self,
@@ -630,13 +449,11 @@ class RNA_ClassQuery_Model(nn.Module):
             x: Input features
             edge_index: Graph edge indices
             batch: Batch assignment vector
-            return_attention: If True, return attention weights (only works with use_simple_pooling=True)
+            return_attention: If True, return attention weights
 
         Returns:
-            If use_hierarchical and return_attention: (logits_12class, logits_4class, attn_weights_12)
-            If use_hierarchical and not return_attention: (logits_12class, logits_4class)
-            Elif use_simple_pooling and return_attention: (logits, attn_weights)
-            Else: logits
+            If return_attention: (logits_12class, logits_4class, attn_weights_12)
+            Else: (logits_12class, logits_4class)
         """
         if isinstance(x, Data) or isinstance(x, Batch):
             batch_obj = x
@@ -647,7 +464,6 @@ class RNA_ClassQuery_Model(nn.Module):
         if x.dim() == 3:
             batch_size = x.size(0)
             seq_len = x.size(1)
-            assert seq_len == self.seq_len, f"Expected sequence length {self.seq_len}, got {seq_len}"
             if batch is None:
                 batch = torch.arange(
                     batch_size, device=x.device
@@ -661,23 +477,10 @@ class RNA_ClassQuery_Model(nn.Module):
         node_features = self.cnn_block(x, batch)
         node_features = self.gcn_block(node_features, edge_index)
 
-        if self.use_hierarchical:
-            # Hierarchical head returns 3 values: logits_12class, logits_4class, attn_weights_12
-            logits_12class, logits_4class, attn_weights_12 = self.class_query_head(node_features, batch)
+        # Hierarchical head returns 3 values: logits_12class, logits_4class, attn_weights_12
+        logits_12class, logits_4class, attn_weights_12 = self.class_query_head(node_features, batch)
 
-            if self.training:
-                return logits_12class, logits_4class, attn_weights_12
-            else:
-                return logits_12class, logits_4class, attn_weights_12
-
-        elif self.use_simple_pooling:
-            logits, attn_weights = self.class_query_head(node_features, batch)
-            if self.training:
-                return logits, attn_weights
-            return logits
+        if return_attention:
+            return logits_12class, logits_4class, attn_weights_12
         else:
-            logits = self.class_query_head(node_features, batch)
-            # For compatibility, we assume non-pooling heads don't return attention in this setup
-            if self.training:
-                return logits, None 
-            return logits
+            return logits_12class, logits_4class
