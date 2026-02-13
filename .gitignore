@@ -30,7 +30,7 @@ gen3process/
 /web/yarn-error.log*
 /web/pnpm-debug.log*
 /web/lerna-debug.log*
-
+/multirmprocess
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

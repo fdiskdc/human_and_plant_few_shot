@@ -6,7 +6,9 @@ import subprocess
 import os
 import hashlib
 import pickle
+import h5py
 from typing import List, Dict, Tuple, Optional
+from tqdm import tqdm
 
 # MultIRM modification classes (12 classes) - new order
 MULTIRM_CLASSES = ['Am', 'Cm', 'Gm', 'Um', 'm1A', 'm5C', 'm5U', 'm6A', 'm6Am', 'm7G', 'Psi', 'AtoI']
@@ -56,44 +58,16 @@ LINEARFOLD_PATH = '/home/dc/vscode/LinearFold/linearfold'
 # 批量缓存文件名
 BATCH_CACHE_FILE = 'structures_cache.npz'
 
+# 预计算的 Byte 到 One-Hot 索引映射 (0-4: A,C,G,T,U, N=4)
+BYTE_TO_INDEX = np.zeros(256, dtype=np.int64)
+BYTE_TO_INDEX[:] = 4  # Default to N
+for b, i in zip([65, 97, 67, 99, 71, 103, 84, 116, 85, 117], [0, 0, 1, 1, 2, 2, 3, 3, 3, 3]):
+    BYTE_TO_INDEX[b] = i
 
-def _create_byte_to_onehot_mapping():
-    """
-    创建字节值到one-hot编码的映射表，避免字符串处理开销
-
-    Returns:
-        np.array: 形状为(256, 4)的映射表
-    """
-    mapping = np.zeros((256, 4), dtype=np.float32)
-
-    # A (ASCII 65, 97)
-    mapping[65] = [1., 0., 0., 0.]
-    mapping[97] = [1., 0., 0., 0.]
-
-    # C (ASCII 67, 99)
-    mapping[67] = [0., 1., 0., 0.]
-    mapping[99] = [0., 1., 0., 0.]
-
-    # G (ASCII 71, 103)
-    mapping[71] = [0., 0., 1., 0.]
-    mapping[103] = [0., 0., 1., 0.]
-
-    # T (ASCII 84, 116)
-    mapping[84] = [0., 0., 0., 1.]
-    mapping[116] = [0., 0., 0., 1.]
-
-    # U (ASCII 85, 117)
-    mapping[85] = [0., 0., 0., 1.]
-    mapping[117] = [0., 0., 0., 1.]
-
-    # N (ASCII 78, 110)
-    mapping[78] = [0., 0., 0., 0.]
-    mapping[110] = [0., 0., 0., 0.]
-
-    return mapping
-
-
-_BYTE_TO_ONEHOT_MAPPING = _create_byte_to_onehot_mapping()
+# 预计算的 One-Hot 嵌入矩阵 (5, 4) - 最后一行全是0对应 'N'
+eye = torch.eye(4, dtype=torch.float32)
+zero_row = torch.zeros(1, 4, dtype=torch.float32)
+ONE_HOT_EMB = torch.cat([eye, zero_row], dim=0)
 
 
 def run_linearfold(sequences, timeout_seconds=1800):
@@ -229,53 +203,23 @@ def build_sequential_edge_index(sequence):
         return torch.empty((2, 0), dtype=torch.long)
 
 
-def _worker_process_batch(args):
-    """
-    工作进程函数：处理一批序列的二级结构计算
-
-    Args:
-        args: tuple (batch_indices, sequences_bytes_array, linearfold_path)
-
-    Returns:
-        list: [(idx, edge_index_numpy), ...] 或 [(idx, None, error_msg), ...]
-    """
-    batch_indices, sequences_bytes_array, linearfold_path = args
-
-    sequences_str = []
-    for idx in batch_indices:
-        sequence_bytes = sequences_bytes_array[idx].copy()
-        sequence_str = sequence_bytes.tobytes().decode('ascii', errors='ignore')
-        sequences_str.append(sequence_str)
-
-    results = []
-    try:
-        structures = run_linearfold(sequences_str)
-
-        for i, (idx, structure) in enumerate(zip(batch_indices, structures)):
-            edge_index = build_edge_index_from_structure(sequences_str[i], structure)
-            edge_index_numpy = edge_index.cpu().numpy()
-            results.append((idx, edge_index_numpy, None))
-
-    except Exception as e:
-        for idx in batch_indices:
-            results.append((idx, None, str(e)))
-
-    return results
-
-
 class MultirmDataset(Dataset):
     """
-    用于加载MultIRM RNA修饰数据集
-    支持对每个类进行正负样本采样
+    优化版 Multirm 数据集加载器
+    核心优化：
+    1. 内存驻留 Tensors：在 __init__ 阶段预计算所有数据为 Tensor 格式
+    2. 预计算索引映射：针对 Oversampling 策略，提前生成映射表
+    3. __getitem__ 纯查表：零计算开销，极速数据加载
 
     Args:
-        data_dir (str): 数据目录路径，默认为 '../npy/multirm/split'
-        numsample (int): 每个类抽取的正样本和负样本数量，默认50
-        mode (str): 'train', 'test', 或 'valid'，默认为 'train'
-        cache_dir (str): 缓存目录路径，默认为 '../npy/cache/multirm'
-        use_cache (bool): 是否启用二级结构缓存，默认为True
-        preload_cache (bool): 是否在初始化时加载所有边索引到内存，默认为True
-        seed (int): 随机种子，用于可重复采样，默认为42
+        data_dir (str): 数据目录路径
+        numsample (int): 每个类抽取的正样本和负样本数量
+        mode (str): 'train', 'test', 或 'valid'
+        cache_dir (str): 缓存目录路径
+        use_cache (bool): 是否启用二级结构缓存
+        preload_cache (bool): 是否在初始化时加载所有边索引到内存
+        seed (int): 随机种子
+        use_4class (bool): 是否使用4类模式
     """
 
     def __init__(
@@ -289,10 +233,13 @@ class MultirmDataset(Dataset):
         seed: int = 42,
         use_4class: bool = True
     ):
-        # 自动检测数据目录路径
+        self.mode = mode
+        self.use_4class = use_4class
+        self.use_cache = use_cache
+        self.seed = seed
+        
+        # 自动定位数据目录
         if data_dir is None:
-            # 检测是从项目根目录还是dataset子目录运行
-            # 现在需要指向 51split 目录（包含按类分组的子目录）
             possible_paths = [
                 'npy/multirm/51split',
                 '../npy/multirm/51split',
@@ -302,293 +249,201 @@ class MultirmDataset(Dataset):
                 if os.path.exists(path):
                     data_dir = path
                     break
-
+            
             if data_dir is None:
                 raise RuntimeError(
                     f"无法找到multirm数据目录。请手动指定data_dir参数。\n"
                     f"尝试过的路径: {possible_paths}"
                 )
-
+        
         self.data_dir = data_dir
-        self.numsample = numsample
-        self.mode = mode
-        self.use_cache = use_cache
-        self.seed = seed
-        self.use_4class = use_4class
-        self._batch_cache = None
-        self._edge_indices = None
-        self._rng = np.random.default_rng(self.seed)
-
+        
         # 设置缓存目录
         if cache_dir is None:
-            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            self.CACHE_DIR = os.path.join(project_root, 'npy', 'cache', 'multirm')
+            self.cache_dir = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                'npy', 'cache', 'multirm'
+            )
         else:
-            self.CACHE_DIR = cache_dir
-
-        if self.use_cache:
-            os.makedirs(self.CACHE_DIR, exist_ok=True)
-
-        # 加载全部数据集
-        self._load_data_meta()
-
-        # 加载缓存
-        if self.use_cache and preload_cache:
-            self._load_batch_cache()
-
-    def _load_data_meta(self):
-        """加载全部数据集到内存"""
-        print(f"\n{'='*60}")
-        print(f"加载MultIRM数据集 (mode={self.mode}, numsample={self.numsample})")
-        print(f"{'='*60}")
-
-        # 读取按类别分组的文件
-        self.all_samples = []
-        self.class_data = {}
-        total_samples = 0
-
-        for class_name in MULTIRM_CLASSES:
-            pos_dir = os.path.join(self.data_dir, class_name, 'pos')
-            neg_dir = os.path.join(self.data_dir, class_name, 'neg')
-
-            # 检查目录是否存在
-            if not os.path.exists(pos_dir) or not os.path.exists(neg_dir):
-                print(f"  {class_name}: 目录不存在，跳过")
-                continue
-
-            pos_in_path = os.path.join(pos_dir, f'{self.mode}_in.npy')
-            pos_out_path = os.path.join(pos_dir, f'{self.mode}_out.npy')
-            pos_out_4class_path = os.path.join(pos_dir, f'{self.mode}_out_4class.npy')
-            
-            neg_in_path = os.path.join(neg_dir, f'{self.mode}_in.npy')
-            neg_out_path = os.path.join(neg_dir, f'{self.mode}_out.npy')
-            neg_out_4class_path = os.path.join(neg_dir, f'{self.mode}_out_4class.npy')
-
-            try:
-                # 读取正样本
-                pos_seqs = np.load(pos_in_path, allow_pickle=True)
-                pos_labels = np.load(pos_out_path, allow_pickle=True)
-                num_pos = len(pos_seqs)
-
-                # 读取负样本
-                neg_seqs = np.load(neg_in_path, allow_pickle=True)
-                neg_labels = np.load(neg_out_path, allow_pickle=True)
-                num_neg = len(neg_seqs)
-
-                self.class_data[class_name] = {
-                    'num_pos': num_pos,
-                    'num_neg': num_neg
-                }
-
-                # 加载4类标签
-                if self.use_4class:
-                    pos_labels_4class = np.load(pos_out_4class_path, allow_pickle=True)
-                    neg_labels_4class = np.load(neg_out_4class_path, allow_pickle=True)
-                else:
-                    pos_labels_4class = None
-                    neg_labels_4class = None
-
-                # 将正样本添加到全部样本列表
-                for i in range(num_pos):
-                    self.all_samples.append({
-                        'class_name': class_name,
-                        'is_pos': True,
-                        'index': i,
-                        'sequence_bytes': pos_seqs[i],
-                        'label': pos_labels[i],
-                        'label_4class': pos_labels_4class[i] if pos_labels_4class is not None else None
-                    })
-                    total_samples += 1
-
-                # 将负样本添加到全部样本列表
-                for i in range(num_neg):
-                    self.all_samples.append({
-                        'class_name': class_name,
-                        'is_pos': False,
-                        'index': i,
-                        'sequence_bytes': neg_seqs[i],
-                        'label': neg_labels[i],
-                        'label_4class': neg_labels_4class[i] if neg_labels_4class is not None else None
-                    })
-                    total_samples += 1
-
-                print(f"  {class_name}: 正样本{num_pos}, 负样本{num_neg}")
-
-            except Exception as e:
-                print(f"  {class_name}: 加载数据失败: {e}，跳过")
-                self.class_data[class_name] = {
-                    'num_pos': 0,
-                    'num_neg': 0
-                }
-                continue
+            self.cache_dir = cache_dir
         
-        self.using_array_mode = False
-
-        print(f"\n数据集加载完成:")
-        print(f"  总样本数: {total_samples}")
-        print(f"  使用4类模式: {self.use_4class}")
+        if self.use_cache:
+            os.makedirs(self.cache_dir, exist_ok=True)
+        
+        # ========== 第1步：加载原始数据到内存 ==========
+        print(f"\n{'='*60}")
+        print(f"加载MultIRM数据集 (mode={self.mode}, numsample={numsample})")
+        print(f"{'='*60}")
+        raw_samples = self._load_raw_data()
+        print(f"加载了 {len(raw_samples)} 个原始样本")
+        
+        # ========== 第2步：加载结构缓存 ==========
+        print(f"正在加载结构缓存...")
+        edge_cache = self._load_structure_cache()
+        print(f"加载了 {len(edge_cache)} 个缓存条目")
+        
+        # ========== 第3步：预处理数据为 Tensor 格式（关键加速步骤）==========
+        print(f"正在将 {len(raw_samples)} 个样本转换为 Tensor...")
+        self.data_x = []
+        self.data_edge_index = []
+        self.data_y = []
+        self.data_y_4 = []
+        self.data_class_idx = []
+        
+        for sample in tqdm(raw_samples, desc="预处理数据"):
+            # A. 处理序列特征
+            seq_bytes = sample['sequence_bytes'].view(np.uint8)
+            seq_indices = BYTE_TO_INDEX[seq_bytes]  # Map bytes to 0-4
+            x = ONE_HOT_EMB[torch.from_numpy(seq_indices)]  # Vectorized lookup
+            self.data_x.append(x)
+            
+            # B. 处理边索引 (Look up from loaded cache)
+            cache_key = sample['cache_key']
+            if cache_key in edge_cache:
+                self.data_edge_index.append(edge_cache[cache_key])
+            else:
+                # Fallback: 仅生成线性边
+                seq_len = len(seq_bytes)
+                row = torch.arange(seq_len - 1, dtype=torch.long)
+                col = torch.arange(1, seq_len, dtype=torch.long)
+                edge_index = torch.stack([torch.cat([row, col]), torch.cat([col, row])], dim=0)
+                self.data_edge_index.append(edge_index)
+            
+            # C. 处理标签
+            self.data_y.append(torch.tensor(sample['label'], dtype=torch.float32).unsqueeze(0))
+            
+            if sample['label_4class'] is not None:
+                self.data_y_4.append(torch.tensor(sample['label_4class'], dtype=torch.float32).unsqueeze(0))
+            else:
+                self.data_y_4.append(None)
+            
+            self.data_class_idx.append(torch.tensor([CLASS_TO_IDX[sample['class_name']]], dtype=torch.long))
+        
+        # ========== 第4步：构建索引映射 (Oversampling Logic) ==========
+        self.indices_map = self._build_indices_map(raw_samples)
+        print(f"数据集初始化完成. 虚拟长度: {len(self.indices_map)}, 真实样本数: {len(raw_samples)}")
+        
+        # 存储原始样本信息用于后续操作
+        self.raw_samples = raw_samples
         print(f"{'='*60}\n")
-
-    def __len__(self) -> int:
-        """返回数据集大小（全部样本数）"""
-        if self.using_array_mode:
-            return len(self.all_sequences)
-        return len(self.all_samples)
-
-    def __getitem__(self, idx: int) -> Data:
+    
+    def _load_raw_data(self):
+        """加载原始 .npy 文件"""
+        samples = []
+        file_prefix = self.mode
+        
+        for class_name in MULTIRM_CLASSES:
+            for is_pos in [True, False]:
+                sub_dir = os.path.join(self.data_dir, class_name, 'pos' if is_pos else 'neg')
+                in_path = os.path.join(sub_dir, f'{file_prefix}_in.npy')
+                out_path = os.path.join(sub_dir, f'{file_prefix}_out.npy')
+                out_4_path = os.path.join(sub_dir, f'{file_prefix}_out_4class.npy')
+                
+                if os.path.exists(in_path):
+                    try:
+                        seqs = np.load(in_path, allow_pickle=True)
+                        labels = np.load(out_path, allow_pickle=True)
+                        labels_4 = np.load(out_4_path, allow_pickle=True) if self.use_4class and os.path.exists(out_4_path) else None
+                        
+                        for i in range(len(seqs)):
+                            samples.append({
+                                'sequence_bytes': seqs[i],
+                                'label': labels[i],
+                                'label_4class': labels_4[i] if labels_4 is not None and i < len(labels_4) else None,
+                                'class_name': class_name,
+                                'is_pos': is_pos,
+                                'cache_key': f"{class_name}_{self.mode}_{'pos' if is_pos else 'neg'}_{i}"
+                            })
+                    except Exception as e:
+                        print(f"  Warning: 加载 {class_name} {'pos' if is_pos else 'neg'} 失败: {e}")
+        
+        return samples
+    
+    def _load_structure_cache(self):
+        """一次性加载 H5 缓存"""
+        cache_path = os.path.join(self.cache_dir, f"multirm_{self.mode}_structures_cache.h5")
+        cache = {}
+        
+        if os.path.exists(cache_path):
+            try:
+                with h5py.File(cache_path, 'r') as f:
+                    for k in tqdm(f.keys(), desc="加载结构缓存"):
+                        cache[k] = torch.from_numpy(f[k][:])
+                print(f"成功从 {cache_path} 加载缓存")
+            except Exception as e:
+                print(f"警告: 加载缓存失败: {e}")
+        
+        return cache
+    
+    def _build_indices_map(self, raw_samples):
         """
-        获取单个数据样本
-
-        Args:
-            idx (int): 样本索引
-
-        Returns:
-            Data: PyG Data对象，包含：
-                - x: 节点特征 (1001, 4)
-                - edge_index: 边索引 (2, E)
-                - y: 12类标签向量 (1, 12)
-                - y_4: 4类标签向量 (1, 4) - 当use_4class=True时
-                - class_idx: 类别索引（用于批量加载）
+        构建虚拟索引到真实物理索引的映射数组
+        实现 Oversampling with Max-Length Alignment 策略
         """
-        if not self.using_array_mode:
-            # 直接从内存中获取样本
-            sample = self.all_samples[idx]
+        if self.mode != 'train':
+            # 测试/验证模式：直接使用原始索引
+            return np.arange(len(raw_samples))
+        
+        # 训练模式：按类分组
+        class_groups = {}
+        for idx, sample in enumerate(raw_samples):
+            key = (sample['class_name'], sample['is_pos'])
+            if key not in class_groups:
+                class_groups[key] = []
+            class_groups[key].append(idx)
+        
+        # 打印统计信息
+        print(f"\n各桶数据统计:")
+        for (class_name, is_pos), indices in sorted(class_groups.items()):
+            pos_neg = "Pos" if is_pos else "Neg"
+            print(f"  {class_name:6s} {pos_neg:3s}: {len(indices):5d}")
+        
+        # 找到最大桶
+        max_len = max(len(indices) for indices in class_groups.values()) if class_groups else 0
+        print(f"\n训练模式 - Epoch对齐基准 (Max Class Len): {max_len}")
+        print(f"总虚拟样本数: {max_len * len(class_groups)} ({len(class_groups)}个桶 × max_len)")
+        
+        final_indices = []
+        # 对每个桶进行循环填充
+        for key in class_groups:
+            indices = class_groups[key]
+            if len(indices) == 0:
+                continue
             
-            class_name = sample['class_name']
-            class_idx = CLASS_TO_IDX[class_name]
-            is_pos = sample['is_pos']
-            actual_idx = sample['index']
-            
-            sequence_bytes = sample['sequence_bytes'].copy()
-            label_12 = sample['label'].copy()
-            
-            # 使用预生成的4类标签
-            label_4 = sample['label_4class'].copy() if sample['label_4class'] is not None else None
-            
-            cache_key = f"{class_name}_{'pos' if is_pos else 'neg'}_{actual_idx}"
-
-        # One-hot编码
-        one_hot_seq = self._one_hot_encode_optimized(sequence_bytes)
-
-        # 将字节序列转换为字符串（用于LinearFold）
-        sequence_str = sequence_bytes.tobytes().decode('ascii', errors='ignore')
-
-        # 获取或计算边索引
-        edge_index = self._get_or_compute_edge_index_cached(sequence_str, cache_key)
-
-        # 节点特征
-        node_features = torch.FloatTensor(one_hot_seq)
-
-        # 创建PyG Data对象
+            # 扩展到 max_len
+            extended = []
+            while len(extended) < max_len:
+                extended.extend(indices)
+            final_indices.extend(extended[:max_len])
+        
+        np.random.seed(self.seed)
+        np.random.shuffle(final_indices)  # Shuffle 一次
+        return np.array(final_indices)
+    
+    def __len__(self):
+        return len(self.indices_map)
+    
+    def __getitem__(self, idx):
+        # 极速版: 只有查表，没有计算
+        real_idx = self.indices_map[idx]
+        
         data = Data(
-            x=node_features,
-            edge_index=edge_index,
-            y=torch.FloatTensor(label_12).unsqueeze(0),
-            class_idx=torch.tensor([idx], dtype=torch.long)  # 使用全局索引
+            x=self.data_x[real_idx],
+            edge_index=self.data_edge_index[real_idx],
+            y=self.data_y[real_idx],
+            class_idx=self.data_class_idx[real_idx]
         )
         
-        # 如果使用4类模式，添加4类标签
-        if self.use_4class and label_4 is not None:
-            data.y_4 = torch.FloatTensor(label_4).unsqueeze(0)
-
+        if self.data_y_4[real_idx] is not None:
+            data.y_4 = self.data_y_4[real_idx]
+        
         return data
-
-    def _one_hot_encode_optimized(self, sequence_bytes: np.ndarray) -> np.ndarray:
-        """
-        优化的one-hot编码，直接处理|S1字节流
-
-        Args:
-            sequence_bytes (np.array): |S1类型的字节数组
-
-        Returns:
-            np.array: one-hot编码后的数组，shape为(len(seq), 4)
-        """
-        byte_array = sequence_bytes.view(np.uint8)
-        one_hot = _BYTE_TO_ONEHOT_MAPPING[byte_array]
-        return one_hot.astype(np.float32)
-
+    
     def _get_batch_cache_path(self) -> str:
-        """
-        获取批量缓存文件路径
-
-        Returns:
-            str: 批量缓存文件完整路径
-        """
-        cache_filename = f"multirm_{self.mode}_{BATCH_CACHE_FILE}"
-        return os.path.join(self.CACHE_DIR, cache_filename)
-
-    def _load_batch_cache(self):
-        """
-        从批量缓存文件加载所有边索引到内存
-
-        如果磁盘上存在缓存文件，则加载到内存中；否则跳过
-        """
-        cache_path = self._get_batch_cache_path()
-
-        if os.path.exists(cache_path):
-            print(f"发现磁盘缓存文件: {cache_path}")
-            print(f"正在加载到内存...")
-
-            try:
-                # 加载磁盘缓存
-                cache_data = np.load(cache_path, allow_pickle=True)
-
-                # 初始化内存缓存
-                if not hasattr(self, '_edge_index_cache'):
-                    self._edge_index_cache = {}
-
-                # 将磁盘缓存加载到内存
-                # 假设缓存文件中存储的是 {key: edge_index}
-                if hasattr(cache_data, 'items'):
-                    for key in cache_data.files:
-                        edge_index = cache_data[key]
-                        self._edge_index_cache[key] = edge_index
-
-                print(f"已加载 {len(self._edge_index_cache)} 个缓存条目到内存")
-
-                self._batch_cache = cache_data
-                self._edge_indices = self._edge_index_cache
-
-            except Exception as e:
-                print(f"警告: 加载磁盘缓存失败: {e}")
-                print(f"将在首次访问时重新计算二级结构")
-                self._batch_cache = None
-                self._edge_indices = None
-        else:
-            print(f"磁盘缓存文件不存在: {cache_path}")
-            print(f"首次运行时将创建缓存文件")
-            self._batch_cache = None
-            self._edge_indices = None
-
-    def _save_cache_to_disk(self):
-        """
-        将内存中的边索引缓存保存到磁盘
-
-        使用npz格式保存所有边索引
-        """
-        cache_path = self._get_batch_cache_path()
-
-        if not hasattr(self, '_edge_index_cache') or not self._edge_index_cache:
-            print("内存缓存为空，无需保存")
-            return
-
-        print(f"\n正在保存缓存到磁盘: {cache_path}")
-
-        try:
-            # 创建保存目录
-            os.makedirs(os.path.dirname(cache_path), exist_ok=True)
-
-            # 将边索引转换为numpy数组并保存
-            save_dict = {}
-            for key, edge_index in self._edge_index_cache.items():
-                save_dict[key] = edge_index.cpu().numpy()
-
-            np.savez(cache_path, **save_dict)
-            print(f"缓存已保存: {len(save_dict)} 个条目")
-
-        except Exception as e:
-            print(f"警告: 保存缓存失败: {e}")
-
+        """获取批量缓存文件路径"""
+        cache_filename = f"multirm_{self.mode}_structures_cache.h5"
+        return os.path.join(self.cache_dir, cache_filename)
+    
     def precompute_all_structures(
         self,
         batch_size: int = 100,
@@ -597,170 +452,116 @@ class MultirmDataset(Dataset):
     ) -> Dict:
         """
         预计算所有可能序列的二级结构并缓存
-
-        由于使用动态采样，此方法会遍历所有类别的所有样本进行预计算
-
+        
         Args:
             batch_size (int): 每次调用LinearFold的序列数量
             num_workers (int): 工作进程数，None表示使用CPU核心数
             show_progress (bool): 是否显示进度条
-
+        
         Returns:
             dict: 统计信息
         """
-        from tqdm import tqdm
-
         print(f"\n{'='*60}")
         print(f"开始预计算所有序列的二级结构...")
         print(f"  模式: {self.mode}")
         print(f"  批量大小: {batch_size}")
         print(f"{'='*60}\n")
-
+        
         stats = {
             'total': 0,
             'computed': 0,
             'failed': 0
         }
-
+        
         all_sequences = []
         all_keys = []
-
+        
         # 收集所有序列
-        for sample in self.all_samples:
-            class_name = sample['class_name']
-            is_pos = sample['is_pos']
-            actual_idx = sample['index']
-            
+        for sample in self.raw_samples:
             sequence_bytes = sample['sequence_bytes'].copy()
             sequence_str = sequence_bytes.tobytes().decode('ascii', errors='ignore')
             all_sequences.append(sequence_str)
-            all_keys.append(f"{class_name}_{'pos' if is_pos else 'neg'}_{actual_idx}")
-
+            all_keys.append(sample['cache_key'])
+        
         stats['total'] = len(all_sequences)
         print(f"  需要计算的序列总数: {stats['total']}")
-
-        # 初始化缓存
-        if not hasattr(self, '_edge_index_cache'):
-            self._edge_index_cache = {}
-
+        
         # 批量计算
         iterator = range(0, len(all_sequences), batch_size)
         if show_progress:
             iterator = tqdm(iterator, desc="预计算二级结构")
-
+        
+        edge_cache = {}
+        
         for start_idx in iterator:
             end_idx = min(start_idx + batch_size, len(all_sequences))
             batch_sequences = all_sequences[start_idx:end_idx]
             batch_keys = all_keys[start_idx:end_idx]
-
+            
             try:
                 structures = run_linearfold(batch_sequences)
-
+                
                 for seq_str, structure, key in zip(batch_sequences, structures, batch_keys):
                     edge_index = build_edge_index_from_structure(seq_str, structure)
-                    self._edge_index_cache[key] = edge_index
+                    edge_cache[key] = edge_index
                     stats['computed'] += 1
-
+            
             except Exception as e:
                 print(f"\n警告: 批量计算失败 (索引 {start_idx}-{end_idx}): {e}")
                 for key in batch_keys:
                     stats['failed'] += 1
-
+        
         print(f"\n{'='*60}")
         print(f"预计算完成！")
         print(f"  总样本数: {stats['total']}")
         print(f"  成功计算: {stats['computed']}")
         print(f"  失败: {stats['failed']}")
-        print(f"  缓存大小: {len(self._edge_index_cache)} 条目")
-
+        print(f"  缓存大小: {len(edge_cache)} 条目")
+        
         # 保存缓存到磁盘
-        if len(self._edge_index_cache) > 0:
-            self._save_cache_to_disk()
-
+        if len(edge_cache) > 0:
+            self._save_cache_to_disk(edge_cache)
+        
         print(f"{'='*60}\n")
-
+        
         return stats
-
-    def _get_or_compute_edge_index_cached(self, sequence_str: str, cache_key: str) -> torch.Tensor:
-        """
-        获取或计算边索引（使用字符串缓存键）
-
-        优先级：
-        1. LRU缓存（内存中）
-        2. 磁盘缓存（懒加载）
-        3. LinearFold实时计算
-
-        Args:
-            sequence_str (str): RNA序列字符串
-            cache_key (str): 缓存键
-
-        Returns:
-            torch.Tensor: 边索引张量
-        """
-        # 1. 检查内存缓存
-        if not hasattr(self, '_edge_index_cache'):
-            self._edge_index_cache = {}
-
-        if cache_key in self._edge_index_cache:
-            return self._edge_index_cache[cache_key]
-
-        # 2. 尝试从磁盘缓存加载（懒加载）
-        if self.use_cache:
-            cache_path = self._get_batch_cache_path()
-            if os.path.exists(cache_path):
-                try:
-                    # 只加载需要的单个条目，而不是整个文件
-                    cache_data = np.load(cache_path, allow_pickle=True)
-                    if cache_key in cache_data.files:
-                        edge_index_numpy = cache_data[cache_key]
-                        edge_index = torch.from_numpy(edge_index_numpy)
-                        self._edge_index_cache[cache_key] = edge_index
-                        return edge_index
-                except Exception as e:
-                    # 磁盘加载失败，继续计算
-                    pass
-
-        # 3. 使用LinearFold计算二级结构
+    
+    def _save_cache_to_disk(self, edge_cache):
+        """将边索引缓存保存到磁盘（HDF5格式）"""
+        cache_path = self._get_batch_cache_path()
+        
+        print(f"\n正在保存缓存到磁盘: {cache_path}")
+        
         try:
-            structures = run_linearfold([sequence_str])
-            structure = structures[0]
-            edge_index = build_edge_index_from_structure(sequence_str, structure)
-
-            # 缓存结果
-            self._edge_index_cache[cache_key] = edge_index
-            return edge_index
-        except (FileNotFoundError, subprocess.TimeoutExpired, RuntimeError) as e:
-            raise
-
+            os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+            
+            with h5py.File(cache_path, 'w') as f:
+                for key, edge_index in edge_cache.items():
+                    edge_index_numpy = edge_index.cpu().numpy()
+                    f.create_dataset(key, data=edge_index_numpy, compression='gzip', compression_opts=4)
+            
+            print(f"缓存已保存: {len(edge_cache)} 个条目")
+        
+        except Exception as e:
+            print(f"警告: 保存缓存失败: {e}")
+    
     def clear_cache(self):
         """清除内存中的边索引缓存"""
-        if hasattr(self, '_edge_index_cache'):
-            cache_size = len(self._edge_index_cache)
-            self._edge_index_cache.clear()
-            print(f"已清除内存缓存: {cache_size} 条目")
-        else:
-            print("内存缓存为空")
-
+        self.data_x.clear()
+        self.data_edge_index.clear()
+        self.data_y.clear()
+        self.data_y_4.clear()
+        self.data_class_idx.clear()
+        print("已清除内存缓存")
+    
     def get_cache_stats(self) -> Dict:
-        """
-        获取缓存统计信息
-
-        Returns:
-            dict: 包含缓存统计信息的字典
-        """
-        stats = {
-            'cache_dir': self.CACHE_DIR,
-            'memory_cache': {
-                'entries': 0,
-                'keys': []
-            }
+        """获取缓存统计信息"""
+        return {
+            'cache_dir': self.cache_dir,
+            'mode': self.mode,
+            'virtual_length': len(self.indices_map),
+            'real_length': len(self.raw_samples) if hasattr(self, 'raw_samples') else 0
         }
-
-        if hasattr(self, '_edge_index_cache') and self._edge_index_cache:
-            stats['memory_cache']['entries'] = len(self._edge_index_cache)
-            stats['memory_cache']['keys'] = list(self._edge_index_cache.keys())
-
-        return stats
 
 
 # 测试代码
@@ -802,9 +603,8 @@ if __name__ == "__main__":
 
     cache_stats = dataset.get_cache_stats()
     print(f"缓存目录: {cache_stats['cache_dir']}")
-    print(f"内存缓存条目数: {cache_stats['memory_cache']['entries']}")
-    if cache_stats['memory_cache']['entries'] > 0:
-        print(f"  前5个缓存键: {cache_stats['memory_cache']['keys'][:5]}")
+    print(f"虚拟长度: {cache_stats['virtual_length']}")
+    print(f"真实长度: {cache_stats['real_length']}")
 
     print("\n" + "=" * 60)
     print("=== 所有测试完成！===")
