@@ -3,7 +3,7 @@
 
 # 忽略所有.log文件
 *.log
-
+/att_fig
 # 忽略.vscode文件夹
 .vscode/
 
