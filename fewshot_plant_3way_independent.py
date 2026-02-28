@@ -549,9 +549,20 @@ def train_binary_model(model, support_data_list, target_class, config, device, l
     binary_labels = prepare_binary_labels(support_data_list, target_class)
 
     # ========================================================================
-    # STEP 1: Apply HYBRID Strategy (Dynamic Bias Freezing)
+    # STEP 1: Choose finetune strategy (full model vs. hybrid head-only)
     # ========================================================================
-    trainable_params = apply_hybrid_strategy(model, k_shot, logger)
+    full_finetune = bool(getattr(config, 'full_finetune', False))
+    if full_finetune:
+        logger.info(f"\n{'='*80}")
+        logger.info("FINETUNE STRATEGY: FULL MODEL (full_finetune=True)")
+        logger.info("Action: UNFREEZE ALL parameters and optimize model.parameters()")
+        logger.info(f"{'='*80}\n")
+        for p in model.parameters():
+            p.requires_grad = True
+        trainable_params = model.parameters()
+    else:
+        # Hybrid strategy: freeze all then selectively unfreeze a small head subset
+        trainable_params = apply_hybrid_strategy(model, k_shot, logger)
 
     # ========================================================================
     # STEP 2: Training Hyperparameters
@@ -745,20 +756,25 @@ def compute_binary_metrics(y_true, y_pred, y_prob):
     }
 
 
+def _balanced_subsample_indices(pos_indices, neg_indices, seed):
+    """Return a balanced list of indices: all positives + min(len(pos), len(neg)) negatives."""
+    pos_indices = list(pos_indices)
+    neg_indices = list(neg_indices)
+
+    if len(pos_indices) == 0:
+        return [], []
+
+    rng = np.random.RandomState(seed)
+    if len(neg_indices) <= len(pos_indices):
+        sampled_neg = neg_indices
+    else:
+        sampled_neg = rng.choice(neg_indices, size=len(pos_indices), replace=False).tolist()
+
+    return pos_indices, sampled_neg
+
+
 def evaluate_binary_task(model, test_loader, device, target_class, use_hierarchical=True):
-    """
-    Run inference and compute binary metrics for One-vs-Rest task.
-
-    Args:
-        model: The trained binary model
-        test_loader: DataLoader for test set
-        device: Device to evaluate on
-        target_class: Target class ID (5, 8, or 9)
-        use_hierarchical: Whether model uses hierarchical classification
-
-    Returns:
-        dict: Binary metrics for the target class
-    """
+    """Backward-compatible evaluation (keeps original Plant-only evaluation behavior)."""
     model.eval()
     all_probs = []
     all_preds = []
@@ -768,19 +784,8 @@ def evaluate_binary_task(model, test_loader, device, target_class, use_hierarchi
         for batch in test_loader:
             batch = batch.to(device)
 
-            # Forward pass
-            if use_hierarchical:
-                out = model(batch.x, batch.edge_index, batch.batch)
-                if isinstance(out, tuple):
-                    logits_class = out[0]
-                else:
-                    logits_class = out
-            else:
-                out = model(batch.x, batch.edge_index, batch.batch)
-                if isinstance(out, tuple):
-                    logits_class = out[0]
-                else:
-                    logits_class = out
+            out = model(batch.x, batch.edge_index, batch.batch)
+            logits_class = out[0] if isinstance(out, tuple) else out
 
             # Get probability for target class using sigmoid
             binary_logits = logits_class[:, target_class]
@@ -792,22 +797,91 @@ def evaluate_binary_task(model, test_loader, device, target_class, use_hierarchi
             # True binary label
             label = batch.y[:, target_class]
 
-            # Filter to only include Plant vs. Plant (exclude Zero samples)
-            # Create mask for samples that belong to any of the 3 target classes
+            # Original behavior: only include Plant-vs-Plant samples (exclude Zero)
             mask = batch.y[:, TARGET_CLASSES].sum(dim=1) > 0
 
             all_probs.append(prob[mask].cpu())
             all_preds.append(pred[mask].cpu())
             all_labels.append(label[mask].cpu())
 
-    # Concatenate all batches
     all_probs = torch.cat(all_probs).numpy()
     all_preds = torch.cat(all_preds).numpy()
     all_labels = torch.cat(all_labels).numpy()
 
-    # Compute binary metrics
-    metrics = compute_binary_metrics(all_labels, all_preds, all_probs)
+    return compute_binary_metrics(all_labels, all_preds, all_probs)
 
+
+def evaluate_binary_task_balanced(
+    model,
+    dataset,
+    indices,
+    device,
+    target_class,
+    use_hierarchical=True,
+    seed=42,
+    batch_size=32,
+):
+    """Balanced evaluation on a given index pool.
+
+    Note: This function intentionally ignores `use_hierarchical` because the model forward
+    already returns (logits, ...) in this codebase; we handle tuple outputs safely.
+    """
+    # Determine pos/neg within provided indices
+    y12 = dataset.y_12class  # (N, 12)
+    pos_indices = [i for i in indices if y12[i, target_class] == 1]
+    neg_indices = [i for i in indices if y12[i, target_class] == 0]
+
+    pos_indices, sampled_neg = _balanced_subsample_indices(pos_indices, neg_indices, seed=seed)
+    balanced_indices = pos_indices + sampled_neg
+
+    # Short-circuit when no positives
+    if len(pos_indices) == 0:
+        return {
+            'F1': 0.0, 'Prec': 0.0, 'Rec': 0.0, 'Acc': 0.0,
+            'AUC': 0.5, 'AUPRC': 0.0, 'Sn': 0.0, 'Sp': 0.0,
+            'TP': 0, 'TN': 0, 'FP': 0, 'FN': 0,
+            '_n_pos': 0, '_n_neg': 0, '_n_total': 0,
+        }
+
+    # Use PyG DataLoader to properly collate torch_geometric.data.Data objects
+    from torch_geometric.loader import DataLoader as PyGDataLoader
+
+    eval_loader = PyGDataLoader(
+        Subset(dataset, balanced_indices),
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=2,
+        pin_memory=True,
+    )
+
+    model.eval()
+    all_probs = []
+    all_preds = []
+    all_labels = []
+
+    with torch.no_grad():
+        for batch in eval_loader:
+            batch = batch.to(device)
+            out = model(batch.x, batch.edge_index, batch.batch)
+            logits_class = out[0] if isinstance(out, tuple) else out
+
+            binary_logits = logits_class[:, target_class]
+            prob = torch.sigmoid(binary_logits)
+            pred = (prob >= 0.5).long()
+            label = batch.y[:, target_class]
+
+            all_probs.append(prob.cpu())
+            all_preds.append(pred.cpu())
+            all_labels.append(label.cpu())
+
+    all_probs = torch.cat(all_probs).numpy()
+    all_preds = torch.cat(all_preds).numpy()
+    all_labels = torch.cat(all_labels).numpy()
+
+    metrics = compute_binary_metrics(all_labels, all_preds, all_probs)
+    metrics['_n_pos'] = int(len(pos_indices))
+    metrics['_n_neg'] = int(len(sampled_neg))
+    metrics['_n_total'] = int(len(balanced_indices))
     return metrics
 
 
@@ -905,7 +979,10 @@ def main(config_path='json/plant_single.json', checkpoint_path=None):
 
     # Test set: Plant test only (no Zero samples)
     test_dataset = Subset(full_dataset, plant_test_indices)
-    test_loader = DataLoader(
+
+    # Use PyG DataLoader for torch_geometric.data.Data batches
+    from torch_geometric.loader import DataLoader as PyGDataLoader
+    test_loader = PyGDataLoader(
         test_dataset, batch_size=Config.batch_size, shuffle=False,
         num_workers=2, pin_memory=True
     )
@@ -1008,6 +1085,7 @@ def main(config_path='json/plant_single.json', checkpoint_path=None):
                 # STEP 3: Train binary model
                 # ====================================================================
                 logger.info(f"\nTraining binary model for class {target_class}...")
+                Config.full_finetune=True
                 model = train_binary_model(
                     model, support_data_list, target_class,
                     Config, Config.device, logger, k_shot
@@ -1023,8 +1101,53 @@ def main(config_path='json/plant_single.json', checkpoint_path=None):
                 getattr(Config, 'use_hierarchical', True)
             )
 
+            # ---------------- Balanced evaluation (NEW; does not change original metrics/output) ----------------
+            # Build negative pools:
+            # 1) Plant-negative: other plant classes in TARGET_CLASSES (within plant_test_indices)
+            other_classes = [c for c in TARGET_CLASSES if c != target_class]
+            plant_pos_indices = [i for i in plant_test_indices if full_dataset.y_12class[i, target_class] == 1]
+            plant_neg_pool = [
+                i for i in plant_test_indices
+                if any(full_dataset.y_12class[i, oc] == 1 for oc in other_classes)
+            ]
+
+            # 2) Zero-negative: from zero split test pool
+            _, zero_test_global = full_dataset.get_zero_split(test_ratio=0.2, seed=Config.random_seed)
+            zero_neg_pool = list(zero_test_global)
+
+            # Balanced: sample negatives to match plant positives
+            seed_eval = Config.random_seed + 1000 + int(k_shot) + int(target_class)
+
+            metrics_bal_plantneg = evaluate_binary_task_balanced(
+                model=model,
+                dataset=full_dataset,
+                indices=(plant_pos_indices + plant_neg_pool),
+                device=Config.device,
+                target_class=target_class,
+                use_hierarchical=getattr(Config, 'use_hierarchical', True),
+                seed=seed_eval,
+                batch_size=Config.batch_size,
+            )
+
+            metrics_bal_zeroneg = evaluate_binary_task_balanced(
+                model=model,
+                dataset=full_dataset,
+                indices=(plant_pos_indices + zero_neg_pool),
+                device=Config.device,
+                target_class=target_class,
+                use_hierarchical=getattr(Config, 'use_hierarchical', True),
+                seed=seed_eval,
+                batch_size=Config.batch_size,
+            )
+
             # Store results
             all_results[target_class][k_shot] = metrics
+
+            # Store balanced results separately for later pretty tables
+            if 'all_results_balanced' not in locals():
+                all_results_balanced = {c: {'plant_negative': {}, 'zero_negative': {}} for c in TARGET_CLASSES}
+            all_results_balanced[target_class]['plant_negative'][k_shot] = metrics_bal_plantneg
+            all_results_balanced[target_class]['zero_negative'][k_shot] = metrics_bal_zeroneg
 
             # Log results
             logger.info(f"\n{'='*80}")
@@ -1044,6 +1167,49 @@ def main(config_path='json/plant_single.json', checkpoint_path=None):
 
     # Print final results tables
     print_binary_results(all_results, logger)
+
+    # -------------------------------------------------------------------------
+    # Additional tables (NEW): Balanced evaluation with different negative sources
+    # -------------------------------------------------------------------------
+    if 'all_results_balanced' in locals():
+        for target_class in TARGET_CLASSES:
+            class_name = PLANT_CLASS_MAPPING[target_class]['class_name']
+
+            logger.info(f"\n{'='*100}")
+            logger.info(f"Balanced Evaluation (Plant Negatives): Class {target_class} ({class_name}) vs. Rest")
+            logger.info(f"{'='*100}")
+            t1 = PrettyTable()
+            t1.field_names = ["Shot", "#Pos", "#Neg", "#Total", "F1", "Prec", "Rec", "Acc", "AUC", "AUPRC", "Sn", "Sp", "TP", "TN", "FP", "FN"]
+            t1.align = "r"
+            shot_keys = sorted(all_results_balanced[target_class]['plant_negative'].keys(), key=lambda x: int(x) if x!='full' else 999)
+            for k in shot_keys:
+                m = all_results_balanced[target_class]['plant_negative'][k]
+                t1.add_row([
+                    k,
+                    m.get('_n_pos', 0), m.get('_n_neg', 0), m.get('_n_total', 0),
+                    f"{m['F1']:.4f}", f"{m['Prec']:.4f}", f"{m['Rec']:.4f}", f"{m['Acc']:.4f}",
+                    f"{m['AUC']:.4f}", f"{m['AUPRC']:.4f}", f"{m['Sn']:.4f}", f"{m['Sp']:.4f}",
+                    m['TP'], m['TN'], m['FP'], m['FN']
+                ])
+            logger.info(f"\n{t1}")
+
+            logger.info(f"\n{'='*100}")
+            logger.info(f"Balanced Evaluation (Zero Negatives): Class {target_class} ({class_name}) vs. Rest")
+            logger.info(f"{'='*100}")
+            t2 = PrettyTable()
+            t2.field_names = ["Shot", "#Pos", "#Neg", "#Total", "F1", "Prec", "Rec", "Acc", "AUC", "AUPRC", "Sn", "Sp", "TP", "TN", "FP", "FN"]
+            t2.align = "r"
+            shot_keys = sorted(all_results_balanced[target_class]['zero_negative'].keys(), key=lambda x: int(x) if x!='full' else 999)
+            for k in shot_keys:
+                m = all_results_balanced[target_class]['zero_negative'][k]
+                t2.add_row([
+                    k,
+                    m.get('_n_pos', 0), m.get('_n_neg', 0), m.get('_n_total', 0),
+                    f"{m['F1']:.4f}", f"{m['Prec']:.4f}", f"{m['Rec']:.4f}", f"{m['Acc']:.4f}",
+                    f"{m['AUC']:.4f}", f"{m['AUPRC']:.4f}", f"{m['Sn']:.4f}", f"{m['Sp']:.4f}",
+                    m['TP'], m['TN'], m['FP'], m['FN']
+                ])
+            logger.info(f"\n{t2}")
 
     # =========================================================================
     # Save Results to JSON
