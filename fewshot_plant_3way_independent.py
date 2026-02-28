@@ -1096,6 +1096,6 @@ if __name__ == "__main__":
     parser.add_argument('--config', type=str, default='json/plant_single.json', help='Path to config file')
     parser.add_argument('--checkpoint', type=str, required=False,
                        help='Path to pre-trained checkpoint',
-                       default="logs/rna_classification_20260129_164810/checkpoints/epoch_030.pt")
+                       default="logs/old/rna_classification_20260129_164810/checkpoints/epoch_030.pt")
     args = parser.parse_args()
     main(config_path=args.config, checkpoint_path=args.checkpoint)
