@@ -885,6 +885,148 @@ def evaluate_binary_task_balanced(
     return metrics
 
 
+def evaluate_all_metrics_once(model, test_loader, device, target_class, precomputed_indices, seed=42):
+    """
+    Evaluate all metrics in a single forward pass over the test set.
+    
+    This function performs ONE forward pass through the test set, caches all predictions,
+    and then computes multiple evaluation metrics from the cached results:
+    1. Original evaluation (all plant test samples)
+    2. Balanced evaluation with plant negatives
+    3. Balanced evaluation with zero negatives
+    
+    This avoids 3 separate forward passes and DataLoader creations, significantly
+    improving evaluation speed.
+    
+    Args:
+        model: The trained model
+        test_loader: DataLoader for the test set
+        device: Device to run evaluation on
+        target_class: Target class ID (5, 8, or 9)
+        precomputed_indices: Precomputed index pools
+            {
+                'plant_pos': List of positive indices (plant test samples of target class),
+                'plant_neg': List of negative indices (plant test samples of other classes),
+                'zero_neg': List of negative indices (zero test samples)
+            }
+        seed: Random seed for balanced sampling
+    
+    Returns:
+        tuple: (metrics_original, metrics_balanced_plant, metrics_balanced_zero)
+            Each is a dict with binary metrics (F1, Prec, Rec, Acc, AUC, AUPRC, Sn, Sp, TP, TN, FP, FN)
+    """
+    model.eval()
+    all_logits = []
+    all_labels = []
+    
+    # ========================================================================
+    # STEP 1: Single forward pass through the entire test set
+    # ========================================================================
+    with torch.no_grad():
+        for batch in test_loader:
+            batch = batch.to(device)
+            out = model(batch.x, batch.edge_index, batch.batch)
+            logits_class = out[0] if isinstance(out, tuple) else out
+            
+            # Cache all logits and labels
+            all_logits.append(logits_class.cpu())
+            all_labels.append(batch.y.cpu())
+    
+    # Merge all batches
+    all_logits = torch.cat(all_logits)  # shape: (N, 12)
+    all_labels = torch.cat(all_labels)  # shape: (N, 12)
+    
+    # ========================================================================
+    # STEP 2: Compute original metrics (all plant test samples)
+    # ========================================================================
+    plant_mask = all_labels[:, TARGET_CLASSES].sum(dim=1) > 0
+    logits_target = all_logits[plant_mask, target_class]
+    labels_target = all_labels[plant_mask, target_class]
+    probs = torch.sigmoid(logits_target)
+    preds = (probs >= 0.5).long()
+    
+    metrics_original = compute_binary_metrics(
+        labels_target.numpy(),
+        preds.numpy(),
+        probs.numpy()
+    )
+    
+    # ========================================================================
+    # STEP 3: Compute balanced metrics with plant negatives
+    # ========================================================================
+    plant_pos = precomputed_indices['plant_pos']
+    plant_neg = precomputed_indices['plant_neg']
+    
+    if len(plant_pos) == 0:
+        metrics_balanced_plant = {
+            'F1': 0.0, 'Prec': 0.0, 'Rec': 0.0, 'Acc': 0.0,
+            'AUC': 0.5, 'AUPRC': 0.0, 'Sn': 0.0, 'Sp': 0.0,
+            'TP': 0, 'TN': 0, 'FP': 0, 'FN': 0,
+            '_n_pos': 0, '_n_neg': 0, '_n_total': 0,
+        }
+    else:
+        # Balanced sampling: all positives + equal number of negatives
+        rng = np.random.RandomState(seed)
+        if len(plant_neg) > len(plant_pos):
+            sampled_neg = rng.choice(plant_neg, len(plant_pos), replace=False).tolist()
+        else:
+            sampled_neg = plant_neg
+        balanced_plant_indices = plant_pos + sampled_neg
+        
+        # Extract predictions for balanced indices
+        logits_balanced = all_logits[balanced_plant_indices, target_class]
+        labels_balanced = all_labels[balanced_plant_indices, target_class]
+        probs_balanced = torch.sigmoid(logits_balanced)
+        preds_balanced = (probs_balanced >= 0.5).long()
+        
+        metrics_balanced_plant = compute_binary_metrics(
+            labels_balanced.numpy(),
+            preds_balanced.numpy(),
+            probs_balanced.numpy()
+        )
+        metrics_balanced_plant['_n_pos'] = len(plant_pos)
+        metrics_balanced_plant['_n_neg'] = len(sampled_neg)
+        metrics_balanced_plant['_n_total'] = len(balanced_plant_indices)
+    
+    # ========================================================================
+    # STEP 4: Compute balanced metrics with zero negatives
+    # ========================================================================
+    zero_neg = precomputed_indices['zero_neg']
+    
+    if len(plant_pos) == 0:
+        metrics_balanced_zero = {
+            'F1': 0.0, 'Prec': 0.0, 'Rec': 0.0, 'Acc': 0.0,
+            'AUC': 0.5, 'AUPRC': 0.0, 'Sn': 0.0, 'Sp': 0.0,
+            'TP': 0, 'TN': 0, 'FP': 0, 'FN': 0,
+            '_n_pos': 0, '_n_neg': 0, '_n_total': 0,
+        }
+    else:
+        # Balanced sampling: all positives + equal number of zero negatives
+        rng = np.random.RandomState(seed)
+        if len(zero_neg) > len(plant_pos):
+            sampled_zero = rng.choice(zero_neg, len(plant_pos), replace=False).tolist()
+        else:
+            sampled_zero = zero_neg
+        balanced_zero_indices = plant_pos + sampled_zero
+        
+        # Extract predictions for balanced indices
+        logits_balanced = all_logits[balanced_zero_indices, target_class]
+        labels_balanced = all_labels[balanced_zero_indices, target_class]
+        probs_balanced = torch.sigmoid(logits_balanced)
+        preds_balanced = (probs_balanced >= 0.5).long()
+        
+        metrics_balanced_zero = compute_binary_metrics(
+            labels_balanced.numpy(),
+            preds_balanced.numpy(),
+            probs_balanced.numpy()
+        )
+        metrics_balanced_zero['_n_pos'] = len(plant_pos)
+        metrics_balanced_zero['_n_neg'] = len(sampled_zero)
+        metrics_balanced_zero['_n_total'] = len(balanced_zero_indices)
+    
+    return metrics_original, metrics_balanced_plant, metrics_balanced_zero
+
+
 # ============================================================================
 # Results Printing Functions
 # ============================================================================
@@ -1002,6 +1144,42 @@ def main(config_path='json/plant_single.json', checkpoint_path=None):
     shot_counts = [0, 2, 4, 6, 8, 10, 50, 100]
 
     # ========================================================================
+    # PRECOMPUTE EVALUATION INDICES (Optimization: compute once, reuse for all shots)
+    # ========================================================================
+    logger.info(f"\n{'='*80}")
+    logger.info("PRECOMPUTING EVALUATION INDICES")
+    logger.info(f"{'='*80}")
+    
+    precomputed_indices = {}
+    for target_class in TARGET_CLASSES:
+        other_classes = [c for c in TARGET_CLASSES if c != target_class]
+        
+        # Plant positives: test samples of target class
+        plant_pos = [i for i in plant_test_indices if full_dataset.y_12class[i, target_class] == 1]
+        
+        # Plant negatives: test samples of other plant classes
+        plant_neg = [
+            i for i in plant_test_indices
+            if any(full_dataset.y_12class[i, oc] == 1 for oc in other_classes)
+        ]
+        
+        # Zero negatives: zero test samples
+        _, zero_test = full_dataset.get_zero_split(test_ratio=0.2, seed=Config.random_seed)
+        zero_neg = list(zero_test)
+        
+        precomputed_indices[target_class] = {
+            'plant_pos': plant_pos,
+            'plant_neg': plant_neg,
+            'zero_neg': zero_neg
+        }
+        
+        class_name = PLANT_CLASS_MAPPING[target_class]['class_name']
+        logger.info(f"Class {target_class} ({class_name}): "
+                   f"Plant Pos={len(plant_pos)}, Plant Neg={len(plant_neg)}, Zero Neg={len(zero_neg)}")
+    
+    logger.info(f"{'='*80}\n")
+
+    # ========================================================================
     # INDEPENDENT BINARY TRAINING LOOP
     # ========================================================================
     logger.info(f"\n{'='*80}")
@@ -1093,51 +1271,21 @@ def main(config_path='json/plant_single.json', checkpoint_path=None):
                 logger.info(f"Completed {k_shot}-shot binary training for class {target_class}")
 
             # ====================================================================
-            # STEP 4: Evaluate binary model
+            # STEP 4: Evaluate binary model (OPTIMIZED: single forward pass for all metrics)
             # ====================================================================
             logger.info(f"Evaluating binary model for class {target_class}...")
-            metrics = evaluate_binary_task(
-                model, test_loader, Config.device, target_class,
-                getattr(Config, 'use_hierarchical', True)
-            )
-
-            # ---------------- Balanced evaluation (NEW; does not change original metrics/output) ----------------
-            # Build negative pools:
-            # 1) Plant-negative: other plant classes in TARGET_CLASSES (within plant_test_indices)
-            other_classes = [c for c in TARGET_CLASSES if c != target_class]
-            plant_pos_indices = [i for i in plant_test_indices if full_dataset.y_12class[i, target_class] == 1]
-            plant_neg_pool = [
-                i for i in plant_test_indices
-                if any(full_dataset.y_12class[i, oc] == 1 for oc in other_classes)
-            ]
-
-            # 2) Zero-negative: from zero split test pool
-            _, zero_test_global = full_dataset.get_zero_split(test_ratio=0.2, seed=Config.random_seed)
-            zero_neg_pool = list(zero_test_global)
-
-            # Balanced: sample negatives to match plant positives
+            
+            # Use seed for reproducibility in balanced sampling
             seed_eval = Config.random_seed + 1000 + int(k_shot) + int(target_class)
-
-            metrics_bal_plantneg = evaluate_binary_task_balanced(
+            
+            # Single forward pass, compute all metrics from cached predictions
+            metrics, metrics_bal_plantneg, metrics_bal_zeroneg = evaluate_all_metrics_once(
                 model=model,
-                dataset=full_dataset,
-                indices=(plant_pos_indices + plant_neg_pool),
+                test_loader=test_loader,
                 device=Config.device,
                 target_class=target_class,
-                use_hierarchical=getattr(Config, 'use_hierarchical', True),
-                seed=seed_eval,
-                batch_size=Config.batch_size,
-            )
-
-            metrics_bal_zeroneg = evaluate_binary_task_balanced(
-                model=model,
-                dataset=full_dataset,
-                indices=(plant_pos_indices + zero_neg_pool),
-                device=Config.device,
-                target_class=target_class,
-                use_hierarchical=getattr(Config, 'use_hierarchical', True),
-                seed=seed_eval,
-                batch_size=Config.batch_size,
+                precomputed_indices=precomputed_indices[target_class],
+                seed=seed_eval
             )
 
             # Store results

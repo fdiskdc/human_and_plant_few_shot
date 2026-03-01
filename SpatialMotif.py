@@ -10,6 +10,7 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import matplotlib.pyplot as plt
+import matplotlib.patheffects as path_effects
 from tqdm import tqdm
 from typing import Dict, List, Tuple, Optional
 
@@ -56,12 +57,13 @@ REL_RANGE = (MAX_REL_POS - MIN_REL_POS) + 1  # 2001 positions
 CENTER_IDX = -MIN_REL_POS 
 REVERSE_LABEL_MAPPING = {v: k for k, v in LABEL_MAPPING.items()}
 
-# Morandi Color Scheme
+# Morandi Liquid Color Scheme (RGBA with transparency for glass effect)
+# RGB values normalized to 0-1 range for matplotlib
 MORANDI_COLORS = {
-    'A': '#5F9EA0',  # Cadet Blue 
-    'C': '#BC8F8F',  # Rosy Brown 
-    'G': '#8FBC8F',  # Dark Sea Green 
-    'U': '#DAA520'   # Golden Rod 
+    'A': (95/255, 158/255, 160/255, 0.80),   # Cadet Blue - 灰蓝
+    'C': (188/255, 143/255, 143/255, 0.75),  # Rosy Brown - 豆沙灰粉
+    'G': (143/255, 188/255, 143/255, 0.80),  # Dark Sea Green - 灰绿
+    'U': (218/255, 165/255, 32/255, 0.78)    # Golden Rod - 金灰
 }
 
 NUC_TO_INDEX = {'A': 0, 'C': 1, 'G': 2, 'U': 3}
@@ -247,40 +249,70 @@ def plot_top_k_logo(
 
     logo_df = pd.DataFrame(logo_matrix_norm, columns=['A', 'C', 'G', 'U'])
     
-    # 6. Plotting
+    # 6. Plotting with Frosted Glass Background
     fig, ax = plt.subplots(figsize=(max(10, node_num * 0.8), 6))
     
-    # Morandi Colors
-    logo = logomaker.Logo(logo_df, 
-                         ax=ax, 
+    # Set frosted glass background (light advanced grey)
+    fig.patch.set_facecolor('#eceff2')
+    ax.set_facecolor('#eceff2')
+    
+    # Morandi Colors with rounded liquid font
+    logo = logomaker.Logo(logo_df,
+                         ax=ax,
                          color_scheme=MORANDI_COLORS,
+                         font_name='DejaVu Sans',  # Rounded liquid font
                          center_values=False)
     
     logo.style_spines(visible=False)
     logo.style_spines(spines=['left', 'bottom'], visible=True)
     
-    # Updated Y-label to reflect probability/proportion
-    ax.set_ylabel("Probability (Normalized Importance)", fontsize=12)
-    ax.set_title(f"{class_name}: Spatial Motif (Top {node_num} Context)", fontsize=14)
+    # Hide y-axis and y-axis label
+    ax.set_yticks([])
+    ax.set_yticklabels([])
+    logo.style_spines(spines=['left'], visible=False)
+    
+    # 7. Add 3D Glass Effects (PathEffects) to all glyphs
+    # Highlight: small upward-left offset bright edge for glass refraction
+    highlight = path_effects.Stroke(linewidth=0.8,
+                                   foreground=(1, 1, 1, 0.6),
+                                   alpha=0.7)
+    
+    # Drop Shadow: slight downward offset with blur for floating effect
+    shadow = path_effects.SimplePatchShadow(offset=(1.5, -1.5),
+                                            alpha=0.4,
+                                            rho=0.5)
+    
+    # Apply effects to all glyph polygons
+    glass_effect = [shadow, highlight]
+    
+    # Apply path effects to all glyphs in the logo
+    for glyph in logo.glyph_list:
+        # Access the glyph's patch (polygon) artist
+        if hasattr(glyph, 'patch') and glyph.patch is not None:
+            glyph.patch.set_path_effects(glass_effect)
+    
+    # 8. Modern Title and Labels
+    ax.set_title(f"{class_name}: Spatial Motif (Top {node_num} Context)",
+                fontsize=30, fontfamily='sans-serif', fontweight='bold',
+                color='#2D3748', pad=15)
     
     # Set y-axis limit to exactly 1.0 or slightly higher for clarity
     ax.set_ylim(0, 1.05)
     
-    # 7. Customize X-Axis
+    # 9. Customize X-Axis with modern styling
     real_rel_positions = [idx - CENTER_IDX for idx in all_indices]
     ax.set_xticks(range(len(all_indices)))
-    ax.set_xticklabels(real_rel_positions, rotation=90 if len(str(max(real_rel_positions))) > 3 else 0)
+    ax.set_xticklabels(real_rel_positions, rotation=90 if len(str(max(real_rel_positions))) > 3 else 0,
+                      fontfamily='sans-serif', fontsize=20, color='#4A5568')
     
-    # 8. Highlight Anchor
+    # 10. Highlight Anchor with Morandi-style grey
     anchor_plot_idx = int(np.where(all_indices == center_idx)[0][0])
-    
-    # Use a Morandi-style grey for highlight background
-    logo.highlight_position(p=anchor_plot_idx, color='#E0E0E0', alpha=0.5)
+    logo.highlight_position(p=anchor_plot_idx, color='#9E2A2B', alpha=0.6)
     
     x_labels = ax.get_xticklabels()
     if len(x_labels) > anchor_plot_idx:
-        x_labels[anchor_plot_idx].set_weight('bold')
-        x_labels[anchor_plot_idx].set_color('#333333') # Dark Grey
+        x_labels[anchor_plot_idx].set_fontweight('bold')
+        x_labels[anchor_plot_idx].set_color('#2D3748')  # Dark Grey
 
     # Save as PDF
     output_path = os.path.join(output_dir, f'motif_logo_{class_name}.pdf')
@@ -299,8 +331,8 @@ def main():
     parser.add_argument('--node_num', type=int, default=10, help="Number of context positions")
     parser.add_argument('--classes', nargs='+', default=None, help="Classes (e.g. m6A)")
     parser.add_argument('--config', type=str, default='json/human.json')
-    parser.add_argument('--checkpoint', type=str, default='logs/rna_classification_20260129_195404/checkpoints/epoch_070.pt')
-    parser.add_argument('--num_samples', type=int, default=100)
+    parser.add_argument('--checkpoint', type=str, default='logs/old/rna_classification_20260129_195404/checkpoints/best_model.pt')
+    parser.add_argument('--num_samples', type=int, default=10000)
     parser.add_argument('--n_steps', type=int, default=50)
     parser.add_argument('--internal_batch_size', type=int, default=128)
     parser.add_argument('--device', type=str, default=None)
