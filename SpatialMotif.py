@@ -105,15 +105,16 @@ def calculate_spatial_attribution(
     dataset: Mer100DatasetMotif,
     target_class_idx: int,
     device: torch.device,
-    num_samples: Optional[int] = 100, 
+    num_samples: Optional[int] = None, 
     n_steps: int = 20,
-    internal_batch_size: int = 4
+    internal_batch_size: int = 4,
+    batch_size: int = 128
 ) -> np.ndarray:
     
     original_label_id = REVERSE_LABEL_MAPPING.get(target_class_idx)
     aggregated_importance = np.zeros((REL_RANGE, 4), dtype=np.float32)
 
-    print(f"\nScanning ENTIRE dataset for {MOD_NAMES[target_class_idx]} samples (Target: {num_samples})...")
+    print(f"\nScanning ENTIRE dataset for {MOD_NAMES[target_class_idx]} samples (Target: All if None)...")
     
     # Check all labels
     all_labels = dataset.y_12class
@@ -126,63 +127,78 @@ def calculate_spatial_attribution(
     
     print(f"Found {total_found} samples in total.")
 
+    # Shuffle indices to ensure representative sampling
+    np.random.seed(42)
+    np.random.shuffle(potential_indices)
+
     if num_samples is not None and num_samples < total_found:
         valid_indices = potential_indices[:num_samples]
+        print(f"Processing {len(valid_indices)} samples (randomly selected from {total_found})...")
     else:
         valid_indices = potential_indices
+        print(f"Processing all {len(valid_indices)} samples...")
     
-    print(f"Processing {len(valid_indices)} samples with n_steps={n_steps}...")
+    print(f"Processing {len(valid_indices)} samples with n_steps={n_steps}, batch_size={batch_size}...")
 
     processed_count = 0
+    class_name = MOD_NAMES[target_class_idx]
     
-    for idx in tqdm(valid_indices, desc="Accumulating gradients"):
-        try:
-            data = dataset[idx]
-            x = data.x.to(device)
-            edge_index = data.edge_index.to(device)
-            y_site = data.y_site
-            batch = torch.zeros(x.size(0), dtype=torch.long, device=device)
-
-            anchor_indices = torch.where(y_site == original_label_id)[0].tolist()
-            if len(anchor_indices) == 0: continue
-
-            model.eval()
-            x_flat = x.flatten()
-            x_attrib = x_flat.clone().detach().requires_grad_(True)
-            
-            sample_wrapper = ModelWrapper(model, target_class_idx, edge_index, batch)
-            sample_ig = IntegratedGradients(sample_wrapper)
-
+    # Batch processing loop
+    for i in range(0, len(valid_indices), batch_size):
+        batch_idxs = valid_indices[i:i+batch_size]
+        
+        for idx in tqdm(batch_idxs, desc=f"Processing {class_name} samples"):
             try:
-                attributions_flat = sample_ig.attribute(
-                    x_attrib.unsqueeze(0),
-                    n_steps=n_steps,
-                    internal_batch_size=internal_batch_size 
-                )
-                attributions = attributions_flat.view(1001, 4)
+                data = dataset[idx]
+                x = data.x.to(device)
+                edge_index = data.edge_index.to(device)
+                y_site = data.y_site
+                batch = torch.zeros(x.size(0), dtype=torch.long, device=device)
+
+                anchor_indices = torch.where(y_site == original_label_id)[0].tolist()
+                if len(anchor_indices) == 0: continue
+
+                model.eval()
+                x_flat = x.flatten()
+                x_attrib = x_flat.clone().detach().requires_grad_(True)
+                
+                sample_wrapper = ModelWrapper(model, target_class_idx, edge_index, batch)
+                sample_ig = IntegratedGradients(sample_wrapper)
+
+                try:
+                    attributions_flat = sample_ig.attribute(
+                        x_attrib.unsqueeze(0),
+                        n_steps=n_steps,
+                        internal_batch_size=internal_batch_size 
+                    )
+                    attributions = attributions_flat.view(1001, 4)
+                except Exception:
+                    x_grad = x.clone().detach().requires_grad_(True)
+                    fallback_wrapper = ModelWrapper(model, target_class_idx, edge_index, batch)
+                    output = fallback_wrapper(x_grad.flatten().unsqueeze(0))
+                    output.backward()
+                    attributions = x_grad.grad
+
+                sample_attrib_matrix = attributions.cpu().detach().numpy() 
+                
+                for anchor_pos in anchor_indices:
+                    start_rel = MIN_REL_POS
+                    end_rel = MAX_REL_POS
+                    start_abs = max(0, anchor_pos + start_rel)
+                    end_abs = min(1001, anchor_pos + end_rel + 1)
+                    
+                    rel_idx_start = (start_abs - anchor_pos) - MIN_REL_POS
+                    rel_idx_end = (end_abs - anchor_pos) - MIN_REL_POS
+                    
+                    aggregated_importance[rel_idx_start:rel_idx_end, :] += sample_attrib_matrix[start_abs:end_abs, :]
+                    processed_count += 1
+
             except Exception:
-                x_grad = x.clone().detach().requires_grad_(True)
-                fallback_wrapper = ModelWrapper(model, target_class_idx, edge_index, batch)
-                output = fallback_wrapper(x_grad.flatten().unsqueeze(0))
-                output.backward()
-                attributions = x_grad.grad
-
-            sample_attrib_matrix = attributions.cpu().detach().numpy() 
-            
-            for anchor_pos in anchor_indices:
-                start_rel = MIN_REL_POS
-                end_rel = MAX_REL_POS
-                start_abs = max(0, anchor_pos + start_rel)
-                end_abs = min(1001, anchor_pos + end_rel + 1)
-                
-                rel_idx_start = (start_abs - anchor_pos) - MIN_REL_POS
-                rel_idx_end = (end_abs - anchor_pos) - MIN_REL_POS
-                
-                aggregated_importance[rel_idx_start:rel_idx_end, :] += sample_attrib_matrix[start_abs:end_abs, :]
-                processed_count += 1
-
-        except Exception:
-            continue
+                continue
+        
+        # Explicitly clear GPU cache after each batch to prevent OOM
+        if device.type == 'cuda':
+            torch.cuda.empty_cache()
 
     if processed_count > 0:
         aggregated_importance /= processed_count
@@ -326,15 +342,25 @@ def plot_top_k_logo(
 # Main Execution
 # ============================================================================
 
+def int_or_none(v):
+    """Convert string to int or None if value is 'none'"""
+    if v.lower() == 'none':
+        return None
+    try:
+        return int(v)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"'{v}' is not an integer or 'none'")
+
 def main():
     parser = argparse.ArgumentParser(description='Spatial Motif Analysis (Logo Only)')
     parser.add_argument('--node_num', type=int, default=10, help="Number of context positions")
     parser.add_argument('--classes', nargs='+', default=None, help="Classes (e.g. m6A)")
     parser.add_argument('--config', type=str, default='json/human.json')
     parser.add_argument('--checkpoint', type=str, default='logs/old/rna_classification_20260129_195404/checkpoints/best_model.pt')
-    parser.add_argument('--num_samples', type=int, default=10000)
+    parser.add_argument('--num_samples', type=int_or_none, default=None, help="Number of samples to process (None for all)")
     parser.add_argument('--n_steps', type=int, default=50)
-    parser.add_argument('--internal_batch_size', type=int, default=128)
+    parser.add_argument('--internal_batch_size', type=int, default=128*4)
+    parser.add_argument('--batch_size', type=int, default=128*4, help="Batch size for processing samples")
     parser.add_argument('--device', type=str, default=None)
     parser.add_argument('--num_workers', type=int, default=16, help="Workers for structure precomputation")
     
@@ -394,7 +420,8 @@ def main():
             model, dataset, class_idx, device, 
             num_samples=args.num_samples,
             n_steps=args.n_steps,
-            internal_batch_size=args.internal_batch_size
+            internal_batch_size=args.internal_batch_size,
+            batch_size=args.batch_size
         )
         
         plot_top_k_logo(

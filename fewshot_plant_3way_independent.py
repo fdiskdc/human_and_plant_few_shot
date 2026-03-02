@@ -571,9 +571,9 @@ def train_binary_model(model, support_data_list, target_class, config, device, l
 
     # Dynamic epochs based on shot count
     if k_shot <= 10:
-        ft_epochs = 30
+        ft_epochs = 10
     else:
-        ft_epochs = 50
+        ft_epochs = 20
 
     aug_factor = 10
 
@@ -885,7 +885,7 @@ def evaluate_binary_task_balanced(
     return metrics
 
 
-def evaluate_all_metrics_once(model, test_loader, device, target_class, precomputed_indices, seed=42):
+def evaluate_all_metrics_once(model, test_loader, device, target_class, precomputed_indices, plant_test_indices, seed=42):
     """
     Evaluate all metrics in a single forward pass over the test set.
     
@@ -909,6 +909,7 @@ def evaluate_all_metrics_once(model, test_loader, device, target_class, precompu
                 'plant_neg': List of negative indices (plant test samples of other classes),
                 'zero_neg': List of negative indices (zero test samples)
             }
+        plant_test_indices: List of global indices in the test set (needed for index mapping)
         seed: Random seed for balanced sampling
     
     Returns:
@@ -935,6 +936,13 @@ def evaluate_all_metrics_once(model, test_loader, device, target_class, precompu
     # Merge all batches
     all_logits = torch.cat(all_logits)  # shape: (N, 12)
     all_labels = torch.cat(all_labels)  # shape: (N, 12)
+    
+    # ========================================================================
+    # Create mapping from global indices to local test indices
+    # ========================================================================
+    # test_loader only contains plant_test_indices, so we need to map
+    # global indices (0..242140) to local indices (0..78780)
+    global_to_local = {global_idx: local_idx for local_idx, global_idx in enumerate(plant_test_indices)}
     
     # ========================================================================
     # STEP 2: Compute original metrics (all plant test samples)
@@ -973,9 +981,12 @@ def evaluate_all_metrics_once(model, test_loader, device, target_class, precompu
             sampled_neg = plant_neg
         balanced_plant_indices = plant_pos + sampled_neg
         
+        # Convert global indices to local test indices
+        local_balanced_plant_indices = [global_to_local[idx] for idx in balanced_plant_indices if idx in global_to_local]
+        
         # Extract predictions for balanced indices
-        logits_balanced = all_logits[balanced_plant_indices, target_class]
-        labels_balanced = all_labels[balanced_plant_indices, target_class]
+        logits_balanced = all_logits[local_balanced_plant_indices, target_class]
+        labels_balanced = all_labels[local_balanced_plant_indices, target_class]
         probs_balanced = torch.sigmoid(logits_balanced)
         preds_balanced = (probs_balanced >= 0.5).long()
         
@@ -1009,9 +1020,12 @@ def evaluate_all_metrics_once(model, test_loader, device, target_class, precompu
             sampled_zero = zero_neg
         balanced_zero_indices = plant_pos + sampled_zero
         
+        # Convert global indices to local test indices
+        local_balanced_zero_indices = [global_to_local[idx] for idx in balanced_zero_indices if idx in global_to_local]
+        
         # Extract predictions for balanced indices
-        logits_balanced = all_logits[balanced_zero_indices, target_class]
-        labels_balanced = all_labels[balanced_zero_indices, target_class]
+        logits_balanced = all_logits[local_balanced_zero_indices, target_class]
+        labels_balanced = all_labels[local_balanced_zero_indices, target_class]
         probs_balanced = torch.sigmoid(logits_balanced)
         preds_balanced = (probs_balanced >= 0.5).long()
         
@@ -1141,7 +1155,7 @@ def main(config_path='json/plant_single.json', checkpoint_path=None):
     all_results = {c: {} for c in TARGET_CLASSES}
 
     # Shot counts to evaluate
-    shot_counts = [0, 2, 4, 6, 8, 10, 50, 100]
+    shot_counts = [0, 2, 4, 6, 8, 10,20, 50, 100]
 
     # ========================================================================
     # PRECOMPUTE EVALUATION INDICES (Optimization: compute once, reuse for all shots)
@@ -1150,17 +1164,22 @@ def main(config_path='json/plant_single.json', checkpoint_path=None):
     logger.info("PRECOMPUTING EVALUATION INDICES")
     logger.info(f"{'='*80}")
     
+    # Cache y_12class property to avoid repeated np.concatenate() calls
+    # This is critical for performance: each access to y_12class would otherwise
+    # concatenate 11.6 MB of data (242,141 samples x 12 classes x 4 bytes)
+    y_12class_cached = full_dataset.y_12class
+    
     precomputed_indices = {}
     for target_class in TARGET_CLASSES:
         other_classes = [c for c in TARGET_CLASSES if c != target_class]
         
         # Plant positives: test samples of target class
-        plant_pos = [i for i in plant_test_indices if full_dataset.y_12class[i, target_class] == 1]
+        plant_pos = [i for i in plant_test_indices if y_12class_cached[i, target_class] == 1]
         
         # Plant negatives: test samples of other plant classes
         plant_neg = [
             i for i in plant_test_indices
-            if any(full_dataset.y_12class[i, oc] == 1 for oc in other_classes)
+            if any(y_12class_cached[i, oc] == 1 for oc in other_classes)
         ]
         
         # Zero negatives: zero test samples
@@ -1285,6 +1304,7 @@ def main(config_path='json/plant_single.json', checkpoint_path=None):
                 device=Config.device,
                 target_class=target_class,
                 precomputed_indices=precomputed_indices[target_class],
+                plant_test_indices=plant_test_indices,
                 seed=seed_eval
             )
 
