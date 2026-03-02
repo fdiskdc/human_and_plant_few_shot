@@ -262,7 +262,7 @@ def main(config_path='json/3gen.json', checkpoint_path=None):
             analyze_position_stats(attn_weights_pos, y_site_pos, k_list=[1, 10], logger=logger)
 
             # 宽容度评估 (M=2)
-            M_RADIUS = 5
+            M_RADIUS = 1
             topk_results_M = calculate_topk_recall_tolerateM(
                 attn_weights_pos, y_site_pos, k_list=[1, 3, 5, 10, 20, 50], M=M_RADIUS
             )
@@ -508,7 +508,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Full-dataset evaluation for RNA multi-label classification')
     parser.add_argument('--config', type=str, default='json/3gen.json',
                         help='Path to configuration JSON file')
-    parser.add_argument('--checkpoint', type=str, default="logs/rna_classification_20260129_164810/checkpoints/epoch_020.pt",
+    parser.add_argument('--checkpoint', type=str, default="logs/old/rna_classification_20260129_195404/checkpoints/best_model.pt",
                         help='Path to model checkpoint (default: checkpoints/best_model.pt)')
     
     args = parser.parse_args()
