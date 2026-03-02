@@ -6,7 +6,7 @@
 /att_fig
 # 忽略.vscode文件夹
 .vscode/
-
+/motif_logo_clustered
 # 忽略所有.pyc文件
 *.pyc
 /motif_logo
