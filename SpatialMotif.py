@@ -459,31 +459,131 @@ def plot_top_k_logo(
         return ""
     os.makedirs(output_dir, exist_ok=True)
 
-    # Strategy: Take Absolute value (Saliency)
+    # ============================================================================
+    # Filter-then-Sort 架构：基于大津法 (Otsu's Method) 的数据驱动筛选
+    # ============================================================================
+
+    # 取绝对值得到显著性矩阵
     saliency_matrix = np.abs(aggregated_importance)
-
-    # 1. Calculate Importance Score for sorting (Sum of RAW saliency scores)
-    importance_scores = np.sum(saliency_matrix, axis=1)
-
-    # 2. Force include Center
     center_idx = CENTER_IDX
-    temp_scores = importance_scores.copy()
-    temp_scores[center_idx] = -1.0  # Exclude from top-k selection
+    num_positions = saliency_matrix.shape[0]  # 2001 个位置
 
-    # 3. Select Top K context positions
-    top_indices = np.argsort(temp_scores)[-node_num:]
+    # ------------------------------------------------------------------------
+    # 阶段一：全局大津法 1D 聚类计算
+    # ------------------------------------------------------------------------
+    # 对每个位置，使用大津法寻找最佳分割点，计算类间方差作为信号强度
 
-    # 4. Combine and Sort Indices
+    # 存储每个位置的结果：位置索引 -> (最大类间方差, 显著碱基列表)
+    position_otsu_scores = {}  # {pos: (max_variance, significant_bases)}
+    IDX_TO_NUC = {0: 'A', 1: 'C', 2: 'G', 3: 'U'}
+
+    for pos in range(num_positions):
+        # 跳过中心锚点位置
+        if pos == center_idx:
+            continue
+
+        # 提取该位置 4 个碱基的显著性值
+        base_values = saliency_matrix[pos, :].copy()  # shape: (4,)
+
+        # L1 归一化（确保总和为 1，便于大津法计算）
+        base_sum = np.sum(base_values)
+        if base_sum < 1e-9:
+            # 所有碱基都无显著性，跳过
+            continue
+        normalized_values = base_values / base_sum
+
+        # 降序排列，获取排序后的值和对应的碱基索引
+        sorted_indices = np.argsort(normalized_values)[::-1]
+        sorted_values = normalized_values[sorted_indices]
+
+        # 尝试 3 种分割方案：前 1、2、3 个碱基作为"信号类"
+        max_between_variance = -1.0
+        best_signal_bases = []
+
+        for split_point in [1, 2, 3]:
+            # 分割为两类
+            signal_values = sorted_values[:split_point]  # 信号类
+            background_values = sorted_values[split_point:]  # 背景类
+
+            # 计算类间方差: σ_b² = ω₀ * ω₁ * (μ₀ - μ₁)²
+            # ω: 类别的权重（比例）
+            # μ: 类别的均值
+
+            omega_0 = len(signal_values) / 4.0  # 信号类权重
+            omega_1 = len(background_values) / 4.0  # 背景类权重
+
+            mu_0 = np.mean(signal_values) if len(signal_values) > 0 else 0.0
+            mu_1 = np.mean(background_values) if len(background_values) > 0 else 0.0
+
+            between_variance = omega_0 * omega_1 * (mu_0 - mu_1) ** 2
+
+            if between_variance > max_between_variance:
+                max_between_variance = between_variance
+                # 记录被大津法划分为"信号"的碱基
+                best_signal_bases = [IDX_TO_NUC[sorted_indices[i]] for i in range(split_point)]
+
+        # 记录该位置的最大类间方差和显著碱基
+        position_otsu_scores[pos] = (max_between_variance, best_signal_bases)
+
+    # ------------------------------------------------------------------------
+    # 阶段二：动态基线过滤
+    # ------------------------------------------------------------------------
+    # 使用中位数作为背景噪音基线，过滤掉无统计显著性的位置
+
+    if position_otsu_scores:
+        # 提取所有位置的类间方差
+        all_variances = np.array([v[0] for v in position_otsu_scores.values()])
+
+        # 计算中位数作为背景噪音基线
+        baseline_noise_level = np.median(all_variances)
+
+        # 过滤：只保留类间方差 > 背景基线的位置
+        valid_positions = [
+            pos for pos, (variance, _) in position_otsu_scores.items()
+            if variance > baseline_noise_level
+        ]
+    else:
+        # 如果没有有效的 Otsu 计算结果，回退到空列表
+        valid_positions = []
+
+    # ------------------------------------------------------------------------
+    # 阶段三：排序与截断
+    # ------------------------------------------------------------------------
+    # 在有效候选池中，根据绝对归因总分（Saliency Sum）进行降序排序
+    # 截取 Top-K 位置
+
+    if valid_positions:
+        # 计算每个有效位置的归因总分
+        valid_position_scores = [
+            (pos, np.sum(saliency_matrix[pos, :]))
+            for pos in valid_positions
+        ]
+
+        # 按总分降序排序
+        valid_position_scores.sort(key=lambda x: x[1], reverse=True)
+
+        # 截取 Top-K
+        top_k = min(node_num, len(valid_position_scores))
+        top_indices = np.array([valid_position_scores[i][0] for i in range(top_k)])
+    else:
+        # 如果没有有效位置，使用归因总分最高的 K 个位置作为回退
+        temp_scores = np.sum(saliency_matrix, axis=1)
+        temp_scores[center_idx] = -1.0  # 排除中心锚点
+        top_indices = np.argsort(temp_scores)[-node_num:]
+
+    # ------------------------------------------------------------------------
+    # 阶段四：数据组装与高亮映射
+    # ------------------------------------------------------------------------
+    # 合并中心锚点，提取子矩阵，构建 significant_dict 用于高亮绘制
+
+    # 合并中心锚点和 Top-K 位置，并排序
     all_indices = np.append(top_indices, center_idx)
     all_indices = np.sort(all_indices)
 
-    # 5. Extract Sub-Matrix
+    # 提取子矩阵并进行 L1 归一化
     logo_matrix_raw = saliency_matrix[all_indices]
-
-    # --- [MODIFICATION] L1 Normalization (Sum to 1) ---
     row_sums = np.sum(logo_matrix_raw, axis=1, keepdims=True)
     row_sums[row_sums < 1e-9] = 1.0
-
     logo_matrix_norm = logo_matrix_raw / row_sums
 
     # --- Position 0 Handling ---
@@ -523,7 +623,7 @@ def plot_top_k_logo(
     ax.set_yticklabels([])
     logo.style_spines(spines=['left'], visible=False)
 
-    # 7. Add 3D Glass Effects (PathEffects) to all glyphs
+    # 7. Add 3D Glass Effects (PathEffects) - Focus Mode with Opacity Fade
     highlight = path_effects.Stroke(linewidth=0.8,
                                    foreground=(1, 1, 1, 0.6),
                                    alpha=0.7)
@@ -532,51 +632,49 @@ def plot_top_k_logo(
                                             alpha=0.4,
                                             rho=0.5)
 
-    # Adaptive Soft Consensus Glow Effect (淡黄色发光)
-    glow = path_effects.Stroke(linewidth=3.5*2, foreground='#FFD700', alpha=0.8)
     normal = path_effects.Normal()
 
-    # Calculate which positions/letters need highlighting (最小满足集合原则)
-    IDX_TO_NUC = {0: 'A', 1: 'C', 2: 'G', 3: 'U'}
-    highlight_dict = {}  # 格式: {position_index: ['A', 'G']}
+    # =========================================================================
+    # 使用大津法筛选结果构建 significant_dict 用于高亮绘制
+    # =========================================================================
+    # 将全局位置索引的大津法结果映射到绘图使用的局部索引
 
-    for i in range(len(all_indices)):
-        # 排除中心锚点
-        if i == anchor_local_idx:
+    significant_dict = {}  # Format: {local_idx: ['A', 'G']}
+
+    for local_idx, global_pos in enumerate(all_indices):
+        # 跳过中心锚点位置
+        if local_idx == anchor_local_idx:
+            # 中心锚点始终显著，设置为所有碱基（实际绘图时会只显示目标碱基）
+            significant_dict[local_idx] = ['A', 'C', 'G', 'U']
             continue
 
-        vals = logo_matrix_norm[i, :]
-        sorted_idx = np.argsort(vals)[::-1]
+        # 从大津法计算结果中获取该全局位置的显著碱基
+        if global_pos in position_otsu_scores:
+            # position_otsu_scores[global_pos] = (variance, [显著碱基列表])
+            _, sig_bases = position_otsu_scores[global_pos]
+            if sig_bases:
+                significant_dict[local_idx] = sig_bases
 
-        top1_val = vals[sorted_idx[0]]
-        top2_val = top1_val + vals[sorted_idx[1]]
-        top3_val = top2_val + vals[sorted_idx[2]]
-
-        highlight_chars = []
-        # 最小满足集合逻辑 (50%, 85%, 95%)
-        if top1_val > 0.50:
-            highlight_chars.append(IDX_TO_NUC[sorted_idx[0]])
-        elif top2_val > 0.85:
-            highlight_chars.append(IDX_TO_NUC[sorted_idx[0]])
-            highlight_chars.append(IDX_TO_NUC[sorted_idx[1]])
-        elif top3_val > 0.95:
-            highlight_chars.append(IDX_TO_NUC[sorted_idx[0]])
-            highlight_chars.append(IDX_TO_NUC[sorted_idx[1]])
-            highlight_chars.append(IDX_TO_NUC[sorted_idx[2]])
-
-        if highlight_chars:
-            highlight_dict[i] = highlight_chars
-
-    # Apply path_effects with conditional glow for highlighted letters
+    # Apply Focus Mode: Significant letters keep 3D glass effect & color,
+    # Noise letters fade to transparent grey
     for glyph in logo.glyph_list:
         if hasattr(glyph, 'patch') and glyph.patch is not None:
-            # 检查当前字符是否需要高亮
-            if glyph.p in highlight_dict and glyph.c in highlight_dict[glyph.p]:
-                # 叠加发光特效：阴影 -> 发光 -> 高光 -> 本体
-                glyph.patch.set_path_effects([shadow, glow, highlight, normal])
-            else:
-                # 维持原有的玻璃特效：阴影 -> 高光 -> 本体
+            # Anchor position always keeps full effect
+            if glyph.p == anchor_local_idx:
                 glyph.patch.set_path_effects([shadow, highlight, normal])
+                continue
+
+            # Check if this nucleotide is statistically significant
+            is_significant = (glyph.p in significant_dict) and (glyph.c in significant_dict[glyph.p])
+
+            if is_significant:
+                # Significant feature: Keep 3D glass effect and Morandi color
+                glyph.patch.set_path_effects([shadow, highlight, normal])
+            else:
+                # Background noise: Remove effects, fade to transparent grey
+                glyph.patch.set_path_effects([normal])
+                glyph.patch.set_facecolor('#CBD5E1')  # Light grey
+                glyph.patch.set_alpha(0.55)  # Very transparent
 
     # 8. Modern Title and Labels
     ax.set_title(f"{class_name}: Spatial Motif (Top {node_num} Context)",
