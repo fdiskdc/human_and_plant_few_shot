@@ -174,7 +174,12 @@ def extract_embeddings(
 
     def get_hook(name):
         def hook(module, input, output):
-            activation[name] = output.detach()
+            # MultiheadAttention returns a tuple: (attn_output, attn_weights)
+            # We only need the attn_output for clustering
+            if isinstance(output, tuple):
+                activation[name] = output[0].detach()  # Take the first element (attn_out)
+            else:
+                activation[name] = output.detach()
         return hook
 
     # Register the hook
@@ -213,15 +218,20 @@ def extract_embeddings(
                     # Forward pass (hook will capture gcn_block output)
                     _ = model(x, edge_index, batch)
 
-                    # Get the captured activation (node_features from GCN)
-                    # Shape: [num_nodes, gcn_out_channels]
+                    # Get the captured activation
                     node_features = activation.get(target_module_path)
 
                     if node_features is not None:
-                        # Aggregate node features to a single vector per sample
-                        # We use mean pooling, but you could also use max pooling
-                        # or simply concatenate (if the dimension is manageable)
-                        sample_embedding = node_features.mean(dim=0).cpu().numpy()
+                        # Handle different output shapes depending on hook target:
+                        # - gcn_block: [num_nodes, hidden_dim] -> aggregate nodes
+                        # - mha_12: [batch, num_classes, hidden_dim] -> already has class info
+                        if node_features.dim() == 3:  # [Batch, Num_Classes, Hidden_Dim]
+                            # Flatten: [Batch, Num_Classes * Hidden_Dim]
+                            # This preserves class-specific information for clustering
+                            sample_embedding = node_features.flatten().cpu().numpy()
+                        else:  # [Num_Nodes, Hidden_Dim]
+                            # Aggregate node features to a single vector per sample
+                            sample_embedding = node_features.mean(dim=0).cpu().numpy()
                         embeddings_list.append(sample_embedding)
                         idx_list.append(idx)
                     else:
@@ -522,11 +532,51 @@ def plot_top_k_logo(
                                             alpha=0.4,
                                             rho=0.5)
 
-    glass_effect = [shadow, highlight]
+    # Adaptive Soft Consensus Glow Effect (淡黄色发光)
+    glow = path_effects.Stroke(linewidth=3.5*2, foreground='#FFD700', alpha=0.8)
+    normal = path_effects.Normal()
 
+    # Calculate which positions/letters need highlighting (最小满足集合原则)
+    IDX_TO_NUC = {0: 'A', 1: 'C', 2: 'G', 3: 'U'}
+    highlight_dict = {}  # 格式: {position_index: ['A', 'G']}
+
+    for i in range(len(all_indices)):
+        # 排除中心锚点
+        if i == anchor_local_idx:
+            continue
+
+        vals = logo_matrix_norm[i, :]
+        sorted_idx = np.argsort(vals)[::-1]
+
+        top1_val = vals[sorted_idx[0]]
+        top2_val = top1_val + vals[sorted_idx[1]]
+        top3_val = top2_val + vals[sorted_idx[2]]
+
+        highlight_chars = []
+        # 最小满足集合逻辑 (50%, 85%, 95%)
+        if top1_val > 0.50:
+            highlight_chars.append(IDX_TO_NUC[sorted_idx[0]])
+        elif top2_val > 0.85:
+            highlight_chars.append(IDX_TO_NUC[sorted_idx[0]])
+            highlight_chars.append(IDX_TO_NUC[sorted_idx[1]])
+        elif top3_val > 0.95:
+            highlight_chars.append(IDX_TO_NUC[sorted_idx[0]])
+            highlight_chars.append(IDX_TO_NUC[sorted_idx[1]])
+            highlight_chars.append(IDX_TO_NUC[sorted_idx[2]])
+
+        if highlight_chars:
+            highlight_dict[i] = highlight_chars
+
+    # Apply path_effects with conditional glow for highlighted letters
     for glyph in logo.glyph_list:
         if hasattr(glyph, 'patch') and glyph.patch is not None:
-            glyph.patch.set_path_effects(glass_effect)
+            # 检查当前字符是否需要高亮
+            if glyph.p in highlight_dict and glyph.c in highlight_dict[glyph.p]:
+                # 叠加发光特效：阴影 -> 发光 -> 高光 -> 本体
+                glyph.patch.set_path_effects([shadow, glow, highlight, normal])
+            else:
+                # 维持原有的玻璃特效：阴影 -> 高光 -> 本体
+                glyph.patch.set_path_effects([shadow, highlight, normal])
 
     # 8. Modern Title and Labels
     ax.set_title(f"{class_name}: Spatial Motif (Top {node_num} Context)",
