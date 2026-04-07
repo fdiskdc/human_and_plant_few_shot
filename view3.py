@@ -116,8 +116,13 @@ def plot_violin(data_dict, title, xlabel, ylabel, save_path, figsize=(10, 6)):
 
     plt.tight_layout()
     plt.savefig(save_path, dpi=300, bbox_inches='tight', facecolor='#FAF9F6')
+
+    # Also save as PDF
+    pdf_path = save_path.replace('.png', '.pdf')
+    plt.savefig(pdf_path, format='pdf', bbox_inches='tight', facecolor='#FAF9F6')
     plt.close()
     print(f"Violin plot saved to: {save_path}")
+    print(f"Violin plot saved to: {pdf_path}")
 
 
 def plot_mod_counts_violin(mod_counts, save_path='output/violin_mod_counts.png'):
@@ -131,7 +136,7 @@ def plot_mod_counts_violin(mod_counts, save_path='output/violin_mod_counts.png')
         xlabel='',
         ylabel='Number of Modifications',
         save_path=save_path,
-        figsize=(6, 6)
+        figsize=(6, 8)
     )
 
 
