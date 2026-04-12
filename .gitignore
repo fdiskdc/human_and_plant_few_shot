@@ -22,6 +22,7 @@ gen3process/
 **/node_modules
 /ipynb
 /motif_logo_clustered_noback
+/output
 # Web frontend logs and build artifacts
 /web/node_modules
 /web/dist
