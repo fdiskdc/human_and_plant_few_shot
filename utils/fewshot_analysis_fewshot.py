@@ -5,6 +5,7 @@ This module contains functions for few-shot trajectory analysis.
 """
 
 import csv
+import copy
 import os
 from collections import defaultdict
 
@@ -14,9 +15,15 @@ import torch.nn as nn
 from prettytable import PrettyTable
 from torch_geometric.loader import DataLoader as PyGDataLoader
 
-from utils.fewshot_analysis_constants import TARGET_CLASSES, CLASS_NAMES, CLASS_NAME_MAP, SHOT_COUNTS, MORANDI_CLASS_COLORS, MORANDI_NEUTRAL
+from utils.fewshot_analysis_constants import (
+    TARGET_CLASSES, CLASS_NAMES, CLASS_NAME_MAP, SHOT_COUNTS,
+    HIGH_CONTRAST_MOD_COLORS, HIGH_CONTRAST_SPECIES_COLORS,
+    INTERPOLATION_PARAMS, POINT_STYLE_PARAMS
+)
 from utils.fewshot_analysis_features import load_model_from_checkpoint, extract_dataset_features
-from utils.fewshot_analysis_zeroshot import get_class_mask, prepare_datasets, reduce_umap
+from utils.fewshot_analysis_zeroshot import (
+    get_class_mask, prepare_datasets, reduce_umap, generate_synthetic_points_by_group
+)
 from utils.fewshot_analysis_utils import save_figure, apply_plot_style, save_json
 
 import matplotlib.pyplot as plt
@@ -257,7 +264,9 @@ def save_trajectory_metrics_csv(results, output_dir, layer_name):
 def save_trajectory_umap_points_csv(
     human_embedding, human_ref_labels,
     shot_embeddings, plant_ref_labels,
-    target_class, output_dir, layer_name
+    target_class, output_dir, layer_name,
+    human_synthetic_embedding=None, human_synthetic_groups=None,
+    shot_synthetic_embeddings=None, shot_synthetic_groups=None
 ):
     """Save per-class trajectory UMAP point coordinates as CSV."""
     class_name = CLASS_NAME_MAP[target_class]
@@ -269,47 +278,59 @@ def save_trajectory_umap_points_csv(
     # Human reference points
     n_human = human_embedding.shape[0]
     for i in range(n_human):
-        displayed_class_name = 'Unknown'
-        displayed_class_idx = -1
-        for ci, cn in zip(TARGET_CLASSES, CLASS_NAMES):
-            if human_ref_labels[i, ci] == 1:
-                displayed_class_name = cn
-                displayed_class_idx = ci
-                break
         rows.append([
             sample_counter, 'Human', 'human_reference',
-            class_name, displayed_class_name, displayed_class_idx,
+            class_name, class_name, target_class,
             'ref',
-            float(human_embedding[i, 0]), float(human_embedding[i, 1])
+            float(human_embedding[i, 0]), float(human_embedding[i, 1]),
+            '0', 'real', f'Human_{class_name}'
         ])
         sample_counter += 1
+
+    if human_synthetic_embedding is not None and len(human_synthetic_embedding) > 0:
+        for i in range(len(human_synthetic_embedding)):
+            rows.append([
+                sample_counter, 'Human', 'human_reference',
+                class_name, class_name, target_class,
+                'ref',
+                float(human_synthetic_embedding[i, 0]), float(human_synthetic_embedding[i, 1]),
+                '1', 'synthetic', human_synthetic_groups[i]
+            ])
+            sample_counter += 1
 
     # Plant test points per shot
     for shot in SHOT_COUNTS:
         emb = shot_embeddings[shot]
         n_plant = emb.shape[0]
         for i in range(n_plant):
-            displayed_class_name = 'Unknown'
-            displayed_class_idx = -1
-            for ci, cn in zip(TARGET_CLASSES, CLASS_NAMES):
-                if plant_ref_labels[i, ci] == 1:
-                    displayed_class_name = cn
-                    displayed_class_idx = ci
-                    break
             rows.append([
                 sample_counter, 'Plant', 'plant_test',
-                class_name, displayed_class_name, displayed_class_idx,
+                class_name, class_name, target_class,
                 shot,
-                float(emb[i, 0]), float(emb[i, 1])
+                float(emb[i, 0]), float(emb[i, 1]),
+                '0', 'real', f'Plant_{class_name}_{shot}shot'
             ])
             sample_counter += 1
+
+        synthetic_emb = None if shot_synthetic_embeddings is None else shot_synthetic_embeddings.get(shot)
+        synthetic_groups = None if shot_synthetic_groups is None else shot_synthetic_groups.get(shot)
+        if synthetic_emb is not None and len(synthetic_emb) > 0:
+            for i in range(len(synthetic_emb)):
+                rows.append([
+                    sample_counter, 'Plant', 'plant_test',
+                    class_name, class_name, target_class,
+                    shot,
+                    float(synthetic_emb[i, 0]), float(synthetic_emb[i, 1]),
+                    '1', 'synthetic', synthetic_groups[i]
+                ])
+                sample_counter += 1
 
     with open(csv_path, 'w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow([
             'sample_id', 'species', 'reference_type',
             'target_class_name', 'displayed_class_name', 'displayed_class_idx',
-            'shot', 'umap_x', 'umap_y'
+            'shot', 'umap_x', 'umap_y', 'is_synthetic', 'point_role', 'source_group'
         ])
         writer.writerows(rows)
     return csv_path
@@ -320,10 +341,14 @@ def plot_few_shot_trajectory_umap(human_features, human_labels, per_shot_feature
     class_name = CLASS_NAME_MAP[target_class]
     figure_name = f'fewshot_trajectory_{class_name}_{layer_name}'
 
-    human_mask = np.any(human_labels[:, TARGET_CLASSES] == 1, axis=1)
-    plant_mask = np.any(plant_labels[:, TARGET_CLASSES] == 1, axis=1)
+    human_mask = get_class_mask(human_labels, target_class)
+    plant_mask = get_class_mask(plant_labels, target_class)
     human_ref = human_features[human_mask]
     human_ref_labels = human_labels[human_mask]
+    plant_ref_labels = plant_labels[plant_mask]
+
+    if len(human_ref) == 0 or len(plant_ref_labels) == 0:
+        return
 
     all_feature_blocks = [human_ref]
     shot_sizes = []
@@ -340,55 +365,90 @@ def plot_few_shot_trajectory_umap(human_features, human_labels, per_shot_feature
         shot_embeddings[shot] = embedded[cursor:cursor + size]
         cursor += size
     human_embedding = embedded[:human_size]
-    plant_ref_labels = plant_labels[plant_mask]
+
+    human_source_groups = np.array([f'Human_{class_name}'] * len(human_embedding))
+    shot_source_groups = {
+        shot: np.array([f'Plant_{class_name}_{shot}shot'] * len(shot_embeddings[shot]))
+        for shot in SHOT_COUNTS
+    }
+
+    human_synthetic_embedding = np.array([])
+    human_synthetic_groups = np.array([])
+    if len(human_embedding) > 0:
+        human_synthetic_embedding, human_synthetic_groups, _ = generate_synthetic_points_by_group(
+            human_embedding, human_source_groups,
+            n_synthetic=INTERPOLATION_PARAMS['n_synthetic_per_point'],
+            jitter_strength=INTERPOLATION_PARAMS['jitter_strength']
+        )
+
+    shot_synthetic_embeddings = {}
+    shot_synthetic_groups = {}
+    plant_n_synthetic = max(
+        INTERPOLATION_PARAMS['n_synthetic_per_point'] * 2,
+        INTERPOLATION_PARAMS['n_synthetic_per_point'] + 8,
+    )
+    for shot in SHOT_COUNTS:
+        synthetic_emb, synthetic_groups, _ = generate_synthetic_points_by_group(
+            shot_embeddings[shot], shot_source_groups[shot],
+            n_synthetic=plant_n_synthetic,
+            jitter_strength=INTERPOLATION_PARAMS['jitter_strength']
+        )
+        shot_synthetic_embeddings[shot] = synthetic_emb
+        shot_synthetic_groups[shot] = synthetic_groups
 
     # Save trajectory UMAP points CSV
     save_trajectory_umap_points_csv(
         human_embedding, human_ref_labels,
         shot_embeddings, plant_ref_labels,
-        target_class, output_dir, layer_name
+        target_class, output_dir, layer_name,
+        human_synthetic_embedding=human_synthetic_embedding,
+        human_synthetic_groups=human_synthetic_groups,
+        shot_synthetic_embeddings=shot_synthetic_embeddings,
+        shot_synthetic_groups=shot_synthetic_groups
     )
 
     fig, axes = plt.subplots(1, len(SHOT_COUNTS), figsize=(6 * len(SHOT_COUNTS), 5.8), facecolor='#FBF8F3')
+    human_real_size = int(24 * POINT_STYLE_PARAMS['real_point_size_ratio'])
+    human_synthetic_size = max(1, int(24 * POINT_STYLE_PARAMS['synthetic_point_size_ratio']))
+    plant_real_size = human_real_size * 2
+    plant_synthetic_size = max(1, human_synthetic_size * 2)
+    real_alpha = POINT_STYLE_PARAMS['real_point_alpha']
+    synthetic_alpha = POINT_STYLE_PARAMS['synthetic_point_alpha']
+    human_real_color = HIGH_CONTRAST_SPECIES_COLORS['Human']['primary']
+    human_synth_color = HIGH_CONTRAST_SPECIES_COLORS['Human']['secondary']
+    plant_real_color = HIGH_CONTRAST_MOD_COLORS[class_name]['primary']
+    plant_synth_color = HIGH_CONTRAST_MOD_COLORS[class_name]['secondary']
 
     for ax, shot in zip(axes, SHOT_COUNTS):
-        # Rasterize human reference points
-        human_points = []
-        human_colors = []
-        for class_idx, current_class_name in zip(TARGET_CLASSES, CLASS_NAMES):
-            human_class_mask = human_ref_labels[:, class_idx] == 1
-            if np.any(human_class_mask):
-                human_points.append(human_embedding[human_class_mask])
-                human_colors.extend([MORANDI_CLASS_COLORS[current_class_name]] * np.sum(human_class_mask))
-        if human_points:
-            all_human = np.vstack(human_points)
+        if len(human_synthetic_embedding) > 0:
             ax.scatter(
-                all_human[:, 0], all_human[:, 1],
-                s=18, alpha=0.26, marker='o',
-                c=human_colors, edgecolors='none',
-                rasterized=True  # Rasterize for efficient PDF editing
+                human_synthetic_embedding[:, 0], human_synthetic_embedding[:, 1],
+                s=human_synthetic_size, alpha=synthetic_alpha, marker='o',
+                c=human_synth_color, edgecolors='none',
+                rasterized=True
             )
+        ax.scatter(
+            human_embedding[:, 0], human_embedding[:, 1],
+            s=human_real_size, alpha=real_alpha, marker='o',
+            c=human_real_color, edgecolors='none',
+            rasterized=True
+        )
 
-        # Rasterize plant test points
-        plant_points = []
-        plant_colors = []
-        plant_sizes = []
-        for class_idx, current_class_name in zip(TARGET_CLASSES, CLASS_NAMES):
-            plant_class_mask = plant_ref_labels[:, class_idx] == 1
-            if np.any(plant_class_mask):
-                plant_points.append(shot_embeddings[shot][plant_class_mask])
-                n = np.sum(plant_class_mask)
-                plant_colors.extend([MORANDI_CLASS_COLORS[current_class_name]] * n)
-                plant_sizes.extend([28 if class_idx == target_class else 22] * n)
-        if plant_points:
-            all_plant = np.vstack(plant_points)
+        if len(shot_synthetic_embeddings[shot]) > 0:
             ax.scatter(
-                all_plant[:, 0], all_plant[:, 1],
-                s=plant_sizes, alpha=0.80, marker='^',
-                c=plant_colors, edgecolors='none',
+                shot_synthetic_embeddings[shot][:, 0], shot_synthetic_embeddings[shot][:, 1],
+                s=plant_synthetic_size, alpha=synthetic_alpha, marker='o',
+                c=plant_synth_color, edgecolors='none',
                 linewidths=0,
-                rasterized=True  # Rasterize for efficient PDF editing
+                rasterized=True
             )
+        ax.scatter(
+            shot_embeddings[shot][:, 0], shot_embeddings[shot][:, 1],
+            s=plant_real_size, alpha=real_alpha, marker='o',
+            c=plant_real_color, edgecolors='none',
+            linewidths=0,
+            rasterized=True
+        )
 
         ax.set_title(f'{shot}-shot')
         ax.set_xlabel('UMAP 1')
@@ -396,18 +456,15 @@ def plot_few_shot_trajectory_umap(human_features, human_labels, per_shot_feature
         apply_plot_style(ax)
 
     legend_items = [
-        Line2D([0], [0], marker='o', color='w', label='Human reference', markerfacecolor=MORANDI_NEUTRAL, markersize=7, alpha=0.7),
-        Line2D([0], [0], marker='^', color='w', label='Plant test', markerfacecolor=MORANDI_NEUTRAL, markersize=8, alpha=0.9),
+        Line2D([0], [0], marker='o', color='w', label='Human reference', markerfacecolor=human_real_color, markersize=6, alpha=real_alpha),
+        Line2D([0], [0], marker='o', color='w', label='Human synthetic', markerfacecolor=human_synth_color, markersize=4, alpha=synthetic_alpha),
+        Line2D([0], [0], marker='o', color='w', label=f'Plant {class_name}', markerfacecolor=plant_real_color, markersize=9, alpha=real_alpha),
+        Line2D([0], [0], marker='o', color='w', label=f'Plant {class_name} synthetic', markerfacecolor=plant_synth_color, markersize=6, alpha=synthetic_alpha),
     ]
-    for class_name_iter in CLASS_NAMES:
-        legend_items.append(
-            Line2D([0], [0], marker='s', color='w', label=class_name_iter,
-                   markerfacecolor=MORANDI_CLASS_COLORS[class_name_iter], markersize=8)
-        )
     axes[0].legend(handles=legend_items, frameon=False, loc='best')
 
     fig.suptitle(
-        f'Few-shot Trajectory vs Human Reference: {class_name} ({layer_name})',
+        f'Few-shot Trajectory vs Human Reference: {class_name} Only ({layer_name})',
         y=1.03,
         fontsize=14,
     )
@@ -449,13 +506,16 @@ def log_trajectory_metrics(logger, results):
         logger.info(f"\n{table}")
 
 
-def run_few_shot_trajectory_analysis(config, checkpoint_path, output_dir, layer_name, logger, zero_shot_bundle):
+def run_few_shot_trajectory_analysis(config, checkpoint_path, output_dir, layer_name, logger,
+                                     zero_shot_bundle, baseline_model=None, baseline_state_dict=None):
     """Run few-shot trajectory analysis."""
     logger.info("\n" + "=" * 80)
     logger.info(f"FEW-SHOT TRAJECTORY ANALYSIS ({layer_name})")
     logger.info("=" * 80)
 
-    _, plant_dataset = prepare_datasets(config)
+    plant_dataset = zero_shot_bundle.get('plant_dataset')
+    if plant_dataset is None:
+        _, plant_dataset = prepare_datasets(config)
     plant_train_indices, plant_test_indices = split_plant_indices(plant_dataset, config.random_seed)
 
     logger.info(f"Plant train pool: {len(plant_train_indices)}")
@@ -465,7 +525,12 @@ def run_few_shot_trajectory_analysis(config, checkpoint_path, output_dir, layer_
         zero_shot_bundle['human_features'], zero_shot_bundle['human_labels']
     )
 
-    baseline_model, _ = load_model_from_checkpoint(checkpoint_path, config.device)
+    if baseline_model is None:
+        baseline_model, _ = load_model_from_checkpoint(checkpoint_path, config.device)
+    baseline_model.eval()
+    if baseline_state_dict is None:
+        baseline_state_dict = copy.deepcopy(baseline_model.state_dict())
+
     zero_shot_test_features, plant_test_labels = extract_dataset_features(
         baseline_model, plant_dataset, plant_test_indices, config.device, layer_name=layer_name
     )
@@ -490,7 +555,10 @@ def run_few_shot_trajectory_analysis(config, checkpoint_path, output_dir, layer_
 
         for shot in [1, 5, 10]:
             logger.info(f"Running {shot}-shot fine-tuning for {class_name}")
-            model, _ = load_model_from_checkpoint(checkpoint_path, config.device)
+            model = copy.deepcopy(baseline_model)
+            model.load_state_dict(baseline_state_dict)
+            model.to(config.device)
+            model.eval()
 
             support_indices = sample_binary_support_set(
                 plant_dataset,

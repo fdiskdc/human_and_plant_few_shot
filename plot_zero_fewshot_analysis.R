@@ -41,6 +41,7 @@ suppressPackageStartupMessages({
 
 # Helper function to optionally rasterize geom_point
 rasterise_or_not <- function(geom_obj, dpi = 300) {
+  dpi <- max(300, as.numeric(dpi))
   if (exists("has_ggrastr") && has_ggrastr) {
     return(rasterise(geom_obj, dpi = dpi))
   } else {
@@ -48,24 +49,72 @@ rasterise_or_not <- function(geom_obj, dpi = 300) {
   }
 }
 
-# ── Morandi palette (matches Python) ──────────────────────────────────────────
+# ── High-Contrast Color Palette (matches Python constants) ─────────────────────
+# Primary colors for real points, secondary for synthetic points
+HIGH_CONTRAST_MOD_COLORS <- list(
+  "Y" = list(
+    "primary" = "#e4852b",
+    "secondary" = "#fae41e"
+  ),
+  "m5C" = list(
+    "primary" = "#3d4092",
+    "secondary" = "#6ac6e9"
+  ),
+  "m6A" = list(
+    "primary" = "#0f82bf",
+    "secondary" = "#b96497"
+  )
+)
+
+# Gen3-specific colors (Gen3 is treated as different modification from Plant)
+HIGH_CONTRAST_GEN3_COLORS <- list(
+  "m6A" = list(
+    "primary" = "#0a8648",    # Green for real Gen3 m6A points
+    "secondary" = "#83bd55"    # Light green for synthetic Gen3 m6A points
+  )
+)
+
+# Species colors
+HIGH_CONTRAST_SPECIES_COLORS <- list(
+  "Human" = list(
+    "primary" = "#e4852b",
+    "secondary" = "#fae41e"
+  ),
+  "Plant" = list(
+    "primary" = "#0f82bf",
+    "secondary" = "#6ac6e9"
+  ),
+  "Gen3" = list(
+    "primary" = "#0a8648",
+    "secondary" = "#83bd55"
+  )
+)
+
+# Point style parameters (matches Python POINT_STYLE_PARAMS)
+REAL_POINT_SIZE <- 4.5
+SYNTHETIC_POINT_SIZE <- 1.8
+REAL_POINT_ALPHA <- 0.32
+SYNTHETIC_POINT_ALPHA <- 0.08
+
+# ── Morandi palette (kept for backward compatibility) ─────────────────────────
 MORANDI_CLASS_COLORS <- c(
-  "Y"   = "#B58A83",   # Dusty rose
-  "m5C" = "#9AAA91",   # Sage green
-  "m6A" = "#8EA3B0"    # Dusty blue
+  "Y"   = "#e4852b",
+  "m5C" = "#3d4092",
+  "m6A" = "#0f82bf"
 )
 MORANDI_SPECIES_COLORS <- c(
-  "Human" = "#8E8A84",  # Warm grey
-  "Plant" = "#A69C87"   # Taupe
+  "Human" = "#e4852b",
+  "Plant" = "#0f82bf",
+  "Gen3" = "#0a8648"
 )
-MORANDI_NEUTRAL   <- "#C7C0B7"  # Neutral beige
-MORANDI_GRID      <- "#E7E0D8"  # Light grid
-MORANDI_TEXT      <- "#6E675F"  # Text color
-MORANDI_TITLE     <- "#4A4540"  # Title color
-MORANDI_SPINE     <- "#D7CFC4"  # Spine/axis color
-MORANDI_WARM_ACCENT <- "#C4A898"  # Warm accent (for gain+)
-MORANDI_COOL_ACCENT <- "#A8B8C4"  # Cool accent (for gain-)
-PLOT_BG           <- "#FBF8F3"  # Plot background
+MORANDI_NEUTRAL   <- "#C7C0B7"
+MORANDI_GRID      <- "#E7E0D8"
+MORANDI_TEXT      <- "#6E675F"
+MORANDI_TITLE     <- "#4A4540"
+MORANDI_SPINE     <- "#D7CFC4"
+MORANDI_WARM_ACCENT <- "#e4852b"
+MORANDI_COOL_ACCENT <- "#6ac6e9"
+PLOT_BG           <- "#FBF8F3"
 CLASS_ORDER       <- c("Y", "m5C", "m6A")
 SHOT_COUNTS       <- c(0, 1, 5, 10)
 SHOT_LABELS       <- c("0-shot", "1-shot", "5-shot", "10-shot")
@@ -93,11 +142,52 @@ theme_paper <- function(base_size = 11, base_family = "") {
     )
 }
 
+# ── Helper: Get high contrast color ───────────────────────────────────────────
+get_high_contrast_color <- function(source_group, color_type = "primary") {
+  # source_group format: "Human_m6A", "Plant_m6A", "Gen3_m6A", "Y", "m5C", "m6A"
+  
+  # First, determine if it's a species-based or modification-based group
+  if (grepl("_", source_group)) {
+    parts <- strsplit(source_group, "_")[[1]]
+    if (length(parts) >= 2) {
+      species <- parts[1]
+      mod <- paste(parts[2:length(parts)], collapse = "_")  # Handle potential "_" in modification names
+    } else {
+      species <- parts[1]
+      mod <- ""
+    }
+  } else {
+    species <- ""
+    mod <- source_group
+  }
+  
+  # Check for Gen3 modification-specific colors first
+  if (!is.null(gen3_mod <<- get0("gen3_override", envir = globalenv())) && 
+      mod == "m6A" && species == "Gen3" &&
+      mod %in% names(HIGH_CONTRAST_GEN3_COLORS)) {
+    return(HIGH_CONTRAST_GEN3_COLORS[[mod]][[color_type]])
+  }
+  
+  # Check species colors
+  if (species %in% names(HIGH_CONTRAST_SPECIES_COLORS)) {
+    return(HIGH_CONTRAST_SPECIES_COLORS[[species]][[color_type]])
+  }
+  
+  # Check modification colors
+  if (mod %in% names(HIGH_CONTRAST_MOD_COLORS)) {
+    return(HIGH_CONTRAST_MOD_COLORS[[mod]][[color_type]])
+  }
+  
+  # Fallback
+  return("#999999")
+}
+
 # ── Argument parsing ──────────────────────────────────────────────────────────
 parse_args <- function() {
   args <- commandArgs(trailingOnly = TRUE)
   input_dir  <- "."
   output_dir <- "."
+  use_high_contrast <- TRUE
   i <- 1
   while (i <= length(args)) {
     if (args[i] == "--input_dir" && i < length(args)) {
@@ -115,6 +205,7 @@ parse_args <- function() {
 
 # ── Save figure helper ────────────────────────────────────────────────────────
 save_figure <- function(fig, base_path, width = 10, height = 6, dpi = 300) {
+  dpi <- max(300, as.numeric(dpi))
   ggsave(paste0(base_path, ".png"), fig, width = width, height = height, dpi = dpi, bg = PLOT_BG)
   ggsave(paste0(base_path, ".pdf"), fig, width = width, height = height, dpi = dpi, bg = PLOT_BG)
 }
@@ -322,45 +413,144 @@ plot_gain_heatmap <- function(trajectory_csv, layer_name, output_dir) {
   message("  [OK] Figure 3 saved: ", base)
 }
 
-# ── Figure 4: Joint UMAP (optional, but implemented) ──────────────────────────
+# ── Figure 4: Joint UMAP (Enhanced with synthetic points) ────────────────────
 plot_joint_umap <- function(umap_csv, layer_name, output_dir) {
-  df <- read_csv(umap_csv, show_col_types = FALSE) %>%
-    mutate(
-      class_name = factor(class_name, levels = c(CLASS_ORDER, "Unknown")),
-      species = factor(species, levels = c("Human", "Plant"))
-    )
+  df <- read_csv(umap_csv, show_col_types = FALSE)
 
   if (nrow(df) == 0) {
     message("  [WARN] No UMAP data found, skipping Figure 4.")
     return(invisible(NULL))
   }
 
-  # Extended Morandi palette for UMAP
+  # Check if is_synthetic column exists
+  has_synthetic <- "is_synthetic" %in% colnames(df)
+  
+  # Split real and synthetic points
+  if (has_synthetic) {
+    df_real <- df %>% filter(is_synthetic == 0 | is_synthetic == "0" | is_synthetic == FALSE)
+    df_synth <- df %>% filter(is_synthetic == 1 | is_synthetic == "1" | is_synthetic == TRUE)
+  } else {
+    df_real <- df
+    df_synth <- df[FALSE, ]  # Empty dataframe
+  }
+  
+  message(sprintf("  [INFO] Real points: %d, Synthetic points: %d", nrow(df_real), nrow(df_synth)))
+
+  # Extended Morandi palette for UMAP (fallback)
   umap_class_colors <- c(MORANDI_CLASS_COLORS, "Unknown" = MORANDI_NEUTRAL)
 
-  # By class - rasterize points for PDF editing efficiency
-  p1 <- ggplot(df, aes(x = umap_x, y = umap_y, color = class_name)) +
-    rasterise_or_not(geom_point(size = 1.0, alpha = 0.65, shape = 16)) +
-    stat_ellipse(aes(group = class_name), type = "norm", linetype = "dashed",
-                 linewidth = 0.4, alpha = 0.5, show.legend = FALSE) +
-    scale_color_manual(values = umap_class_colors) +
-    labs(
-      title = paste0("Joint UMAP by Class (", layer_name, ")"),
-      x = "UMAP 1", y = "UMAP 2", color = "Class"
-    ) +
-    theme_paper()
-
-  # By species - rasterize points for PDF editing efficiency
-  p2 <- ggplot(df, aes(x = umap_x, y = umap_y, color = species)) +
-    rasterise_or_not(geom_point(size = 1.0, alpha = 0.65, shape = 16)) +
-    stat_ellipse(aes(group = species), type = "norm", linetype = "dashed",
-                 linewidth = 0.4, alpha = 0.5, show.legend = FALSE) +
-    scale_color_manual(values = MORANDI_SPECIES_COLORS) +
-    labs(
-      title = paste0("Joint UMAP by Species (", layer_name, ")"),
-      x = "UMAP 1", y = "UMAP 2", color = "Species"
-    ) +
-    theme_paper()
+  # By class - plot real points first, then synthetic
+  p1 <- ggplot()
+  
+  # Add real points if any
+  if (nrow(df_real) > 0) {
+    # Create color mapping for real points based on source_group
+    real_colors <- sapply(df_real$source_group, function(sg) {
+      if (!is.na(sg) && sg != "") {
+        get_high_contrast_color(sg, "primary")
+      } else {
+        umap_class_colors[as.character(df_real$class_name[which(!is.na(df_real$source_group) & df_real$source_group == sg)[1]])]
+      }
+    })
+    real_colors[is.na(real_colors)] <- "#999999"
+    
+    p1 <- p1 + rasterise_or_not(geom_point(
+      data = df_real,
+      aes(x = umap_x, y = umap_y, color = class_name),
+      size = REAL_POINT_SIZE,
+      alpha = REAL_POINT_ALPHA,
+      shape = 16  # Circle
+    )) +
+      scale_color_manual(values = umap_class_colors)
+  }
+  
+  # Add synthetic points if any
+  if (nrow(df_synth) > 0) {
+    synth_colors <- sapply(df_synth$source_group, function(sg) {
+      if (!is.na(sg) && sg != "") {
+        get_high_contrast_color(sg, "secondary")
+      } else {
+        "#999999"
+      }
+    })
+    synth_colors[is.na(synth_colors)] <- "#999999"
+    
+    p1 <- p1 + rasterise_or_not(geom_point(
+      data = df_synth,
+      aes(x = umap_x, y = umap_y, color = class_name),
+      size = SYNTHETIC_POINT_SIZE,
+      alpha = SYNTHETIC_POINT_ALPHA,
+      shape = 16  # Circle
+    )) +
+      scale_color_manual(values = umap_class_colors)
+  }
+  
+  if (nrow(df_real) > 0 || nrow(df_synth) > 0) {
+    p1 <- p1 +
+      labs(
+        title = paste0("Joint UMAP by Class (", layer_name, ")"),
+        x = "UMAP 1", y = "UMAP 2", color = "Class"
+      ) +
+      theme_paper()
+  }
+  
+  # By species - plot real points first, then synthetic
+  p2 <- ggplot()
+  
+  # Add real points if any
+  if (nrow(df_real) > 0) {
+    real_species_colors <- sapply(df_real$source_group, function(sg) {
+      if (!is.na(sg) && sg != "" && grepl("_", sg)) {
+        species <- strsplit(sg, "_")[[1]][1]
+        if (species %in% names(HIGH_CONTRAST_SPECIES_COLORS)) {
+          return(HIGH_CONTRAST_SPECIES_COLORS[[species]]$primary)
+        }
+      }
+      MORANDI_SPECIES_COLORS[as.character(df_real$species[1])]
+    })
+    real_species_colors[is.na(real_species_colors)] <- "#999999"
+    
+    p2 <- p2 + rasterise_or_not(geom_point(
+      data = df_real,
+      aes(x = umap_x, y = umap_y, color = species),
+      size = REAL_POINT_SIZE,
+      alpha = REAL_POINT_ALPHA,
+      shape = 16  # Circle
+    )) +
+      scale_color_manual(values = MORANDI_SPECIES_COLORS)
+  }
+  
+  # Add synthetic points if any
+  if (nrow(df_synth) > 0) {
+    synth_species_colors <- sapply(df_synth$source_group, function(sg) {
+      if (!is.na(sg) && sg != "" && grepl("_", sg)) {
+        species <- strsplit(sg, "_")[[1]][1]
+        if (species %in% names(HIGH_CONTRAST_SPECIES_COLORS)) {
+          return(HIGH_CONTRAST_SPECIES_COLORS[[species]]$secondary)
+        }
+      }
+      "#999999"
+    })
+    synth_species_colors[is.na(synth_species_colors)] <- "#999999"
+    
+    p2 <- p2 + rasterise_or_not(geom_point(
+      data = df_synth,
+      aes(x = umap_x, y = umap_y, color = species),
+      size = SYNTHETIC_POINT_SIZE,
+      alpha = SYNTHETIC_POINT_ALPHA,
+      shape = 16  # Circle
+    )) +
+      scale_color_manual(values = MORANDI_SPECIES_COLORS)
+  }
+  
+  if (nrow(df_real) > 0 || nrow(df_synth) > 0) {
+    p2 <- p2 +
+      labs(
+        title = paste0("Joint UMAP by Species (", layer_name, ")"),
+        x = "UMAP 1", y = "UMAP 2", color = "Species"
+      ) +
+      theme_paper()
+  }
 
   base1 <- file.path(output_dir, paste0("figure4_joint_umap_by_class_", layer_name))
   base2 <- file.path(output_dir, paste0("figure4_joint_umap_by_species_", layer_name))
@@ -378,6 +568,108 @@ plot_joint_umap <- function(umap_csv, layer_name, output_dir) {
     ggsave(paste0(base3, ".png"), composite, width = 14, height = 6, dpi = 300, bg = PLOT_BG)
     ggsave(paste0(base3, ".pdf"), composite, width = 14, height = 6, dpi = 300, bg = PLOT_BG)
     message("  [OK] Figure 4 composite saved: ", base3)
+  }
+}
+
+# ── Figure 4b: Per-modification UMAP ─────────────────────────────────────────
+plot_joint_umap_per_mod <- function(input_dir, layer_name, output_dir) {
+  mod_files <- list.files(
+    input_dir,
+    pattern = paste0("^zeroshot_joint_umap_points_", layer_name, "_(Y|m5C|m6A)\\.csv$"),
+    full.names = TRUE
+  )
+
+  if (length(mod_files) == 0) {
+    message("  [WARN] No per-modification UMAP CSV files found, skipping per-modification UMAP.")
+    return(invisible(NULL))
+  }
+  
+  for (mod_file in mod_files) {
+    mod <- sub(paste0("^.*zeroshot_joint_umap_points_", layer_name, "_"), "", mod_file)
+    mod <- sub("\\.csv$", "", mod)
+    df_mod <- read_csv(mod_file, show_col_types = FALSE)
+    
+    if (nrow(df_mod) == 0) next
+    
+    # Check if is_synthetic column exists
+    has_synthetic <- "is_synthetic" %in% colnames(df_mod)
+    
+    # Split real and synthetic points
+    if (has_synthetic) {
+      df_real <- df_mod %>% filter(is_synthetic == 0 | is_synthetic == "0" | is_synthetic == FALSE)
+      df_synth <- df_mod %>% filter(is_synthetic == 1 | is_synthetic == "1" | is_synthetic == TRUE)
+    } else {
+      df_real <- df_mod
+      df_synth <- df_mod[FALSE, ]
+    }
+    
+    # Get colors for this modification
+    mod_primary <- if (mod %in% names(HIGH_CONTRAST_MOD_COLORS)) {
+      HIGH_CONTRAST_MOD_COLORS[[mod]]$primary
+    } else {
+      "#999999"
+    }
+    mod_secondary <- if (mod %in% names(HIGH_CONTRAST_MOD_COLORS)) {
+      HIGH_CONTRAST_MOD_COLORS[[mod]]$secondary
+    } else {
+      "#999999"
+    }
+    
+    p <- ggplot()
+    
+    # Add real points
+    if (nrow(df_real) > 0) {
+      p <- p + rasterise_or_not(geom_point(
+        data = df_real,
+        aes(x = umap_x, y = umap_y, color = source_group),
+        size = REAL_POINT_SIZE,
+        alpha = REAL_POINT_ALPHA,
+        shape = 16
+      ))
+    }
+    
+    # Add synthetic points
+    if (nrow(df_synth) > 0) {
+      p <- p + rasterise_or_not(geom_point(
+        data = df_synth,
+        aes(x = umap_x, y = umap_y, color = source_group),
+        size = SYNTHETIC_POINT_SIZE,
+        alpha = SYNTHETIC_POINT_ALPHA,
+        shape = 16
+      ))
+    }
+    
+    # Build color scale for this modification's groups
+    if (nrow(df_real) > 0 || nrow(df_synth) > 0) {
+      all_groups <- c(df_real$source_group, df_synth$source_group)
+      all_groups <- unique(all_groups[!is.na(all_groups)])
+      
+      group_colors <- sapply(all_groups, function(sg) {
+        parts <- strsplit(as.character(sg), "_")[[1]]
+        species <- parts[1]
+        if (species == "Human" && "Human" %in% names(HIGH_CONTRAST_SPECIES_COLORS)) {
+          return(HIGH_CONTRAST_SPECIES_COLORS$Human$primary)
+        } else if (species == "Plant" && "Plant" %in% names(HIGH_CONTRAST_SPECIES_COLORS)) {
+          return(HIGH_CONTRAST_SPECIES_COLORS$Plant$primary)
+        }
+        mod_primary
+      })
+      
+      p <- p +
+        scale_color_manual(
+          values = setNames(group_colors, all_groups),
+          guide = guide_legend(title = "Group", override.aes = list(size = 3))
+        ) +
+        labs(
+          title = paste0("Joint UMAP - ", mod, " (", layer_name, ")"),
+          x = "UMAP 1", y = "UMAP 2"
+        ) +
+        theme_paper()
+      
+      base <- file.path(output_dir, paste0("figure4_joint_umap_", mod, "_", layer_name))
+      save_figure(p, base, width = 8, height = 6)
+      message("  [OK] Per-mod UMAP saved: ", base)
+    }
   }
 }
 
@@ -402,8 +694,8 @@ plot_sample_counts <- function(sample_csv, layer_name, output_dir) {
 
   # Extended palette for species (slightly varied)
   species_colors_extended <- c(
-    "Human" = "#9B958E",  # Slightly darker warm grey
-    "Plant" = "#B5A88E"   # Slightly lighter taupe
+    "Human" = "#9B958E",
+    "Plant" = "#B5A88E"
   )
 
   p <- ggplot(df_long, aes(x = class_name, y = count, fill = species)) +
@@ -476,24 +768,58 @@ plot_gen3_umap <- function(umap_csv, layer_name, output_dir) {
     return(invisible(NULL))
   }
 
+  # Check if is_synthetic column exists
+  has_synthetic <- "is_synthetic" %in% colnames(df)
+  
+  # Split real and synthetic points
+  if (has_synthetic) {
+    df_real <- df %>% filter(is_synthetic == 0 | is_synthetic == "0" | is_synthetic == FALSE)
+    df_synth <- df %>% filter(is_synthetic == 1 | is_synthetic == "1" | is_synthetic == TRUE)
+  } else {
+    df_real <- df
+    df_synth <- df[FALSE, ]
+  }
+
   # Extended palette for 12 classes
   gen3_class_colors <- c(
     "#B58A83", "#9AAA91", "#8EA3B0", "#C4A898", "#A8B8C4", "#D7CFC4",
     "#9B958E", "#B5A88E", "#8E8A84", "#A69C87", "#C7C0B7", "#E7E0D8"
   )
-  names(gen3_class_colors) <- unique(df$class_name)
-
-  # Rasterize points for PDF editing efficiency
-  p <- ggplot(df, aes(x = umap_x, y = umap_y, color = class_name)) +
-    rasterise_or_not(geom_point(size = 1.0, alpha = 0.65, shape = 16)) +
-    stat_ellipse(aes(group = class_name), type = "norm", linetype = "dashed",
-                 linewidth = 0.4, alpha = 0.5, show.legend = FALSE) +
-    scale_color_manual(values = gen3_class_colors) +
-    labs(
-      title = paste0("Gen3 UMAP by Class (", layer_name, ")"),
-      x = "UMAP 1", y = "UMAP 2", color = "Class"
-    ) +
-    theme_paper()
+  
+  p <- ggplot()
+  
+  # Add real points
+  if (nrow(df_real) > 0) {
+    p <- p + rasterise_or_not(geom_point(
+      data = df_real,
+      aes(x = umap_x, y = umap_y, color = class_name),
+      size = REAL_POINT_SIZE,
+      alpha = REAL_POINT_ALPHA,
+      shape = 16
+    )) +
+      scale_color_manual(values = gen3_class_colors)
+  }
+  
+  # Add synthetic points
+  if (nrow(df_synth) > 0) {
+    p <- p + rasterise_or_not(geom_point(
+      data = df_synth,
+      aes(x = umap_x, y = umap_y, color = class_name),
+      size = SYNTHETIC_POINT_SIZE,
+      alpha = SYNTHETIC_POINT_ALPHA,
+      shape = 16
+    )) +
+      scale_color_manual(values = gen3_class_colors)
+  }
+  
+  if (nrow(df_real) > 0 || nrow(df_synth) > 0) {
+    p <- p +
+      labs(
+        title = paste0("Gen3 UMAP by Class (", layer_name, ")"),
+        x = "UMAP 1", y = "UMAP 2", color = "Class"
+      ) +
+      theme_paper()
+  }
 
   base <- file.path(output_dir, paste0("gen3_umap_by_class_", layer_name))
   save_figure(p, base, width = 9, height = 7)
@@ -563,7 +889,10 @@ plot_gen3_zeroshot_alignment <- function(alignment_csv, layer_name, output_dir) 
       aes(label = sprintf("%.3f", compactness), group = species_metric),
       position = position_dodge(width = 0.65), vjust = -0.4, size = 3, color = MORANDI_TEXT
     ) +
-    scale_fill_manual(values = c("Human" = "#8E8A84", "Gen3" = "#A69C87")) +
+    scale_fill_manual(values = c(
+      "Human" = HIGH_CONTRAST_SPECIES_COLORS$Human$primary,
+      "Gen3" = HIGH_CONTRAST_SPECIES_COLORS$Gen3$primary
+    )) +
     labs(title = "D. Intra-class Compactness (Gen3 vs Human)", y = "Mean Intra-class Distance", x = NULL, fill = "Species") +
     theme_paper()
 
@@ -608,31 +937,116 @@ plot_gen3_joint_umap <- function(umap_csv, layer_name, output_dir) {
     message("  [WARN] No target class data found in gen3 joint UMAP, skipping.")
     return(invisible(NULL))
   }
+  
+  # Check if is_synthetic column exists
+  has_synthetic <- "is_synthetic" %in% colnames(df)
+  
+  # Split real and synthetic points
+  if (has_synthetic) {
+    df_real <- df %>% filter(is_synthetic == 0 | is_synthetic == "0" | is_synthetic == FALSE)
+    df_synth <- df %>% filter(is_synthetic == 1 | is_synthetic == "1" | is_synthetic == TRUE)
+  } else {
+    df_real <- df
+    df_synth <- df[FALSE, ]
+  }
+  
+  message(sprintf("  [INFO] Gen3 joint UMAP - Real points: %d, Synthetic points: %d", nrow(df_real), nrow(df_synth)))
 
-  # By class - rasterize points for PDF editing efficiency
-  p1 <- ggplot(df, aes(x = umap_x, y = umap_y, color = class_name)) +
-    rasterise_or_not(geom_point(size = 1.0, alpha = 0.65, shape = 16)) +
-    stat_ellipse(aes(group = class_name), type = "norm", linetype = "dashed",
-                 linewidth = 0.4, alpha = 0.5, show.legend = FALSE) +
-    scale_color_manual(values = MORANDI_CLASS_COLORS) +
-    labs(
-      title = paste0("Gen3/Human Joint UMAP by Class (", layer_name, ")"),
-      x = "UMAP 1", y = "UMAP 2", color = "Class"
-    ) +
-    theme_paper()
+  # By class - real points first, then synthetic
+  p1 <- ggplot()
+  
+  gen3_class_colors <- c(
+    "Y" = HIGH_CONTRAST_MOD_COLORS$Y$primary,
+    "m5C" = HIGH_CONTRAST_MOD_COLORS$m5C$primary,
+    "m6A" = HIGH_CONTRAST_GEN3_COLORS$m6A$primary
+  )
+  gen3_class_synth_colors <- c(
+    "Y" = HIGH_CONTRAST_MOD_COLORS$Y$secondary,
+    "m5C" = HIGH_CONTRAST_MOD_COLORS$m5C$secondary,
+    "m6A" = HIGH_CONTRAST_GEN3_COLORS$m6A$secondary
+  )
 
-  # By species - rasterize points for PDF editing efficiency
-  species_colors <- c("Human" = "#8E8A84", "Gen3" = "#A69C87")
-  p2 <- ggplot(df, aes(x = umap_x, y = umap_y, color = species)) +
-    rasterise_or_not(geom_point(size = 1.0, alpha = 0.65, shape = 16)) +
-    stat_ellipse(aes(group = species), type = "norm", linetype = "dashed",
-                 linewidth = 0.4, alpha = 0.5, show.legend = FALSE) +
-    scale_color_manual(values = species_colors) +
-    labs(
-      title = paste0("Gen3/Human Joint UMAP by Species (", layer_name, ")"),
-      x = "UMAP 1", y = "UMAP 2", color = "Species"
-    ) +
-    theme_paper()
+  if (nrow(df_synth) > 0) {
+    p1 <- p1 + rasterise_or_not(geom_point(
+      data = df_synth,
+      aes(x = umap_x, y = umap_y, color = class_name),
+      size = SYNTHETIC_POINT_SIZE,
+      alpha = SYNTHETIC_POINT_ALPHA,
+      shape = 16
+    ))
+  }
+  
+  if (nrow(df_real) > 0) {
+    p1 <- p1 + rasterise_or_not(geom_point(
+      data = df_real,
+      aes(x = umap_x, y = umap_y, color = class_name),
+      size = REAL_POINT_SIZE,
+      alpha = REAL_POINT_ALPHA,
+      shape = 16
+    ))
+  }
+  
+  if (nrow(df_real) > 0 || nrow(df_synth) > 0) {
+    p1 <- p1 + scale_color_manual(values = gen3_class_colors)
+  }
+  
+  if (nrow(df_real) > 0 || nrow(df_synth) > 0) {
+    p1 <- p1 +
+      labs(
+        title = paste0("Gen3/Human Joint UMAP by Class (", layer_name, ")"),
+        x = "UMAP 1", y = "UMAP 2", color = "Class"
+      ) +
+      theme_paper()
+  }
+
+  # By species - real points first, then synthetic
+  species_colors_enhanced <- c(
+    "Human" = HIGH_CONTRAST_SPECIES_COLORS$Human$primary,
+    "Gen3" = HIGH_CONTRAST_SPECIES_COLORS$Gen3$primary
+  )
+  
+  p2 <- ggplot()
+  
+  if (nrow(df_real) > 0) {
+    p2 <- p2 + rasterise_or_not(geom_point(
+      data = df_real,
+      aes(x = umap_x, y = umap_y, color = species),
+      size = REAL_POINT_SIZE,
+      alpha = REAL_POINT_ALPHA,
+      shape = 16
+    )) +
+      scale_color_manual(values = species_colors_enhanced)
+  }
+  
+  if (nrow(df_synth) > 0) {
+    synth_colors <- sapply(df_synth$source_group, function(sg) {
+      if (!is.na(sg) && sg != "" && grepl("_", sg)) {
+        species <- strsplit(sg, "_")[[1]][1]
+        if (species %in% names(HIGH_CONTRAST_SPECIES_COLORS)) {
+          return(HIGH_CONTRAST_SPECIES_COLORS[[species]]$secondary)
+        }
+      }
+      "#999999"
+    })
+    
+    p2 <- p2 + rasterise_or_not(geom_point(
+      data = df_synth,
+      aes(x = umap_x, y = umap_y, color = species),
+      size = SYNTHETIC_POINT_SIZE,
+      alpha = SYNTHETIC_POINT_ALPHA,
+      shape = 16
+    )) +
+      scale_color_manual(values = species_colors_enhanced)
+  }
+  
+  if (nrow(df_real) > 0 || nrow(df_synth) > 0) {
+    p2 <- p2 +
+      labs(
+        title = paste0("Gen3/Human Joint UMAP by Species (", layer_name, ")"),
+        x = "UMAP 1", y = "UMAP 2", color = "Species"
+      ) +
+      theme_paper()
+  }
 
   base1 <- file.path(output_dir, paste0("gen3_joint_umap_by_class_", layer_name))
   base2 <- file.path(output_dir, paste0("gen3_joint_umap_by_species_", layer_name))
@@ -715,6 +1129,13 @@ main <- function() {
     plot_joint_umap(umap_csv, layer_name, output_dir)
   } else {
     message("  [WARN] File not found: ", umap_csv)
+  }
+
+  message("\n── Generating Figure 4b: Per-modification UMAP ──")
+  if (dir.exists(input_dir)) {
+    plot_joint_umap_per_mod(input_dir, layer_name, output_dir)
+  } else {
+    message("  [WARN] Input directory not found: ", input_dir)
   }
 
   message("\n── Generating Supplementary: Sample count bar chart ──")

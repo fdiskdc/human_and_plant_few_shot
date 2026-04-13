@@ -20,6 +20,7 @@ Usage:
 """
 
 import argparse
+import copy
 import os
 import random
 import warnings
@@ -75,12 +76,19 @@ def main(config_path=DEFAULT_CONFIG_PATH, checkpoint_path=None, layer_name='gcn_
     if not os.path.exists(checkpoint_path):
         raise FileNotFoundError(f'Checkpoint not found: {checkpoint_path}')
 
+    baseline_model, checkpoint = load_model_from_checkpoint(checkpoint_path, Config.device)
+    baseline_model.eval()
+    baseline_state_dict = copy.deepcopy(baseline_model.state_dict())
+    logger.info(f"Loaded checkpoint epoch {checkpoint.get('epoch', 'unknown')} from {checkpoint_path}")
+
     # Run standard zero-shot and few-shot analysis (plant data)
     zero_shot_bundle = run_zero_shot_analysis(
-        Config, checkpoint_path, output_dir, layer_name, logger
+        Config, checkpoint_path, output_dir, layer_name, logger,
+        model=baseline_model, checkpoint=checkpoint
     )
     few_shot_metrics = run_few_shot_trajectory_analysis(
-        Config, checkpoint_path, output_dir, layer_name, logger, zero_shot_bundle
+        Config, checkpoint_path, output_dir, layer_name, logger, zero_shot_bundle,
+        baseline_model=baseline_model, baseline_state_dict=baseline_state_dict
     )
 
     # Run 3-generation analysis (always run alongside plant analysis)
@@ -88,15 +96,14 @@ def main(config_path=DEFAULT_CONFIG_PATH, checkpoint_path=None, layer_name='gcn_
     logger.info("Running 3-generation data analysis...")
     logger.info("=" * 80)
     gen3_bundle = run_gen3_analysis(
-        Config, checkpoint_path, output_dir, layer_name, logger
+        Config, checkpoint_path, output_dir, layer_name, logger,
+        model=baseline_model, checkpoint=checkpoint
     )
 
     # Run spatial motif analysis for both plant and gen3 data (always run)
     if not HAS_SPATIAL_MOTIF:
         logger.warning("Spatial motif module not available (logomaker or captum not installed).")
     else:
-        model, _ = load_model_from_checkpoint(checkpoint_path, Config.device)
-
         # Determine target classes for spatial motif
         if spatial_motif_classes is None:
             target_classes = list(MOD_NAMES.items())
@@ -107,9 +114,11 @@ def main(config_path=DEFAULT_CONFIG_PATH, checkpoint_path=None, layer_name='gcn_
         logger.info("\n" + "=" * 80)
         logger.info("Running spatial motif analysis on plant data...")
         logger.info("=" * 80)
-        _, plant_dataset = prepare_datasets(Config)
+        plant_dataset = zero_shot_bundle.get('plant_dataset')
+        if plant_dataset is None:
+            _, plant_dataset = prepare_datasets(Config)
         run_spatial_motif_analysis(
-            model, plant_dataset, 'plant', target_classes, output_dir, Config.device,
+            baseline_model, plant_dataset, 'plant', target_classes, output_dir, Config.device,
             n_clusters=n_clusters, pca_components=pca_components, node_num=node_num
         )
 
@@ -118,7 +127,7 @@ def main(config_path=DEFAULT_CONFIG_PATH, checkpoint_path=None, layer_name='gcn_
         logger.info("Running spatial motif analysis on gen3 data...")
         logger.info("=" * 80)
         run_spatial_motif_analysis(
-            model, gen3_bundle['gen3_dataset'], 'gen3', target_classes, output_dir, Config.device,
+            baseline_model, gen3_bundle['gen3_dataset'], 'gen3', target_classes, output_dir, Config.device,
             n_clusters=n_clusters, pca_components=pca_components, node_num=node_num
         )
 

@@ -18,6 +18,27 @@ import numpy as np
 from utils.fewshot_analysis_constants import MORANDI_GRID
 
 
+def _normalize_min_dpi(value, fallback=300):
+    """Return a numeric DPI value with a floor, tolerating matplotlib string defaults."""
+    if isinstance(value, str):
+        value_lower = value.strip().lower()
+        if value_lower == 'figure':
+            value = matplotlib.rcParams.get('figure.dpi', fallback)
+        else:
+            try:
+                value = float(value)
+            except ValueError:
+                value = fallback
+    try:
+        return max(fallback, int(float(value)))
+    except (TypeError, ValueError):
+        return fallback
+
+
+matplotlib.rcParams['figure.dpi'] = _normalize_min_dpi(matplotlib.rcParams.get('figure.dpi', 300))
+matplotlib.rcParams['savefig.dpi'] = _normalize_min_dpi(matplotlib.rcParams.get('savefig.dpi', 300))
+
+
 def get_timestamp():
     """Return a timestamp string in YYYYMMDD_HHMMSS format."""
     return datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -39,6 +60,7 @@ def ensure_dir(path):
 
 def save_figure(fig, base_path, dpi=300):
     """Save figure as both PNG and PDF."""
+    dpi = _normalize_min_dpi(dpi)
     fig.savefig(f"{base_path}.png", dpi=dpi, bbox_inches='tight')
     fig.savefig(f"{base_path}.pdf", dpi=dpi, bbox_inches='tight')
     plt.close(fig)

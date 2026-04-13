@@ -19,15 +19,85 @@ REL_RANGE = (MAX_REL_POS - MIN_REL_POS) + 1  # 2001 positions
 CENTER_IDX = -MIN_REL_POS
 NUC_TO_INDEX = {'A': 0, 'C': 1, 'G': 2, 'U': 3}
 
-# Morandi color palette
+# UMAP color pool
+UMAP_COLOR_POOL = [
+    '#0f82bf',
+    '#6ac6e9',
+    '#3d4092',
+    '#e92633',
+    '#e4852b',
+    '#fae41e',
+    '#0a8648',
+    '#83bd55',
+    '#b96497',
+]
+
+# High-contrast color palette for enhanced visualization
+# Primary (real points) and secondary (synthetic points) colors for each modification
+HIGH_CONTRAST_MOD_COLORS = {
+    'Y': {
+        'primary': '#e92633',
+        'secondary': '#fae41e',
+    },
+    'm5C': {
+        'primary': '#3d4092',
+        'secondary': '#6ac6e9',
+    },
+    'm6A': {
+        'primary': '#0f82bf',
+        'secondary': '#b96497',
+    },
+}
+
+# Gen3 specific colors (Gen3 is treated as different modification from Plant)
+HIGH_CONTRAST_GEN3_COLORS = {
+    'm6A': {
+        'primary': '#0a8648',
+        'secondary': '#83bd55',
+    },
+}
+
+# High-contrast species colors
+HIGH_CONTRAST_SPECIES_COLORS = {
+    'Human': {
+        'primary': '#e4852b',
+        'secondary': '#fae41e',
+    },
+    'Plant': {
+        'primary': '#0f82bf',
+        'secondary': '#6ac6e9',
+    },
+    'Gen3': {
+        'primary': '#0a8648',
+        'secondary': '#83bd55',
+    },
+}
+
+# Visual enhancement interpolation parameters
+INTERPOLATION_PARAMS = {
+    'n_synthetic_per_point': 12,
+    'jitter_strength': 0.008,
+    'n_neighbors_for_interpolation': 5,
+}
+
+# Point style parameters
+POINT_STYLE_PARAMS = {
+    'real_point_size_ratio': 0.22,
+    'synthetic_point_size_ratio': 0.08,
+    'real_point_alpha': 0.32,
+    'synthetic_point_alpha': 0.08,
+}
+
+# Morandi color palette (kept for backward compatibility)
 MORANDI_CLASS_COLORS = {
-    'Y': '#B58A83',
-    'm5C': '#9AAA91',
-    'm6A': '#8EA3B0',
+    'Y': '#e4852b',
+    'm5C': '#3d4092',
+    'm6A': '#0f82bf',
 }
 MORANDI_SPECIES_COLORS = {
-    'Human': '#8E8A84',
-    'Plant': '#A69C87',
+    'Human': '#e4852b',
+    'Plant': '#0f82bf',
+    'Gen3': '#0a8648',
 }
 MORANDI_NEUTRAL = '#C7C0B7'
 MORANDI_GRID = '#E7E0D8'
