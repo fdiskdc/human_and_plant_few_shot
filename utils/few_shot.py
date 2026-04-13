@@ -14,6 +14,7 @@ import torch.optim as optim
 from torch_geometric.loader import DataLoader
 from torch_geometric.data import Batch as PyGBatch
 import logging
+import os
 
 # Import constants from common
 from .common import MOD_NAMES, GROUP_TO_CLASS_INDICES
@@ -23,6 +24,95 @@ from .metrics import (
     evaluate_unbalance, evaluate_balanceb, evaluate_ac4c,
     get_all_predictions
 )
+
+
+# =============================================================================
+# Full-Data Few-Shot Dataset Wrappers
+# =============================================================================
+
+class FewShotHumanFullDataset:
+    """
+    Explicit full human3 dataset wrapper for few-shot workflows.
+
+    Mer100Dataset already memmaps the full human3 arrays when `use_human3=True`,
+    but its historical call sites often pass `mode='train'`, which causes the
+    structure cache filename to look train-only. This wrapper makes the intended
+    behavior explicit by forcing `mode='all'`.
+    """
+
+    def __new__(cls, data_dir='/home/dc/vscode/vscode20251230/human_and_plant/human3',
+                cache_dir='npy/cache', use_cache=True, preload_cache=True):
+        from dataset.human import Mer100Dataset
+
+        return Mer100Dataset(
+            mode='all',
+            data_dir=data_dir,
+            cache_dir=cache_dir,
+            use_human3=True,
+            use_cache=use_cache,
+            preload_cache=preload_cache,
+        )
+
+
+class FewShotPlantZeroFullDataset:
+    """
+    Explicit full Plant + Zero dataset wrapper for few-shot workflows.
+
+    PlantSingleDataset already loads the complete Plant set and the complete Zero
+    set into one virtual dataset. This wrapper provides a stable, descriptive
+    entrypoint from utils.few_shot.
+    """
+
+    def __new__(cls, plant_dir='npy/plant', zero_dir='npy/zero',
+                cache_dir='npy/cache', use_cache=True, preload_cache=True):
+        from dataset.plant_single import PlantSingleDataset
+
+        return PlantSingleDataset(
+            plant_dir=plant_dir,
+            zero_dir=zero_dir,
+            cache_dir=cache_dir,
+            use_cache=use_cache,
+            preload_cache=preload_cache,
+        )
+
+
+def build_full_few_shot_datasets(
+    human_data_dir='/home/dc/vscode/vscode20251230/human_and_plant/human3',
+    plant_dir='npy/plant',
+    zero_dir='npy/zero',
+    cache_dir='npy/cache',
+    use_cache=True,
+    preload_cache=True,
+):
+    """
+    Build the explicit full-data dataset pair used by few-shot analysis.
+
+    Returns:
+        tuple: (human_full_dataset, plant_zero_full_dataset)
+    """
+    human_dataset = FewShotHumanFullDataset(
+        data_dir=human_data_dir,
+        cache_dir=cache_dir,
+        use_cache=use_cache,
+        preload_cache=preload_cache,
+    )
+    plant_zero_dataset = FewShotPlantZeroFullDataset(
+        plant_dir=plant_dir,
+        zero_dir=zero_dir,
+        cache_dir=cache_dir,
+        use_cache=use_cache,
+        preload_cache=preload_cache,
+    )
+
+    print("[FewShotFullDataset] Full-data datasets initialized:")
+    print(f"  Human(all): {len(human_dataset)} samples, cache mode={getattr(human_dataset, 'mode', 'unknown')}")
+    print(
+        f"  Plant+Zero(all): {len(plant_zero_dataset)} samples "
+        f"({getattr(plant_zero_dataset, 'num_plant', 'NA')} Plant + "
+        f"{getattr(plant_zero_dataset, 'num_zero', 'NA')} Zero)"
+    )
+
+    return human_dataset, plant_zero_dataset
 
 
 # =============================================================================
