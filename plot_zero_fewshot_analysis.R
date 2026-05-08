@@ -53,7 +53,7 @@ rasterise_or_not <- function(geom_obj, dpi = 300) {
 # Primary colors for real points, secondary for synthetic points
 HIGH_CONTRAST_MOD_COLORS <- list(
   "Y" = list(
-    "primary" = "#e4852b",
+    "primary" = "#e92633",
     "secondary" = "#fae41e"
   ),
   "m5C" = list(
@@ -63,6 +63,22 @@ HIGH_CONTRAST_MOD_COLORS <- list(
   "m6A" = list(
     "primary" = "#0f82bf",
     "secondary" = "#b96497"
+  )
+)
+
+# Human-specific colors for few-shot trajectory plots.
+HIGH_CONTRAST_HUMAN_MOD_COLORS <- list(
+  "Y" = list(
+    "primary" = "#e4852b",
+    "secondary" = "#f6c48f"
+  ),
+  "m5C" = list(
+    "primary" = "#b2476b",
+    "secondary" = "#e2a8bc"
+  ),
+  "m6A" = list(
+    "primary" = "#7a5fd0",
+    "secondary" = "#c8b8f3"
   )
 )
 
@@ -145,37 +161,42 @@ theme_paper <- function(base_size = 11, base_family = "") {
 # ── Helper: Get high contrast color ───────────────────────────────────────────
 get_high_contrast_color <- function(source_group, color_type = "primary") {
   # source_group format: "Human_m6A", "Plant_m6A", "Gen3_m6A", "Y", "m5C", "m6A"
-  
-  # First, determine if it's a species-based or modification-based group
+
+  species <- ""
+  mod <- source_group
   if (grepl("_", source_group)) {
-    parts <- strsplit(source_group, "_")[[1]]
-    if (length(parts) >= 2) {
-      species <- parts[1]
-      mod <- paste(parts[2:length(parts)], collapse = "_")  # Handle potential "_" in modification names
+    species <- sub("_.*$", "", source_group)
+
+    if (species == "Plant") {
+      mod <- sub("^Plant_([^_]+).*$", "\\1", source_group)
+    } else if (species == "Human") {
+      mod <- sub("^Human_([^_]+).*$", "\\1", source_group)
+    } else if (species == "Gen3") {
+      mod <- sub("^Gen3_([^_]+).*$", "\\1", source_group)
     } else {
-      species <- parts[1]
-      mod <- ""
+      parts <- strsplit(source_group, "_")[[1]]
+      mod <- paste(parts[2:length(parts)], collapse = "_")
     }
-  } else {
-    species <- ""
-    mod <- source_group
+  }
+
+  if (species == "Human" && mod %in% names(HIGH_CONTRAST_HUMAN_MOD_COLORS)) {
+    return(HIGH_CONTRAST_HUMAN_MOD_COLORS[[mod]][[color_type]])
   }
   
   # Check for Gen3 modification-specific colors first
-  if (!is.null(gen3_mod <<- get0("gen3_override", envir = globalenv())) && 
-      mod == "m6A" && species == "Gen3" &&
+  if (mod == "m6A" && species == "Gen3" &&
       mod %in% names(HIGH_CONTRAST_GEN3_COLORS)) {
     return(HIGH_CONTRAST_GEN3_COLORS[[mod]][[color_type]])
   }
-  
-  # Check species colors
-  if (species %in% names(HIGH_CONTRAST_SPECIES_COLORS)) {
-    return(HIGH_CONTRAST_SPECIES_COLORS[[species]][[color_type]])
-  }
-  
+
   # Check modification colors
   if (mod %in% names(HIGH_CONTRAST_MOD_COLORS)) {
     return(HIGH_CONTRAST_MOD_COLORS[[mod]][[color_type]])
+  }
+
+  # Check species colors
+  if (species %in% names(HIGH_CONTRAST_SPECIES_COLORS)) {
+    return(HIGH_CONTRAST_SPECIES_COLORS[[species]][[color_type]])
   }
   
   # Fallback

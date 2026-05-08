@@ -17,7 +17,7 @@ from torch_geometric.loader import DataLoader as PyGDataLoader
 
 from utils.fewshot_analysis_constants import (
     TARGET_CLASSES, CLASS_NAMES, CLASS_NAME_MAP, SHOT_COUNTS,
-    HIGH_CONTRAST_MOD_COLORS, HIGH_CONTRAST_SPECIES_COLORS,
+    HIGH_CONTRAST_MOD_COLORS, HIGH_CONTRAST_HUMAN_MOD_COLORS,
     INTERPOLATION_PARAMS, POINT_STYLE_PARAMS
 )
 from utils.fewshot_analysis_features import load_model_from_checkpoint, extract_dataset_features
@@ -414,8 +414,8 @@ def plot_few_shot_trajectory_umap(human_features, human_labels, per_shot_feature
     plant_synthetic_size = max(1, human_synthetic_size * 2)
     real_alpha = POINT_STYLE_PARAMS['real_point_alpha']
     synthetic_alpha = POINT_STYLE_PARAMS['synthetic_point_alpha']
-    human_real_color = HIGH_CONTRAST_SPECIES_COLORS['Human']['primary']
-    human_synth_color = HIGH_CONTRAST_SPECIES_COLORS['Human']['secondary']
+    human_real_color = HIGH_CONTRAST_HUMAN_MOD_COLORS[class_name]['primary']
+    human_synth_color = HIGH_CONTRAST_HUMAN_MOD_COLORS[class_name]['secondary']
     plant_real_color = HIGH_CONTRAST_MOD_COLORS[class_name]['primary']
     plant_synth_color = HIGH_CONTRAST_MOD_COLORS[class_name]['secondary']
 
