@@ -199,13 +199,17 @@ class PlantSingleDataset(Dataset):
         one_hot_seq = self._one_hot_encode_optimized(seq_bytes)
         node_features = torch.FloatTensor(one_hot_seq)
 
-        data = Data(
+data = Data(
             x=node_features,
             edge_index=edge_index,
             y=torch.FloatTensor(y12).unsqueeze(0),
             y_4class=torch.FloatTensor(y4).unsqueeze(0),
-            y_site=torch.LongTensor(full_label)  # Add site-level labels
+            y_site=torch.LongTensor(full_label)
         )
+
+        # Add sequence string (avoiding one-hot conversion later)
+        seq_str = seq_bytes.tobytes().decode('ascii', errors='ignore')
+        data.seq_str = seq_str
 
         # Add metadata for tracking
         data.is_plant = is_plant

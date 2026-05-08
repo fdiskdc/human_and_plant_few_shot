@@ -49,6 +49,24 @@ HIGH_CONTRAST_MOD_COLORS = {
     },
 }
 
+# Human-specific colors for few-shot trajectory plots.
+# Human uses a distinct palette from plant so the same modification can be
+# visually separated across datasets.
+HIGH_CONTRAST_HUMAN_MOD_COLORS = {
+    'Y': {
+        'primary': '#e4852b',
+        'secondary': '#f6c48f',
+    },
+    'm5C': {
+        'primary': '#b2476b',
+        'secondary': '#e2a8bc',
+    },
+    'm6A': {
+        'primary': '#7a5fd0',
+        'secondary': '#c8b8f3',
+    },
+}
+
 # Gen3 specific colors (Gen3 is treated as different modification from Plant)
 HIGH_CONTRAST_GEN3_COLORS = {
     'm6A': {

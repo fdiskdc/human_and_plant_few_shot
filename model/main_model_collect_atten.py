@@ -280,6 +280,7 @@ class HierarchicalClassQueryHeadPooling(nn.Module):
             logits_4: [Batch, 4] or [Batch, Num_Valid_Groups]
             attn_out_12: [Batch, 12, Dim] or [Batch, Num_Valid_Classes, Dim]
             attn_out_4: [Batch, 4, Dim] or [Batch, Num_Valid_Groups, Dim]
+            attn_weights_12: [Batch, 12, Seq_Len] attention weights over sequence positions
         """
         batch_size = batch.max().item() + 1
         device = node_features.device
@@ -322,8 +323,8 @@ class HierarchicalClassQueryHeadPooling(nn.Module):
         logits_12_final = self.output_proj_12(attn_out_12).squeeze(-1)
         logits_4_final = self.output_proj_4(attn_out_4).squeeze(-1)
 
-        # Return: 12-class Logits, 4-class Logits, attn_out_12, attn_out_4
-        return logits_12_final.to(device), logits_4_final.to(device), attn_out_12.to(device), attn_out_4.to(device)
+        # Return: 12-class Logits, 4-class Logits, attn_out_12, attn_out_4, attn_weights_12
+        return logits_12_final.to(device), logits_4_final.to(device), attn_out_12.to(device), attn_out_4.to(device), attn_weights_12.to(device)
 
 
 class RNA_ClassQuery_Model_Collect_Atten(nn.Module):
@@ -409,7 +410,12 @@ class RNA_ClassQuery_Model_Collect_Atten(nn.Module):
             return_attention: Always returns attention outputs for this model
 
         Returns:
-            (logits_12class, logits_4class, attn_out_12, attn_out_4)
+            (logits_12class, logits_4class, attn_out_12, attn_out_4, attn_weights_12)
+            - logits_12class: [Batch, 12] 12-class logits
+            - logits_4class: [Batch, 4] 4-class logits
+            - attn_out_12: [Batch, 12, Dim] attention output vectors
+            - attn_out_4: [Batch, 4, Dim] group attention output vectors
+            - attn_weights_12: [Batch, 12, Seq_Len] attention weights over sequence positions
         """
         if isinstance(x, Data) or isinstance(x, Batch):
             batch_obj = x
@@ -434,7 +440,7 @@ class RNA_ClassQuery_Model_Collect_Atten(nn.Module):
         node_features = self.cnn_block(x, batch)
         node_features = self.gcn_block(node_features, edge_index)
 
-        # Hierarchical head returns 4 values: logits_12class, logits_4class, attn_out_12, attn_out_4
-        logits_12class, logits_4class, attn_out_12, attn_out_4 = self.class_query_head(node_features, batch)
+        # Hierarchical head returns 5 values: logits_12class, logits_4class, attn_out_12, attn_out_4, attn_weights_12
+        logits_12class, logits_4class, attn_out_12, attn_out_4, attn_weights_12 = self.class_query_head(node_features, batch)
 
-        return logits_12class, logits_4class, attn_out_12, attn_out_4
+        return logits_12class, logits_4class, attn_out_12, attn_out_4, attn_weights_12
