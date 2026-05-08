@@ -204,15 +204,19 @@ class EvoRMDForHuman(nn.Module):
         logits = self.classifier(pooled)  # (B, num_task)
 
         # ---- Return ----
+        # Expand shared attention (B, L) → per-task (B, num_task, L)
+        # to match the format expected by compute_attention_supervision_loss
+        attn_per_task = attn_weights.unsqueeze(1).expand(-1, self.num_task, -1)
+
         if return_attention:
             if self.use_hierarchical:
                 logits_4 = self._derive_4class(logits, batch_size, x.device)
-                return logits, logits_4, attn_weights
-            return logits, attn_weights
+                return logits, logits_4, attn_per_task
+            return logits, attn_per_task
         else:
             if self.use_hierarchical:
                 logits_4 = self._derive_4class(logits, batch_size, x.device)
-                return logits, logits_4
+                return logits, logits_4, None
             return logits
 
     def _derive_4class(self, logits_12, batch_size, device):
