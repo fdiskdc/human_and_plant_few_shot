@@ -1,0 +1,49 @@
+{
+  "experiment_name": "ablation_mohe",
+
+  "data": {
+    "human_data_dir": "npy/human3",
+    "plant_data_dir": "npy/plant",
+    "cache_dir": "npy/cache"
+  },
+
+  "model": {
+    "use_hierarchical": true,
+    "cnn_hidden_dim": 64,
+    "cnn_kernel_sizes": [1, 3, 5, 7],
+    "cnn_dropout": 0.1,
+    "gcn_hidden_dim": 128,
+    "gcn_out_channels": 128,
+    "gcn_num_layers": 3,
+    "gcn_dropout": 0.3,
+    "num_classes": 12,
+    "num_attn_heads": 8,
+    "attn_dropout": 0.1,
+    "use_simple_pooling": false,
+    "use_layer_norm": true
+  },
+
+  "training": {
+    "batch_size": 240,
+    "num_epochs": 10,
+    "learning_rate": 0.001,
+    "weight_decay": 0.0001,
+    "warmup_epochs": 2,
+    "train_ratio": 0.7,
+    "random_seed": 666,
+    "eval_threshold": 0.5,
+    "test_interval": 5,
+    "save_every_epoch": false,
+    "save_best_only": false,
+    "use_dynamic_sampler": true,
+    "balance_ratio": 0.9,
+    "use_amp": true,
+    "use_attention_supervision": false,
+    "attention_lambda": 0.5
+  },
+
+  "paths": {
+    "checkpoint_dir": "./checkpoints_abla",
+    "log_dir": "./logs_abla"
+  }
+}
