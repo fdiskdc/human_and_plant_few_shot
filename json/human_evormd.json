@@ -28,7 +28,7 @@
     "save_every_epoch": true,
     "save_best_only": false,
     "use_dynamic_sampler": true,
-    "balance_ratio": 0.9,
+    "balance_ratio": 1.0,
     "use_amp": true,
     "use_attention_supervision": true,
     "attention_lambda": 0.5
