@@ -369,7 +369,7 @@ class Mer100Dataset(Dataset):
     使用内存映射加载，支持多线程DataLoader
     """
 
-    def __init__(self, mode='train', data_dir='../npy', cache_dir=None, use_human3=True, use_cache=True, preload_cache=True):
+    def __init__(self, mode='train', data_dir='../npy', cache_dir=None, use_human3=True, use_cache=True, preload_cache=True, lazy_cache=False):
         """
         初始化数据集（支持内存映射和多线程）
 
@@ -380,12 +380,17 @@ class Mer100Dataset(Dataset):
             use_human3 (bool): 是否使用human3目录数据（默认True）
             use_cache (bool): 是否启用二级结构缓存（默认True）
             preload_cache (bool): 是否在初始化时加载所有边索引到内存（默认True）
+            lazy_cache (bool): 是否按需从磁盘读取边索引（默认False，内存优化）
         """
         self.mode = mode
         self.data_dir = data_dir
         self.use_cache = use_cache
         self._batch_cache = None  # 批量缓存数据
         self._edge_indices = None  # 内存中的边索引列表
+        self._lazy_cache = lazy_cache  # 按需加载模式
+        self._cache_path = None  # 缓存文件路径（lazy模式用）
+        self._lru_cache = {}  # LRU缓存（lazy模式用）
+        self._lru_max_size = 256  # LRU缓存最大条目数
 
         # 设置缓存目录
         if cache_dir is None:
@@ -406,8 +411,9 @@ class Mer100Dataset(Dataset):
                 human3_dir = '../human3'
             else:
                 # 使用绝对路径作为最后的回退
-                human3_dir = '/home/dc/vscode/vscode20251230/human_and_plant/human3'
+                human3_dir = 'npy/human3'
             
+            self._human3_dir = human3_dir
             print(f"使用内存映射加载human3数据: {human3_dir}")
             
             # 使用mmap_mode='r'进行内存映射加载，支持多进程共享内存
@@ -424,8 +430,16 @@ class Mer100Dataset(Dataset):
             print(f"  4loc形状: {self.y_4class.shape}, dtype: {self.y_4class.dtype}")
 
             # 如果启用缓存且preload_cache=True，尝试加载批量缓存
-            if self.use_cache and preload_cache:
+            if self.use_cache and preload_cache and not lazy_cache:
                 self._load_batch_cache()
+            elif self.use_cache and lazy_cache:
+                # Lazy模式：仅记录缓存路径，不加载到内存
+                self._cache_path = self._get_batch_cache_path()
+                if os.path.exists(self._cache_path):
+                    print(f"Lazy缓存模式: 边索引将按需从磁盘读取: {self._cache_path}")
+                else:
+                    print(f"Lazy缓存文件不存在: {self._cache_path}")
+                    print(f"  提示: 请先调用 dataset.precompute_all_structures() 生成缓存")
         else:
             # 使用原来的np数据（保持向后兼容）
             self._load_legacy_data(mode, data_dir)
@@ -496,6 +510,31 @@ class Mer100Dataset(Dataset):
         print(f"  12loc形状: {self.y_12class.shape}")
         print(f"  4loc形状: {self.y_4class.shape}")
     
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        for attr in ('sequences', 'full_labels', 'y_12class', 'y_4class', '_batch_cache', '_lru_cache'):
+            state.pop(attr, None)
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self._lru_cache = {}
+        human3_dir = self._human3_dir
+        self.sequences = np.load(f'{human3_dir}/seq.npy', mmap_mode='r')
+        self.full_labels = np.load(f'{human3_dir}/1001loc.npy', mmap_mode='r')
+        self.y_12class = np.load(f'{human3_dir}/12loc.npy', mmap_mode='r')
+        self.y_4class = np.load(f'{human3_dir}/4loc.npy', mmap_mode='r')
+        cache_path = self._get_batch_cache_path()
+        if getattr(self, '_lazy_cache', False) and os.path.exists(cache_path):
+            # Lazy模式：不加载到内存，仅记录路径
+            self._cache_path = cache_path
+            self._edge_indices = None
+        elif os.path.exists(cache_path):
+            cache = np.load(cache_path, allow_pickle=True)
+            self._edge_indices = cache['edge_indices']
+        else:
+            self._edge_indices = None
+
     def __len__(self):
         """返回数据集大小"""
         return len(self.sequences)
@@ -642,6 +681,7 @@ class Mer100Dataset(Dataset):
             try:
                 self._batch_cache = np.load(cache_path, allow_pickle=True)
                 self._edge_indices = self._batch_cache['edge_indices']
+                self._batch_cache = None
                 print(f"  已加载 {len(self._edge_indices)} 个边索引")
                 print(f"  缓存文件大小: {os.path.getsize(cache_path) / (1024**2):.2f} MB")
             except Exception as e:
@@ -777,6 +817,7 @@ class Mer100Dataset(Dataset):
         # 加载到内存
         self._batch_cache = np.load(cache_path, allow_pickle=True)
         self._edge_indices = self._batch_cache['edge_indices']
+        self._batch_cache = None
 
         # 打印统计信息
         print(f"\n{'='*60}")
@@ -874,7 +915,7 @@ class Mer100Dataset(Dataset):
         获取或计算边索引（优先使用批量缓存）
 
         优先级：
-        1. 批量缓存（内存中）
+        1. 批量缓存（内存中 或 lazy磁盘读取）
         2. 单文件缓存（旧机制）
         3. LinearFold实时计算
 
@@ -890,11 +931,31 @@ class Mer100Dataset(Dataset):
             subprocess.TimeoutExpired: 如果LinearFold执行超时
             RuntimeError: 如果LinearFold执行失败
         """
-        # 1. 优先使用批量缓存
+        # 1. 优先使用批量缓存（内存模式）
         if self._edge_indices is not None and idx < len(self._edge_indices):
             cached = self._edge_indices[idx]
             if cached is not None:
                 return torch.from_numpy(cached)
+
+        # 1b. Lazy缓存模式：从磁盘按需读取
+        if self._lazy_cache and self._cache_path and os.path.exists(self._cache_path):
+            # Check LRU cache first
+            if idx in self._lru_cache:
+                return self._lru_cache[idx]
+            # Read from disk
+            try:
+                cache_data = np.load(self._cache_path, allow_pickle=True)
+                edge_indices = cache_data['edge_indices']
+                if idx < len(edge_indices):
+                    cached = edge_indices[idx]
+                    if cached is not None:
+                        edge_tensor = torch.from_numpy(cached)
+                        # Add to LRU cache (with size limit)
+                        if len(self._lru_cache) < self._lru_max_size:
+                            self._lru_cache[idx] = edge_tensor
+                        return edge_tensor
+            except Exception:
+                pass  # Fall through to other methods
 
         # 2. 回退到旧的单文件缓存机制
         cache_key = self._get_cache_key(sequence_str, idx)

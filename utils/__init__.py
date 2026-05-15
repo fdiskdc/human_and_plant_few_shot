@@ -52,7 +52,10 @@ from .metrics import (
     evaluate_plant_balanceb,
     evaluate_group_balanceb,
     get_all_predictions,
-    get_all_predictions_and_attention
+    get_all_predictions_and_attention,
+    get_all_predictions_unified,
+    evaluate_with_optimal_threshold_from_cache,
+    evaluate_4class_with_optimal_threshold_from_cache
 )
 
 # Import logging functions
@@ -72,7 +75,11 @@ from .common import (
     calculate_topk_recall,
     print_topk_table,
     calculate_comprehensive_localization_metrics,
-    print_comprehensive_table
+    print_comprehensive_table,
+    calculate_topk_recall_streaming,
+    calculate_comprehensive_localization_metrics_streaming,
+    log_memory_usage,
+    clear_device_cache
 )
 
 # Import few-shot learning functions
@@ -121,6 +128,9 @@ __all__ = [
     'evaluate_group_balanceb',
     'get_all_predictions',
     'get_all_predictions_and_attention',
+    'get_all_predictions_unified',
+    'evaluate_with_optimal_threshold_from_cache',
+    'evaluate_4class_with_optimal_threshold_from_cache',
 
     # Training
     'train_epoch',
@@ -130,6 +140,10 @@ __all__ = [
     'print_topk_table',
     'calculate_comprehensive_localization_metrics',
     'print_comprehensive_table',
+    'calculate_topk_recall_streaming',
+    'calculate_comprehensive_localization_metrics_streaming',
+    'log_memory_usage',
+    'clear_device_cache',
 
     # Few-shot learning
     'run_few_shot_benchmark',

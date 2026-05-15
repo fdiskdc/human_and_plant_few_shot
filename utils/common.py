@@ -15,12 +15,18 @@ import json
 import hashlib
 import pickle
 import logging
+import gc
 import numpy as np
 import torch
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 from torch.utils.data import Sampler
 from torch_geometric.loader import DataLoader
+
+try:
+    import psutil
+except ImportError:
+    psutil = None
 
 # ============================================================================
 # Hierarchical Classification Constants
@@ -230,7 +236,12 @@ def load_config(config_path: str = 'model.json') -> Tuple:
     Config.few_shot = few_shot_cfg
 
     # Device
-    Config.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    if torch.cuda.is_available():
+        Config.device = torch.device('cuda')
+    elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        Config.device = torch.device('mps')
+    else:
+        Config.device = torch.device('cpu')
 
     return Config, config_dict
 
@@ -692,6 +703,9 @@ class DynamicBalancedBatchSampler(MultilabelBalancedBatchSampler):
         # Current mode
         self.use_balanced_mode = True
 
+        # Bucket rotation pointers (避免 np.concatenate 分配新数组)
+        self.bucket_pointers = [0] * self.num_classes
+
     def set_epoch(self, epoch: int):
         """
         Set the current epoch to determine sampling strategy.
@@ -710,6 +724,9 @@ class DynamicBalancedBatchSampler(MultilabelBalancedBatchSampler):
         else:
             self.num_batches = self.num_batches_full
 
+        # 每个 epoch 重置桶指针
+        self.bucket_pointers = [0] * self.num_classes
+
     def get_mode_info(self) -> str:
         """Get current mode information for logging."""
         mode = "BALANCED" if self.use_balanced_mode else "FULL_COVERAGE"
@@ -718,6 +735,35 @@ class DynamicBalancedBatchSampler(MultilabelBalancedBatchSampler):
         else:
             coverage_pct = (self.num_batches_balanced / self.num_batches_full) * 100
             return f"{mode} (all classes: {self.num_batches} batches, {coverage_pct:.1f}% of balanced mode batches)"
+
+    def _get_samples_from_bucket(self, bucket_idx: int, n: int) -> np.ndarray:
+        """
+        用索引追踪替代 np.concatenate，避免每次调用都分配新数组。
+
+        Args:
+            bucket_idx: 类别桶索引
+            n: 需要采样的数量
+
+        Returns:
+            n 个样本索引的数组
+        """
+        bucket = self.class_buckets[bucket_idx]
+        bucket_size = len(bucket)
+        ptr = self.bucket_pointers[bucket_idx]
+
+        if bucket_size - ptr >= n:
+            # 桶内剩余足够，直接切片（view，不分配新内存）
+            samples = bucket[ptr:ptr + n]
+            self.bucket_pointers[bucket_idx] = ptr + n
+        else:
+            # 剩余不够：拼接剩余部分 + 从头取
+            remaining = bucket[ptr:]
+            need = n - len(remaining)
+            np.random.shuffle(bucket)
+            samples = np.concatenate([remaining, bucket[:need]])
+            self.bucket_pointers[bucket_idx] = need
+
+        return samples
 
     def __iter__(self):
         """
@@ -833,6 +879,7 @@ def train_epoch(
     logger: Optional[logging.Logger] = None,
     use_hierarchical: bool = False,
     use_amp: bool = False,
+    amp_device_type: str = 'cuda',
     use_attention_supervision: bool = False,
     attention_lambda: float = 1.0
 ) -> float:
@@ -849,6 +896,7 @@ def train_epoch(
         logger: Optional logger instance
         use_hierarchical: If True, use multi-task learning (4-class + 12-class)
         use_amp: If True, use automatic mixed precision
+        amp_device_type: Device type for AMP ('cuda', 'mps', 'cpu')
         use_attention_supervision: If True, use attention supervision loss
         attention_lambda: Weight for attention supervision loss
 
@@ -865,8 +913,8 @@ def train_epoch(
     total_loss_attn = 0.0
     num_batches = 0
 
-    # Create GradScaler for AMP if enabled
-    scaler = torch.cuda.amp.GradScaler() if use_amp else None
+    # GradScaler 只在 CUDA 上需要（MPS/CPU 不需要）
+    scaler = torch.amp.GradScaler(device='cuda') if use_amp and amp_device_type == 'cuda' else None
 
     pbar = tqdm(dataloader, desc="Training", leave=True)
     for batch in pbar:
@@ -887,8 +935,8 @@ def train_epoch(
         should_return_attention = use_attention_supervision and hasattr(batch, 'y_site')
 
         if use_amp:
-            # Use AMP for forward pass
-            with torch.cuda.amp.autocast():
+            # Use AMP for forward pass (支持 CUDA/MPS/CPU)
+            with torch.amp.autocast(device_type=amp_device_type, dtype=torch.float16):
                 if use_hierarchical:
                     # === Hierarchical Mode (AMP) ===
                     if should_return_attention:
@@ -938,10 +986,14 @@ def train_epoch(
                         logits = model(batch.x, batch.edge_index, batch.batch)
                         loss = criterion(logits, batch.y)
 
-            # Backward pass with scaler
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
+            # Backward pass (CUDA 用 GradScaler，MPS/CPU 直接反向传播)
+            if scaler is not None:
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                loss.backward()
+                optimizer.step()
             
         else:
             # No AMP (Standard FP32)
@@ -1042,7 +1094,8 @@ def test_epoch(
     phase: str = "test",
     logger: Optional[logging.Logger] = None,
     use_hierarchical: bool = False,
-    use_amp: bool = False
+    use_amp: bool = False,
+    amp_device_type: str = 'cuda'
 ) -> float:
     """
     Test for one epoch with TQDM progress monitoring.
@@ -1056,6 +1109,7 @@ def test_epoch(
         logger: Optional logger instance
         use_hierarchical: If True, use multi-task learning (4-class + 12-class)
         use_amp: If True, use automatic mixed precision
+        amp_device_type: Device type for AMP ('cuda', 'mps', 'cpu')
 
     Returns:
         Average loss for the epoch
@@ -1068,9 +1122,6 @@ def test_epoch(
     total_loss_12 = 0.0
     total_loss_4 = 0.0
     num_batches = 0
-
-    # Determine autocast context for AMP
-    autocast = torch.cuda.amp.autocast if use_amp else torch.no_grad
 
     pbar = tqdm(dataloader, desc=f"{phase.capitalize()}", leave=True)
     if use_amp:
@@ -1085,8 +1136,8 @@ def test_epoch(
                 # Ensure labels are on same device
                 batch.y = batch.y.to(device)
 
-                # Forward pass with AMP
-                with torch.cuda.amp.autocast():
+                # Forward pass with AMP (支持 CUDA/MPS/CPU)
+                with torch.amp.autocast(device_type=amp_device_type, dtype=torch.float16):
                     if use_hierarchical:
                         # Multi-task learning: get both 12-class and 4-class logits
                         logits_12, logits_4,_ = model(batch.x, batch.edge_index, batch.batch)
@@ -2038,3 +2089,315 @@ def print_comprehensive_table_tolerateM(comp_results: dict, k_list: list = [1, 3
         m = comp_results.get(c, {})
         tb.add_row([c, MOD_NAMES.get(c, str(c))] + [f"{m.get(f'R@{k}',0):.4f}" for k in k_list])
     _output("Table B: Recall Analysis", tb)
+
+
+# ============================================================================
+# Memory Monitoring Utilities
+# ============================================================================
+
+def log_memory_usage(logger, tag=""):
+    """
+    Log current memory usage for diagnostics.
+    Works on macOS (MPS), CUDA, and CPU.
+
+    /记录当前内存使用情况，用于诊断
+    """
+    try:
+        import psutil
+        process = psutil.Process(os.getpid())
+        ram_mb = process.memory_info().rss / (1024 ** 2)
+    except ImportError:
+        ram_mb = 0.0
+
+    msg = f"[Memory {tag}] RAM: {ram_mb:.1f} MB"
+
+    if torch.cuda.is_available():
+        gpu_allocated = torch.cuda.memory_allocated() / (1024 ** 2)
+        gpu_reserved = torch.cuda.memory_reserved() / (1024 ** 2)
+        msg += f", CUDA Allocated: {gpu_allocated:.1f} MB, Reserved: {gpu_reserved:.1f} MB"
+
+    if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        try:
+            mps_allocated = torch.mps.driver_allocated_memory() / (1024 ** 2) if hasattr(torch.mps, 'driver_allocated_memory') else 0
+            msg += f", MPS Driver: {mps_allocated:.1f} MB"
+        except Exception:
+            pass
+
+    if logger:
+        logger.info(msg)
+    else:
+        print(msg)
+
+    return ram_mb
+
+
+def clear_device_cache(device):
+    """
+    Clear device cache to free memory. Call between evaluation phases.
+
+    /清理设备缓存以释放内存
+    """
+    import gc
+    gc.collect()
+    if device.type == 'cuda':
+        torch.cuda.empty_cache()
+    elif device.type == 'mps':
+        if hasattr(torch.mps, 'empty_cache'):
+            torch.mps.empty_cache()
+
+
+# ============================================================================
+# Streaming Top-K Recall Evaluation (Memory-Optimized)
+# ============================================================================
+
+def calculate_topk_recall_streaming(
+    model, dataloader, device, k_list=None, num_classes=12, seq_len=1001, logger=None
+) -> dict:
+    """
+    Calculate Top-K site recall using streaming inference (no full attention matrix in memory).
+    Processes one batch at a time to avoid OOM.
+
+    /流式计算Top-K位点召回率（不将完整注意力矩阵加载到内存）
+
+    Args:
+        model: The model to evaluate
+        dataloader: DataLoader for test set
+        device: Device to run evaluation on
+        k_list: List of K values for top-K recall
+        num_classes: Number of classes (default 12)
+        seq_len: Sequence length (default 1001)
+        logger: Optional logger
+
+    Returns:
+        dict: {class_idx: {k: recall_value}}
+    """
+    if k_list is None:
+        k_list = [1, 3, 5, 7, 10, 20, 50]
+
+    max_k = max(k_list)
+
+    # Accumulators per class: list of (true_indices, top_k_pred_indices) per sample
+    class_hits = {c: {k: [] for k in k_list} for c in range(num_classes)}
+
+    model.eval()
+    from utils.common import LABEL_MAPPING
+
+    with torch.no_grad():
+        for batch in tqdm(dataloader, desc="Streaming Top-K evaluation", unit="batch"):
+            batch = batch.to(device)
+            has_y_site = hasattr(batch, 'y_site')
+            if not has_y_site:
+                continue
+
+            try:
+                result = model(batch.x, batch.edge_index, batch.batch, return_attention=True)
+                if isinstance(result, tuple) and len(result) == 3:
+                    _, _, attn = result
+                elif isinstance(result, tuple) and len(result) == 2:
+                    _, attn = result
+                else:
+                    continue
+            except Exception:
+                continue
+
+            # attn: [batch_size, num_classes, seq_len]
+            attn_np = attn.detach().cpu().numpy()
+            y_site_np = batch.y_site.detach().cpu().numpy()
+
+            if y_site_np.ndim == 1:
+                y_site_np = y_site_np.reshape(attn_np.shape[0], seq_len)
+
+            batch_size = attn_np.shape[0]
+
+            for class_idx in range(num_classes):
+                original_label_id = None
+                for k, v in LABEL_MAPPING.items():
+                    if v == class_idx:
+                        original_label_id = k
+                        break
+                if original_label_id is None:
+                    continue
+
+                for i in range(batch_size):
+                    true_indices = np.where(y_site_np[i] == original_label_id)[0]
+                    num_true = len(true_indices)
+                    if num_true == 0:
+                        continue
+
+                    pred_indices = np.argsort(-attn_np[i, class_idx, :])[:max_k]
+                    for k in k_list:
+                        topk_pred = pred_indices[:k]
+                        hit_count = len(np.intersect1d(topk_pred, true_indices))
+                        class_hits[class_idx][k].append(hit_count / num_true)
+
+            # Free batch tensors
+            del attn, attn_np, y_site_np
+            clear_device_cache(device)
+
+    # Compute averages
+    results = {}
+    for class_idx in range(num_classes):
+        results[class_idx] = {}
+        for k in k_list:
+            if class_hits[class_idx][k]:
+                results[class_idx][k] = np.mean(class_hits[class_idx][k])
+            else:
+                results[class_idx][k] = 0.0
+
+    return results
+
+
+def calculate_comprehensive_localization_metrics_streaming(
+    model, dataloader, device, k_list=None, num_classes=12, seq_len=1001, logger=None
+) -> dict:
+    """
+    Calculate comprehensive localization metrics using streaming inference.
+    Memory-optimized: processes one batch at a time.
+
+    /流式计算综合定位指标（内存优化版）
+
+    Args:
+        model: The model to evaluate
+        dataloader: DataLoader for test set
+        device: Device to run evaluation on
+        k_list: List of K values
+        num_classes: Number of classes
+        seq_len: Sequence length
+        logger: Optional logger
+
+    Returns:
+        dict: {class_idx: {'mAP': float, 'MRR': float, 'R-Precision': float, ...}}
+    """
+    if k_list is None:
+        k_list = [1, 3, 5, 10]
+
+    from utils.common import LABEL_MAPPING
+
+    # Per-class accumulators
+    class_data = {}
+    for c in range(num_classes):
+        original_label_id = None
+        for k, v in LABEL_MAPPING.items():
+            if v == c:
+                original_label_id = k
+                break
+        class_data[c] = {
+            'label_id': original_label_id,
+            'ap_list': [], 'mrr_list': [], 'r_precision_list': [], 'mde_list': [],
+            'ndcg_scores': {k: [] for k in k_list},
+            'global_hits': {k: 0 for k in k_list},
+            'global_true_count': 0
+        }
+
+    model.eval()
+
+    with torch.no_grad():
+        for batch in tqdm(dataloader, desc="Streaming comprehensive localization", unit="batch"):
+            batch = batch.to(device)
+            has_y_site = hasattr(batch, 'y_site')
+            if not has_y_site:
+                continue
+
+            try:
+                result = model(batch.x, batch.edge_index, batch.batch, return_attention=True)
+                if isinstance(result, tuple) and len(result) == 3:
+                    _, _, attn = result
+                elif isinstance(result, tuple) and len(result) == 2:
+                    _, attn = result
+                else:
+                    continue
+            except Exception:
+                continue
+
+            attn_np = attn.detach().cpu().numpy()
+            y_site_np = batch.y_site.detach().cpu().numpy()
+            if y_site_np.ndim == 1:
+                y_site_np = y_site_np.reshape(attn_np.shape[0], seq_len)
+
+            batch_size = attn_np.shape[0]
+
+            for class_idx in range(num_classes):
+                cd = class_data[class_idx]
+                lid = cd['label_id']
+                if lid is None:
+                    continue
+
+                for i in range(batch_size):
+                    true_indices = np.where(y_site_np[i] == lid)[0]
+                    num_true = len(true_indices)
+                    if num_true == 0:
+                        continue
+
+                    cd['global_true_count'] += num_true
+                    pred_ranks = np.argsort(-attn_np[i, class_idx, :])
+
+                    # R-Precision
+                    r = num_true
+                    top_r_preds = pred_ranks[:r]
+                    r_hits = np.sum(np.isin(top_r_preds, true_indices))
+                    cd['r_precision_list'].append(r_hits / r)
+
+                    # MRR
+                    for rank_idx, pred in enumerate(pred_ranks):
+                        if pred in true_indices:
+                            cd['mrr_list'].append(1.0 / (rank_idx + 1))
+                            break
+
+                    # AP
+                    hits = 0
+                    ap_sum = 0.0
+                    for rank_idx, pred in enumerate(pred_ranks):
+                        if pred in true_indices:
+                            hits += 1
+                            ap_sum += hits / (rank_idx + 1)
+                        if hits == num_true:
+                            break
+                    cd['ap_list'].append(ap_sum / num_true if num_true > 0 else 0.0)
+
+                    # NDCG@K and Global Recall@K
+                    for k in k_list:
+                        topk = pred_ranks[:k]
+                        hit_count = np.sum(np.isin(topk, true_indices))
+                        cd['global_hits'][k] += hit_count
+
+                        dcg = 0.0
+                        for j, p in enumerate(topk):
+                            if p in true_indices:
+                                dcg += 1.0 / np.log2(j + 2)
+                        idcg = sum(1.0 / np.log2(j + 2) for j in range(min(num_true, k)))
+                        cd['ndcg_scores'][k].append(dcg / idcg if idcg > 0 else 0.0)
+
+                    # MDE (Mean Distance Error)
+                    if len(true_indices) > 0:
+                        fp_in_top1 = pred_ranks[0]
+                        if fp_in_top1 not in true_indices:
+                            min_dist = min(abs(fp_in_top1 - t) for t in true_indices)
+                            cd['mde_list'].append(min_dist)
+
+            del attn, attn_np, y_site_np
+            clear_device_cache(device)
+
+    # Aggregate results
+    results = {}
+    for class_idx in range(num_classes):
+        cd = class_data[class_idx]
+        if not cd['ap_list']:
+            results[class_idx] = {
+                'mAP': 0.0, 'MRR': 0.0, 'R-Precision': 0.0, 'MDE': 0.0
+            }
+            for k in k_list:
+                results[class_idx][f'R@{k}'] = 0.0
+                results[class_idx][f'NDCG@{k}'] = 0.0
+            continue
+
+        results[class_idx] = {
+            'mAP': np.mean(cd['ap_list']),
+            'MRR': np.mean(cd['mrr_list']),
+            'R-Precision': np.mean(cd['r_precision_list']),
+            'MDE': np.mean(cd['mde_list']) if cd['mde_list'] else 0.0,
+        }
+        for k in k_list:
+            results[class_idx][f'R@{k}'] = cd['global_hits'][k] / cd['global_true_count'] if cd['global_true_count'] > 0 else 0.0
+            results[class_idx][f'NDCG@{k}'] = np.mean(cd['ndcg_scores'][k]) if cd['ndcg_scores'][k] else 0.0
+
+    return results

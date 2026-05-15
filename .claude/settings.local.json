@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tree:*)",
+      "Bash(python:*)",
+      "Bash(python3:*)",
+      "Bash(conda run *)",
+      "Bash(fc-list)",
+      "Bash(fc-match \"Times New Roman\")",
+      "Bash(fc-match \"Times New Roman:style=Regular\")",
+      "Bash(Rscript -e 'library\\(ggrepel\\); cat\\(\"ok\\\\n\"\\)')",
+      "Bash(ls -la /home/dc/vscode/vscode20260406/rgcnformer_sum/npy/mrmodn_full_atten.npz /home/dc/vscode/vscode20260406/rgcnformer_sum/npy/modx_full_atten.npz /home/dc/vscode/vscode20260406/rgcnformer_sum/npy/evormd_segmented_atten.npz /home/dc/vscode/vscode20260406/rgcnformer_sum/npy/multirm_segmented_atten.npz 2>&1)",
+      "Read(//home/dc/vscode/npyForTrain/**)"
+    ]
+  }
+}

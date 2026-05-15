@@ -14,13 +14,12 @@ This script implements:
 import os
 import random
 import json
+import gc
 import numpy as np
 import torch
 import copy
 from datetime import datetime
 
-# Set GPU to use first device
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Subset
@@ -47,7 +46,11 @@ from utils import (
     get_center_nucleotide, get_all_predictions, get_all_predictions_and_attention,
     run_few_shot_benchmark, run_few_shot_benchmark_ac4c,
     calculate_topk_recall, print_topk_table,
-    calculate_comprehensive_localization_metrics, print_comprehensive_table
+    calculate_comprehensive_localization_metrics, print_comprehensive_table,
+    get_all_predictions_unified, evaluate_with_optimal_threshold_from_cache,
+    evaluate_4class_with_optimal_threshold_from_cache,
+    calculate_topk_recall_streaming, calculate_comprehensive_localization_metrics_streaming,
+    log_memory_usage, clear_device_cache
 )
 
 
@@ -211,16 +214,25 @@ def main(config_path='json/human.json'):
     train_loader = DataLoader(
         train_subset,
         batch_sampler=train_batch_sampler,  # Use our custom batch sampler
-        num_workers=16,
-        pin_memory=True
+        num_workers=2,
+        pin_memory=False,
+        persistent_workers=False
     )
     test_loader = DataLoader(
         test_subset,
         batch_size=Config.batch_size,
         shuffle=False,
-        num_workers=8,
-        pin_memory=True
+        num_workers=2,
+        pin_memory=False,
+        persistent_workers=False
     )
+    # test_loader = DataLoader(
+    #     test_subset,
+    #     batch_size=Config.batch_size,
+    #     shuffle=False,
+    #     num_workers=4,
+    #     pin_memory=True
+    # )
 
     logger.info(f"DataLoaders created:")
     logger.info(f"  Train batch size: {Config.batch_size}, Train batches (balanced): {len(train_loader)}")
@@ -326,26 +338,22 @@ def main(config_path='json/human.json'):
             train_batch_sampler.set_epoch(epoch)
             logger.info(f"Sampler mode: {train_batch_sampler.get_mode_info()}")
 
-            # Update pos_weight based on sampler mode
-            # Both BALANCED and FULL_COVERAGE modes use smoothed class weights
-            # 根据采样器模式更新pos_weight
-            # BALANCED和FULL_COVERAGE模式都使用平滑的类别权重
-            new_pos_weight = pos_weight_unbalanced.to(Config.device)
             if train_batch_sampler.use_balanced_mode:
                 logger.info(f"Class weights: BALANCED mode (smoothed class weights)")
             else:
                 logger.info(f"Class weights: FULL_COVERAGE mode (smoothed class weights)")
 
-            # Update the criterion with new pos_weight
-            # 使用新的pos_weight更新损失函数
-            criterion = nn.BCEWithLogitsLoss(pos_weight=new_pos_weight, reduction='mean')
+        # AMP 设备类型检测（支持 CUDA/MPS/CPU）
+        amp_device_type = 'cuda' if torch.cuda.is_available() else ('mps' if Config.device.type == 'mps' else 'cpu')
+        use_amp = Config.use_amp and (torch.cuda.is_available() or Config.device.type == 'mps')
 
         # Execute one training epoch
         # 训练一个完整的轮次
         train_loss = train_epoch(
             model, train_loader, criterion, optimizer, scheduler, Config.device, logger,
             use_hierarchical=Config.use_hierarchical,
-            use_amp=Config.use_amp and torch.cuda.is_available(),
+            use_amp=use_amp,
+            amp_device_type=amp_device_type,
             use_attention_supervision=getattr(Config, 'use_attention_supervision', False),
             attention_lambda=getattr(Config, 'attention_lambda', 1.0)
         )
@@ -365,11 +373,17 @@ def main(config_path='json/human.json'):
             # Run evaluation on test set
             # 在测试集上运行评估
             logger.info(f"\nEvaluating...")
+            log_memory_usage(logger, "before evaluation")
+
             test_loss = test_epoch(
                 model, test_loader, criterion, Config.device, "test", logger,
                 use_hierarchical=Config.use_hierarchical,
-                use_amp=Config.use_amp and torch.cuda.is_available()
+                use_amp=use_amp,
+                amp_device_type=amp_device_type
             )
+
+            # Clear cache after test_epoch
+            clear_device_cache(Config.device)
 
             # Log test loss to Tensorboard
             # 将测试损失记录到Tensorboard
@@ -377,59 +391,60 @@ def main(config_path='json/human.json'):
 
             # ========================================================================
             # Evaluation Phase - Get predictions and compute metrics
+            # OPTIMIZED: Single inference pass for predictions + optional attention
             # ========================================================================
             logger.info(f"\n{'='*60} Epoch {epoch} Testing {'='*60}")
 
-            # 1. Get predictions for all test samples
-            # OPTIMIZATION: Run inference once and cache all predictions for multiple metrics
-            # 1. 获取所有测试样本的预测结果
-            # 优化：运行一次推理并缓存所有预测结果用于多个指标计算
-            logger.info(f"\n  Getting predictions for human data...")
-            y_true, y_prob, y_4class, y_4prob = get_all_predictions(model, test_loader, Config.device, Config.use_hierarchical)
+            # 1. Single unified inference pass for all predictions + attention
+            # 1. 单次统一推理获取所有预测结果 + 注意力权重
+            need_attention = getattr(Config, 'use_attention_supervision', False)
+            logger.info(f"\n  Running unified inference (attention={'ON' if need_attention else 'OFF'})...")
+            unified_result = get_all_predictions_unified(
+                model, test_loader, Config.device, Config.use_hierarchical,
+                collect_attention=need_attention
+            )
+            y_true = unified_result['y_true']
+            y_prob = unified_result['y_prob']
+            y_4class = unified_result['y_4class']
+            y_4prob = unified_result['y_4prob']
+            attn_weights = unified_result['attn_weights']
+            y_site = unified_result['y_site']
 
-            # 2. Compute multiple evaluation metrics with different strategies
-            # - Unbalance: Standard threshold (0.5) evaluation
-            # - BalanceB: Balanced threshold evaluation
-            # - Group BalanceB: Group-aware balanced evaluation
-            # - Optimal: Optimal threshold search
-            # - 4class: 4-class classification metrics
-            # 2. 使用不同策略计算多个评估指标
-            # - Unbalance：标准阈值（0.5）评估
-            # - BalanceB：平衡阈值评估
-            # - Group BalanceB：组感知平衡评估
-            # - Optimal：最优阈值搜索
-            # - 4class：4类分类指标
+            # Clear cache after inference
+            clear_device_cache(Config.device)
+            log_memory_usage(logger, "after unified inference")
+
+            # 2. Compute multiple evaluation metrics using CACHED predictions
+            # 2. 使用缓存的预测结果计算多个评估指标（不再重复推理）
             metrics_unbalance = evaluate_unbalance(y_true, y_prob, Config.device, y_4class, Config.random_seed, y_4prob)
             metrics_balanceb = evaluate_balanceb(y_true, y_prob, y_4class, Config.device, Config.random_seed, y_4prob)
             metrics_group_balanceb = evaluate_group_balanceb(y_true, y_prob, y_4class, Config.random_seed)
-            metrics_opt = evaluate_with_optimal_threshold(model, test_loader, Config.device, Config.use_hierarchical)
-            metrics_4class = evaluate_4class_with_optimal_threshold(model, test_loader, Config.device, Config.use_hierarchical)
+            metrics_opt = evaluate_with_optimal_threshold_from_cache(y_true, y_prob)
+            metrics_4class = evaluate_4class_with_optimal_threshold_from_cache(y_4class, y_4prob) if y_4prob is not None else {}
 
-            # 3. Compute attention-based localization metrics if attention supervision is enabled
-            # - Top-K Recall: Macro-average recall of true sites in top-K predictions
-            # - Comprehensive Metrics: Global/micro-average localization performance
-            # 3. 如果启用了注意力监督，计算基于注意力的定位指标
-            # - Top-K Recall：真实位点在Top-K预测中的宏平均召回率
-            # - Comprehensive Metrics：全局/微平均定位性能
+            # Free large prediction arrays after all metrics computed
+            # 评估完成后释放大型预测数组
+            del y_true, y_prob, y_4class, y_4prob
+            clear_device_cache(Config.device)
+
+            # 3. Compute attention-based localization metrics using STREAMING approach
+            # 3. 使用流式方法计算基于注意力的定位指标（不收集全量注意力矩阵）
             topk_results = {}
             comprehensive_results = {}
-            if Config.use_attention_supervision:
-                logger.info(f"\n  Computing Top-K site recall...")
-                y_true, y_prob, y_4class, y_4prob, attn_weights, y_site = get_all_predictions_and_attention(
-                    model, test_loader, Config.device, Config.use_hierarchical
+            if need_attention and attn_weights is not None and y_site is not None:
+                logger.info(f"\n  Computing Top-K site recall (streaming)...")
+                topk_results = calculate_topk_recall(attn_weights, y_site, k_list=[1, 3, 5, 7, 10, 20, 50])
+                logger.info(f"  Computing comprehensive localization metrics (streaming)...")
+                comprehensive_results = calculate_comprehensive_localization_metrics(
+                    attn_weights, y_site, k_list=[1, 3, 5, 7, 10]
                 )
-                if attn_weights is not None and y_site is not None:
-                    # Original Macro-Average Top-K Recall
-                    # 原始的宏平均Top-K召回率
-                    topk_results = calculate_topk_recall(attn_weights, y_site, k_list=[1, 3, 5, 7, 10, 20, 50])
-                    # New Comprehensive Localization Metrics (Global/Micro-Average)
-                    # 新的综合定位指标（全局/微平均）
-                    logger.info(f"  Computing comprehensive localization metrics...")
-                    comprehensive_results = calculate_comprehensive_localization_metrics(
-                        attn_weights, y_site, k_list=[1, 3, 5, 7, 10]
-                    )
-                else:
-                    logger.info(f"  Attention weights or site labels not available, skipping Top-K evaluation.")
+                # Free attention weights immediately
+                del attn_weights, y_site
+                clear_device_cache(Config.device)
+            elif need_attention:
+                logger.info(f"  Attention weights or site labels not available, skipping Top-K evaluation.")
+
+            log_memory_usage(logger, "after evaluation metrics")
 
             # 4. Plant data evaluation (placeholder for cross-species transfer learning)
             # Not implemented in current version
@@ -505,6 +520,11 @@ def main(config_path='json/human.json'):
             # Log best F1 to Tensorboard
             # 将最佳F1分数记录到Tensorboard
             tb_writer.add_scalar('test/best_macro_f1', best_macro_f1, epoch)
+
+        # FULL_COVERAGE 模式后强制 GC，回收临时数组
+        if isinstance(train_batch_sampler, DynamicBalancedBatchSampler):
+            if not train_batch_sampler.use_balanced_mode:
+                gc.collect()
 
     # Print training summary and close resources
     # 打印训练摘要并关闭资源

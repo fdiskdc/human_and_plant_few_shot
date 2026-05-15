@@ -1336,6 +1336,73 @@ def evaluate_plant_balanceb(y_true: np.ndarray, y_prob: np.ndarray, y_4class: np
     return metrics
 
 
+def evaluate_with_optimal_threshold_from_cache(y_true: np.ndarray, y_prob: np.ndarray) -> Dict[str, float]:
+    """
+    Evaluate using optimal F1 threshold for each class, from cached predictions.
+    Memory-optimized version that avoids redundant model inference.
+
+    /使用缓存的预测结果和最优F1阈值对每个类别进行评估（内存优化版，避免冗余推理）
+
+    Args:
+        y_true: Ground truth labels (N, C) / 真实标签
+        y_prob: Predicted probabilities (N, C) / 预测概率
+
+    Returns:
+        Dictionary of metrics including optimal thresholds / 包含最优阈值的指标字典
+    """
+    N, C = y_true.shape
+    metrics = {}
+
+    for c in range(C):
+        y_true_c = y_true[:, c]
+        y_prob_c = y_prob[:, c]
+
+        opt_threshold = find_optimal_threshold(y_true_c, y_prob_c)
+        metrics[f'group_class_{c}_opt_threshold'] = opt_threshold
+
+        y_pred_c = (y_prob_c >= opt_threshold).astype(int)
+        tp = np.sum((y_true_c == 1) & (y_pred_c == 1))
+        tn = np.sum((y_true_c == 0) & (y_pred_c == 0))
+        fp = np.sum((y_true_c == 0) & (y_pred_c == 1))
+        fn = np.sum((y_true_c == 1) & (y_pred_c == 0))
+
+        eps = 1e-10
+        metrics[f'group_class_{c}_opt_tp'] = tp
+        metrics[f'group_class_{c}_opt_tn'] = tn
+        metrics[f'group_class_{c}_opt_fp'] = fp
+        metrics[f'group_class_{c}_opt_fn'] = fn
+        metrics[f'group_class_{c}_opt_f1'] = 2 * tp / (2 * tp + fp + fn + eps)
+        metrics[f'group_class_{c}_opt_precision'] = tp / (tp + fp + eps)
+        metrics[f'group_class_{c}_opt_recall'] = tp / (tp + fn + eps)
+        metrics[f'group_class_{c}_opt_accuracy'] = (tp + tn) / (tp + tn + fp + fn + eps)
+        metrics[f'group_class_{c}_opt_sensitivity'] = metrics[f'group_class_{c}_opt_recall']
+        metrics[f'group_class_{c}_opt_specificity'] = tn / (tn + fp + eps)
+        metrics[f'group_class_{c}_opt_mcc'] = (tp * tn - fp * fn) / np.sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn) + eps)
+
+        if len(np.unique(y_true_c)) > 1:
+            try:
+                metrics[f'group_class_{c}_auc'] = roc_auc_score(y_true_c, y_prob_c)
+                metrics[f'group_class_{c}_auprc'] = average_precision_score(y_true_c, y_prob_c)
+            except ValueError:
+                metrics[f'group_class_{c}_auc'] = 0.0
+                metrics[f'group_class_{c}_auprc'] = 0.0
+        else:
+            metrics[f'group_class_{c}_auc'] = 0.0
+            metrics[f'group_class_{c}_auprc'] = 0.0
+
+    all_f1, all_prec, all_rec = [], [], []
+    for c in range(C):
+        all_f1.append(metrics[f'group_class_{c}_opt_f1'])
+        all_prec.append(metrics[f'group_class_{c}_opt_precision'])
+        all_rec.append(metrics[f'group_class_{c}_opt_recall'])
+
+    metrics['group_opt_macro_f1'] = np.mean(all_f1)
+    metrics['group_opt_macro_precision'] = np.mean(all_prec)
+    metrics['group_opt_macro_recall'] = np.mean(all_rec)
+
+    return metrics
+
+
 def evaluate_with_optimal_threshold(model, dataloader, device, use_hierarchical=False) -> Dict[str, float]:
     """
     Evaluate using optimal F1 threshold for each class.
@@ -1440,6 +1507,73 @@ def evaluate_with_optimal_threshold(model, dataloader, device, use_hierarchical=
     metrics['group_opt_macro_f1'] = np.mean(all_f1)
     metrics['group_opt_macro_precision'] = np.mean(all_prec)
     metrics['group_opt_macro_recall'] = np.mean(all_rec)
+
+    return metrics
+
+
+def evaluate_4class_with_optimal_threshold_from_cache(y_4class: np.ndarray, y_4prob: np.ndarray) -> Dict[str, float]:
+    """
+    Evaluate 4-class metrics using optimal F1 threshold, from cached predictions.
+    Memory-optimized version that avoids redundant model inference.
+
+    /使用缓存的预测结果和最优F1阈值评估4类指标（内存优化版）
+
+    Args:
+        y_4class: 4-class ground truth labels (N, 4) / 4类真实标签
+        y_4prob: 4-class predicted probabilities (N, 4) / 4类预测概率
+
+    Returns:
+        Dictionary of metrics for 4-class evaluation / 4类评估的指标字典
+    """
+    N, C = y_4class.shape
+    metrics = {}
+
+    for c in range(C):
+        y_true_c = y_4class[:, c]
+        y_prob_c = y_4prob[:, c]
+
+        opt_threshold = find_optimal_threshold(y_true_c, y_prob_c)
+        metrics[f'group_4class_{c}_opt_threshold'] = opt_threshold
+
+        y_pred_c = (y_prob_c >= opt_threshold).astype(int)
+        tp = np.sum((y_true_c == 1) & (y_pred_c == 1))
+        tn = np.sum((y_true_c == 0) & (y_pred_c == 0))
+        fp = np.sum((y_true_c == 0) & (y_pred_c == 1))
+        fn = np.sum((y_true_c == 1) & (y_pred_c == 0))
+
+        eps = 1e-10
+        metrics[f'group_4class_{c}_opt_tp'] = tp
+        metrics[f'group_4class_{c}_opt_tn'] = tn
+        metrics[f'group_4class_{c}_opt_fp'] = fp
+        metrics[f'group_4class_{c}_opt_fn'] = fn
+        metrics[f'group_4class_{c}_opt_f1'] = 2 * tp / (2 * tp + fp + fn + eps)
+        metrics[f'group_4class_{c}_opt_precision'] = tp / (tp + fp + eps)
+        metrics[f'group_4class_{c}_opt_recall'] = tp / (tp + fn + eps)
+        metrics[f'group_4class_{c}_opt_accuracy'] = (tp + tn) / (tp + tn + fp + fn + eps)
+        metrics[f'group_4class_{c}_opt_sensitivity'] = metrics[f'group_4class_{c}_opt_recall']
+        metrics[f'group_4class_{c}_opt_specificity'] = tn / (tn + fp + eps)
+        metrics[f'group_4class_{c}_opt_mcc'] = (tp * tn - fp * fn) / np.sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn) + eps)
+
+        if len(np.unique(y_true_c)) > 1:
+            try:
+                metrics[f'group_4class_{c}_auc'] = roc_auc_score(y_true_c, y_prob_c)
+                metrics[f'group_4class_{c}_auprc'] = average_precision_score(y_true_c, y_prob_c)
+            except ValueError:
+                metrics[f'group_4class_{c}_auc'] = 0.0
+                metrics[f'group_4class_{c}_auprc'] = 0.0
+        else:
+            metrics[f'group_4class_{c}_auc'] = 0.0
+            metrics[f'group_4class_{c}_auprc'] = 0.0
+
+    all_f1, all_prec, all_rec = [], [], []
+    for c in range(C):
+        all_f1.append(metrics[f'group_4class_{c}_opt_f1'])
+        all_prec.append(metrics[f'group_4class_{c}_opt_precision'])
+        all_rec.append(metrics[f'group_4class_{c}_opt_recall'])
+
+    metrics['group_4class_opt_macro_f1'] = np.mean(all_f1)
+    metrics['group_4class_opt_macro_precision'] = np.mean(all_prec)
+    metrics['group_4class_opt_macro_recall'] = np.mean(all_rec)
 
     return metrics
 
@@ -1634,6 +1768,129 @@ def get_all_predictions(model, dataloader, device, use_hierarchical=False):
         y_4prob = None
 
     return y_true, y_prob, y_4class, y_4prob
+
+
+def get_all_predictions_unified(model, dataloader, device, use_hierarchical=False, collect_attention=False):
+    """
+    Unified inference function: runs model once to collect predictions and optionally attention weights.
+    Memory-optimized: avoids running inference multiple times.
+
+    /统一推理函数：运行一次模型推理，收集预测结果和可选的注意力权重（内存优化版）
+
+    Args:
+        model: The model to evaluate / 要评估的模型
+        dataloader: DataLoader for test set / 测试集的DataLoader
+        device: Device to run evaluation on / 运行评估的设备
+        use_hierarchical: If True, model returns tuple (logits_12class, logits_4class) / 分层模型标志
+        collect_attention: If True, also collect attention weights / 是否收集注意力权重
+
+    Returns:
+        dict with keys:
+            'y_true': (N, 12) ground truth
+            'y_prob': (N, 12) predicted probabilities
+            'y_4class': (N, 4) 4-class ground truth
+            'y_4prob': (N, 4) 4-class probabilities (or None)
+            'attn_weights': (N, 12, 1001) attention weights (or None)
+            'y_site': (N, 1001) site labels (or None)
+    """
+    from utils.common import INDEX_TO_GROUP, clear_device_cache
+
+    model.eval()
+    all_y_true = []
+    all_y_prob = []
+    all_y_4prob = []
+    all_attn_weights = []
+    all_y_site = []
+
+    desc = "Unified inference (predictions" + (" + attention)" if collect_attention else ")")
+    with torch.no_grad():
+        for batch in tqdm(dataloader, desc=desc, unit="batch"):
+            batch = batch.to(device)
+            has_y_site = hasattr(batch, 'y_site')
+
+            if collect_attention:
+                try:
+                    result = model(batch.x, batch.edge_index, batch.batch, return_attention=True)
+                    if isinstance(result, tuple):
+                        if use_hierarchical and len(result) == 3:
+                            logits_12, logits_4, attn = result
+                            all_attn_weights.append(attn.cpu())
+                            logits = (logits_12, logits_4)
+                        elif len(result) == 2:
+                            logits, attn = result
+                            all_attn_weights.append(attn.cpu())
+                        else:
+                            logits = result
+                    else:
+                        logits = result
+                except Exception:
+                    logits = model(batch.x, batch.edge_index, batch.batch)
+            else:
+                logits = model(batch.x, batch.edge_index, batch.batch)
+
+            if use_hierarchical:
+                if isinstance(logits, tuple) and len(logits) >= 2:
+                    logits_12, logits_4 = logits[0], logits[1]
+                elif isinstance(logits, tuple) and len(logits) == 1:
+                    logits_12 = logits[0]
+                    logits_4 = None
+                elif not isinstance(logits, tuple):
+                    logits_12 = logits
+                    logits_4 = None
+                else:
+                    continue
+
+                probs_12 = torch.sigmoid(logits_12)
+                if logits_4 is not None:
+                    probs_4 = torch.sigmoid(logits_4)
+                    all_y_4prob.append(probs_4.cpu())
+            else:
+                if isinstance(logits, tuple) and len(logits) > 0:
+                    logits_12 = logits[0]
+                elif not isinstance(logits, tuple):
+                    logits_12 = logits
+                else:
+                    continue
+                probs_12 = torch.sigmoid(logits_12)
+
+            all_y_true.append(batch.y)
+            all_y_prob.append(probs_12)
+
+            if has_y_site:
+                all_y_site.append(batch.y_site)
+
+            # Clear device cache after each batch to prevent MPS memory fragmentation
+            if device.type == 'mps':
+                del logits, probs_12, batch
+                if hasattr(torch.mps, 'empty_cache'):
+                    torch.mps.empty_cache()
+
+    y_true = torch.cat(all_y_true, dim=0).cpu().numpy()
+    y_prob = torch.cat(all_y_prob, dim=0).cpu().numpy()
+
+    N, C = y_true.shape
+    y_4class = np.zeros((N, 4), dtype=np.float32)
+    for group_idx in range(4):
+        nucleotide = INDEX_TO_GROUP[group_idx]
+        class_indices = GROUP_TO_CLASS_INDICES[nucleotide]
+        y_4class[:, group_idx] = y_true[:, class_indices].max(axis=1)
+
+    if use_hierarchical and all_y_4prob:
+        y_4prob = torch.cat(all_y_4prob, dim=0).cpu().numpy()
+    else:
+        y_4prob = None
+
+    attn_weights = torch.cat(all_attn_weights, dim=0) if all_attn_weights else None
+    y_site = torch.cat(all_y_site, dim=0) if all_y_site else None
+
+    return {
+        'y_true': y_true,
+        'y_prob': y_prob,
+        'y_4class': y_4class,
+        'y_4prob': y_4prob,
+        'attn_weights': attn_weights,
+        'y_site': y_site,
+    }
 
 
 def get_all_predictions_and_attention(
