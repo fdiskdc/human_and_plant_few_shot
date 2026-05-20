@@ -1,0 +1,17 @@
+name,query_type,group_query_dim,desc,total_params,trainable_params,flops,flops_m,flops_g
+1query_d128,1query,128,"1 global query + 12-way MLP, dim=128",4608,4608,3857232,3.86,0.0039
+1query_d256,1query,256,"1 global query + 12-way MLP, dim=256",4608,4608,3857232,3.86,0.0039
+1query_d512,1query,512,"1 global query + 12-way MLP, dim=512",4608,4608,3857232,3.86,0.0039
+1query_d1001,1query,1001,"1 global query + 12-way MLP, dim=1001",4608,4608,3857232,3.86,0.0039
+4query_d128,4query,128,"4-group hierarchical (baseline), dim=128",864450,864450,1392381508,1392.38,1.3924
+4query_d256,4query,256,"4-group hierarchical (baseline), dim=256",897858,897858,1392447300,1392.45,1.3924
+4query_d512,4query,512,"4-group hierarchical (baseline), dim=512",931650,931650,1392512836,1392.51,1.3925
+4query_d1001,4query,1001,"4-group hierarchical (baseline), dim=1001",996198,996198,1392638020,1392.64,1.3926
+12query_d128,12query,128,"12 independent queries, dim=128",1093453,1093453,7833786714,7833.79,7.8338
+12query_d256,12query,256,"12 independent queries, dim=256",1127885,1127885,7833852506,7833.85,7.8339
+12query_d512,12query,512,"12 independent queries, dim=512",1163725,1163725,7833918042,7833.92,7.8339
+12query_d1001,12query,1001,"12 independent queries, dim=1001",1232185,1232185,7834043226,7834.04,7.834
+fullattn_d128,fullattn,128,"12 queries + self-attention, dim=128",1664080,1664080,7392041024,7392.04,7.392
+fullattn_d256,fullattn,256,"12 queries + self-attention, dim=256",6446800,6446800,21044591936,21044.59,21.0446
+fullattn_d512,fullattn,512,"12 queries + self-attention, dim=512",25547728,25547728,67439740736,67439.74,67.4397
+fullattn_d1001,fullattn,1001,"12 queries + self-attention, dim=1001",97370060,97370060,226805549338,226805.55,226.8055

@@ -31,6 +31,7 @@ warnings.filterwarnings('ignore')
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
 from model.abla_model import AblationModel
+from cal_flops_mohe import count_model_flops, count_fullattn_params, _count_backbone_flops, count_fullattn_head_flops
 from dataset.human import Mer100Dataset
 from utils import (
     setup_logging, multi_label_disjoint_split, get_smoothed_pos_weights,
@@ -236,6 +237,18 @@ def run_single_ablation(ablation_cfg, config_dict, dataset, train_indices, test_
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"  Parameters: {total_params:,} total, {trainable_params:,} trainable")
 
+    # FLOPs calculation
+    if query_type == "fullattn":
+        flops_params = count_fullattn_params(group_query_dim, model_cfg)
+        flops = _count_backbone_flops(model_cfg, seq_len=1001) + \
+                count_fullattn_head_flops(group_query_dim, seq_len=1001, num_classes=model_cfg["num_classes"])
+    else:
+        flops_params = total_params
+        flops = count_model_flops(model, seq_len=1001, batch_size=1)
+    flops_m = flops / 1e6
+    flops_g = flops / 1e9
+    print(f"  FLOPs: {flops_m:,.1f}M ({flops_g:.3f}G)")
+
     # Loss / Optimizer / Scheduler
     pos_weight = pos_weight_unbalanced.to(device)
     criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
@@ -291,6 +304,10 @@ def run_single_ablation(ablation_cfg, config_dict, dataset, train_indices, test_
         "best_epoch": num_epochs,
         "total_params": total_params,
         "trainable_params": trainable_params,
+        "flops_params": flops_params,
+        "flops": flops,
+        "flops_m": round(flops_m, 2),
+        "flops_g": round(flops_g, 4),
         "train_time_s": elapsed,
     }
     for c in range(12):
@@ -532,6 +549,10 @@ def main(config_path='json/abla_human.json'):
                     "best_epoch": 0,
                     "total_params": 0,
                     "trainable_params": 0,
+                    "flops_params": 0,
+                    "flops": 0,
+                    "flops_m": 0.0,
+                    "flops_g": 0.0,
                     "train_time_s": 0.0,
                 }
                 for c in range(12):
@@ -544,7 +565,8 @@ def main(config_path='json/abla_human.json'):
     csv_path = os.path.join(output_dir, 'ablation_results.csv')
     fieldnames = [
         "name", "query_type", "group_query_dim", "desc", "best_avg_auc", "best_epoch",
-        "total_params", "trainable_params", "train_time_s"
+        "total_params", "trainable_params", "flops_params", "flops", "flops_m", "flops_g",
+        "train_time_s"
     ] + [f"class_{c}_auc" for c in range(12)]
 
     with open(csv_path, 'w', newline='') as f:
@@ -558,14 +580,14 @@ def main(config_path='json/abla_human.json'):
     print(f"{'='*60}")
 
     # Print summary table
-    print(f"\n{'='*90}")
-    print(f"{'Config':<18} {'Query':<10} {'Dim':>5} {'Avg AUC':>10} {'Epoch':>6} {'Params':>12} {'Time(s)':>8}")
-    print(f"{'-'*90}")
+    print(f"\n{'='*105}")
+    print(f"{'Config':<18} {'Query':<10} {'Dim':>5} {'Avg AUC':>10} {'Epoch':>6} {'Params':>12} {'FLOPs(M)':>12} {'Time(s)':>8}")
+    print(f"{'-'*105}")
     for r in all_results:
         print(f"{r['name']:<18} {r['query_type']:<10} {r['group_query_dim']:>5d} "
               f"{r['best_avg_auc']:>10.4f} {r['best_epoch']:>6d} "
-              f"{r['total_params']:>12,} {r['train_time_s']:>8.1f}")
-    print(f"{'='*90}")
+              f"{r['total_params']:>12,} {r['flops_m']:>12.1f} {r['train_time_s']:>8.1f}")
+    print(f"{'='*105}")
 
     # Generate visualizations
     print("\n  Generating visualizations...")
