@@ -1,6 +1,42 @@
 """
-测试 MultIRM 数据集的 Oversampling with Max-Length Alignment 策略
+test_multirm_oversampling.py - MultIRM 过采样+最大长度对齐测试 / MultIRM Oversampling+Max-Length-Alignment Test
+
+测试 MultIRM 数据集训练时的过采样 + 最大长度对齐 (max-length-alignment) 流程。
+Test oversampling + max-length-alignment flow for MultIRM dataset training.
+
+功能模块 / Modules:
+- 过采样推理 / Oversampling inference
+- 最大长度对齐 / Max-length alignment
+- 评估指标 / Evaluation metrics
+- main: 主入口 / Main entry point
+
+输入 / Inputs:
+- json/multirm_oversampling.json: 配置 / Config
+- multirm/seq.npy: MultIRM 序列 / MultIRM sequences
+- 命令行参数 / CLI: --config, --gpu
+
+输出 / Outputs:
+- 终端测试结果 / Terminal test results
+- logs/multirm_oversampling_*/results.json
+
+数据流 / Data Flow:
+1. 加载 MultIRM 数据 / Load MultIRM data
+2. 加载模型 / Load model
+3. 过采样训练循环 / Oversampling training loop
+4. 最大长度对齐评估 / Max-length-alignment evaluation
+
+相关文件 / Related Files:
+- 调用 / Calls: dataset.multirm.MultirmDataset, model.main_model
+- 被调用 / Called by: manual execution
+
+使用示例 / Usage Example:
+    python test_multirm_oversampling.py --config json/multirm_oversampling.json
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
+
 import torch
 from torch_geometric.loader import DataLoader
 from dataset.multirm import MultirmDataset

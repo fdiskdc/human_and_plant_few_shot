@@ -1,0 +1,36 @@
+# ==============================================================================
+# plot_ablation_grouped.R - 消融 AUC + Params 双带分组柱图 / Ablation AUC + Params dual-band grouped bars
+# ==============================================================================
+#
+# 读取 data/ablation_results.csv，把 AUC 与 参数量 映射到同一 Y 轴的不同带
+# (AUC 在 [0.77, 1.0]，Params 压缩到 [0.70, 0.77]) 形成上下双带分组柱状图，
+# 用 4 种莫兰迪色区分 query_type。
+# Reads data/ablation_results.csv and maps AUC and parameter count onto the same
+# Y axis in two bands (AUC in [0.77, 1.0], Params squeezed into [0.70, 0.77]) to
+# form a dual-band grouped bar chart; uses 4 Morandi colors for query_type.
+#
+# 功能模块 / Modules:
+# - scale_p / unscale_p: Params -> AUC 坐标映射 / Params->AUC band mapping
+# - 双 geom_col: AUC 上带 + Params 下带 / Two geom_col bands
+# - 二次 Y 轴 (right): 真实 Params 数值 / Right axis with real Params ticks
+#
+# 输入 / Inputs:
+# - data/ablation_results.csv: 消融结果 CSV / Ablation results
+#
+# 输出 / Outputs:
+# - output/ablation_grouped.png / .pdf: 双带柱图 / Dual-band bar chart
+#
+# 数据流 / Data Flow:
+# 1. 读 CSV / Load CSV
+# 2. 构造 scale_p 映射 / Build scale_p mapper
+# 3. 画双 geom_col + 二次 Y 轴 / Plot two geom_cols + secondary axis
+# 4. ggsave / Save
+#
+# 相关文件 / Related Files:
+# - 调用 / Calls: ggplot2, dplyr, tidyr, scales, extrafont
+# - 被调用 / Called by: 消融实验流水线 / Ablation experiment pipeline
+#
+# 使用示例 / Usage Example:
+#     Rscript ipynb/plot_ablation_grouped.R
+#
+# ==============================================================================

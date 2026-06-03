@@ -1,3 +1,49 @@
+
+"""
+modx.py - modX 基线 BiLSTM+Bahdanau 注意力模型 (1001nt全长) / modX baseline BiLSTM+Bahdanau attention model (1001nt full length)
+
+实现用于 mRNA 修饰分类的 modX 基线模型 (RNAClassifierWithWord2Vec)。
+将 4 维 one-hot 序列线性投影到 embedding 空间，经 BiLSTM 序列编码后使用 Bahdanau 注意力
+汇聚为单一上下文向量，最后由 FC 层输出 12 类修饰概率。
+Implements the modX baseline (RNAClassifierWithWord2Vec) for mRNA modification classification.
+Maps 4-dim one-hot sequences to an embedding space, encodes with BiLSTM, aggregates via
+Bahdanau attention into a single context vector, and produces 12-class modification logits
+via a fully connected layer.
+
+功能模块 / Modules:
+- BahdanauAttention: 单头加性注意力 (tanh(W*(h+enc))) / Single-head additive attention (tanh(W*(h+enc)))
+- RNAClassifierWithWord2Vec: 端到端 modX 模型：input_proj + BiLSTM + Attention + FC / End-to-end modX: input_proj + BiLSTM + Attention + FC
+
+输入 / Inputs:
+- x: (B*1001, 4) 或 (B, 1001, 4) one-hot 序列 (PyG / tensor) / (B*1001, 4) or (B, 1001, 4) one-hot sequence (PyG / tensor)
+- edge_index: (2, E) PyG 边索引 (此模型未使用) / (2, E) PyG edge indices (unused)
+- batch: (Total_Nodes,) 批次分配向量 / (Total_Nodes,) batch assignment vector
+- return_attention: bool 是否返回注意力权重 (广播到 12 类) / bool, return attention weights (broadcast to 12 classes)
+
+输出 / Outputs:
+- 默认 / Default: logits [B, output_dim=12] / logits [B, output_dim=12]
+- return_attention=True: (logits [B,12], attn_weights [B,12,1001]) / (logits [B,12], attn_weights [B,12,1001])
+
+数据流 / Data Flow:
+1. one-hot (B, 1001, 4) 经 nn.Linear 投影到 (B, 1001, embedding_dim) / one-hot projected to (B, 1001, embedding_dim) via nn.Linear
+2. 双向 LSTM 编码为 (B, 1001, 2*hidden_dim) 序列特征 / Bidirectional LSTM encodes to (B, 1001, 2*hidden_dim)
+3. 末层双向隐状态拼接后作为 query，BiLSTM 输出作为 key/value 经 Bahdanau 注意力汇聚 / Last-layer bi-hidden state as query, BiLSTM output as key/value aggregated by Bahdanau attention
+4. 上下文向量经 Dropout + FC 输出 12 类 logits / Context vector via Dropout + FC outputs 12-class logits
+
+相关文件 / Related Files:
+- 调用 / Calls: torch, torch.nn, torch.nn.functional / torch, torch.nn, torch.nn.functional
+- 被调用 / Called by: train_human_modx.py, inference_modx_segmented.py, collect_modx_atten.py / train_human_modx.py, inference_modx_segmented.py, collect_modx_atten.py
+
+使用示例 / Usage Example:
+    from model.modx import RNAClassifierWithWord2Vec
+    model = RNAClassifierWithWord2Vec(input_dim=4, hidden_dim=128, output_dim=12)
+    logits = model(x, edge_index, batch)
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
+"""
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

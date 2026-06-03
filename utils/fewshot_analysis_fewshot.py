@@ -1,7 +1,46 @@
 """
-Few-shot Analysis Few-shot Module
+utils/fewshot_analysis_fewshot.py - 小样本轨迹分析 / Few-shot Trajectory Analysis
 
-This module contains functions for few-shot trajectory analysis.
+小样本轨迹分析:索引划分、质心、紧密度、分离度、finetune、UMAP 绘图。
+Few-shot trajectory analysis: index split, centroids, compactness, separation, fine-tune, UMAP plots.
+
+功能模块 / Modules:
+- 索引划分 / Index split
+- 质心计算 / Centroid computation
+- 紧密度 + 分离度 / Compactness + separation
+- Finetune 训练 / Finetune training
+- UMAP 轨迹图 / UMAP trajectory plot
+- main 分析函数 / Main analysis functions
+
+输入 / Inputs:
+- features: 提取的特征 / Extracted features
+- labels: 标签 / Labels
+- SHOT_COUNTS: shot 数 / Shot counts
+- n_runs: 运行次数 / Number of runs
+
+输出 / Outputs:
+- 紧密度/分离度指标 / Compactness/separation metrics
+- UMAP 轨迹图 / UMAP trajectory plot
+- 终端报告 / Terminal report
+
+数据流 / Data Flow:
+1. 划分索引 / Split indices
+2. 计算质心 / Compute centroids
+3. finetune / Fine-tune
+4. 评估紧密度/分离度 / Evaluate compactness/separation
+5. UMAP 绘图 / UMAP plot
+
+相关文件 / Related Files:
+- 调用 / Calls: utils.fewshot_analysis_constants, sklearn, umap
+- 被调用 / Called by: zero_shot_fewshot_analysis.py
+
+使用示例 / Usage Example:
+    from utils.fewshot_analysis_fewshot import run_few_shot_trajectory
+    run_few_shot_trajectory(features, labels, shot_counts=[1, 5, 10])
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import csv

@@ -1,3 +1,64 @@
+"""
+gen3_zero.py - 3gen正样本 + Zero负样本混合数据集 / 3gen Positives + Zero Negatives Hybrid Dataset
+
+本模块将 3gen 数据 (12loc 不全为零的样本) 作为正样本,与 zero 数据 (背景/无修饰样本)
+作为负样本,按 1:1 数量合并用于零样本/小样本学习任务。处理正负样本维度不一致的边界情况
+(负样本可能为 1D 字节字符串,正样本为 2D S1 数组)。结构与 human.py 高度相似。
+This module merges 3gen data (samples with non-zero 12loc) as positives and zero data (background
+samples) as negatives at 1:1 ratio for zero-shot/few-shot learning tasks. Handles dimension
+mismatches between pos/neg samples. Structurally similar to human.py.
+
+功能模块 / Modules:
+- Gen3ZeroDataset: PyG Dataset类,从 data_dir/3gen_alignment 与 data_dir/zero 加载并合并正负样本 / PyG Dataset class loading and merging pos/neg from 3gen_alignment and zero subdirs
+- 正样本筛选 / Positive filtering: 从 3gen 提取 12loc 任一位点非零的样本 (np.any(g3_12_loaded != 0, axis=1)) / Extract samples with any non-zero 12loc entry
+- 负样本配对 / Negative pairing: 提取等量 (num_pos) 的 zero 样本作为负样本 / Extract equal number of zero samples
+- 维度修复 / Dimension fix: 检测并修复正负样本维度不一致 (1D vs 2D) / Detect and fix dimension mismatch
+- precompute_all_structures: 多进程预计算二级结构 / Multiprocess precomputation
+
+输入 / Inputs:
+- data_dir/3gen_alignment/seq.npy: NumPy字节数组, 形状 (N_pos, 1001) - 3gen正样本 / 3gen positive samples
+- data_dir/3gen_alignment/12loc.npy: NumPy int8数组, 形状 (N_pos, 12) - 12类多标签 / 12-class multi-labels
+- data_dir/3gen_alignment/4loc.npy: NumPy int8数组, 形状 (N_pos, 4) - 4类组标签 / 4-class group labels
+- data_dir/3gen_alignment/1001loc.npy: NumPy int8数组, 形状 (N_pos, 1001) - 位点级标签 / Site-level labels
+- data_dir/zero/zero_seq.npy: NumPy字节数组 - 零样本/背景序列 / Zero/background sequences
+- data_dir/zero/zero_label12.npy: NumPy int8数组 - 12类多标签 (通常为全0) / 12-class multi-labels (usually all-zero)
+- data_dir/zero/zero_label4.npy: NumPy int8数组 - 4类组标签 / 4-class group labels
+- data_dir/zero/zero_label1001.npy: NumPy int8数组 - 位点级标签 / Site-level labels
+- 配置文件 / Config: LINEARFOLD_PATH, cache_dir='cache/gen3_zero' - 路径与缓存 / Path and cache
+
+输出 / Outputs:
+- PyG Data对象 / PyG Data objects: x=(1001,4) one-hot, edge_index=(2,E) 边索引, y=(1,12) 12类, y_4class=(1,4) 4类, y_site=(1001,) 位点级 / x: one-hot; edge_index: edges; y: 12-class; y_4class: 4-class; y_site: site-level
+- 注意力掩码 / Attention masks: attn_mask_A/C/G/U (1001,) - 4个核苷酸组归一化目标 / Per-nucleotide normalized targets
+- N字符掩码 / N-mask: attn_mask_N (1001,) - 'N'位置 / 'N' character positions
+- 缓存前缀 / Cache prefix: gen3_zero_{mode}_structures_cache.npz / gen3_zero mode cache
+
+数据流 / Data Flow:
+1. 加载3gen数据 / Load 3gen: 读取3gen_alignment子目录的seq/12loc/4loc/1001loc / Read 3gen_alignment subdir data
+2. 筛选正样本 / Filter positives: 使用 np.any 找出 12loc 不全为0的样本索引 / Use np.any to find positive sample indices
+3. 加载Zero数据 / Load Zero: 读取zero子目录的zero_seq/zero_label12/zero_label4/zero_label1001 / Read zero subdir data
+4. 配对负样本 / Pair negatives: 取前 num_pos 个 zero 样本作为负样本 / Take first num_pos zero samples as negatives
+5. 维度修复 / Dimension fix: 若 neg_seq 是 2D 而 pos_seq 是 1D,使用 astype('S1').view('S{len}').ravel() 转换 / Fix dimension mismatch via astype/view/ravel
+6. 合并数据 / Merge: np.concatenate 拼接正负样本得到 self.sequences 等 / Concatenate pos/neg samples
+7. 字节流one-hot + LinearFold + 构建PyG Data / Byte-to-onehot + LinearFold + Build PyG Data
+
+相关文件 / Related Files:
+- 调用 / Calls: torch.utils.data.Dataset, torch_geometric.data.Data, subprocess (LinearFold), numpy/pickle / Standard utilities
+- 被调用 / Called by: test_gen3.py, utils/fewshot_analysis_gen3.py, utils/fewshot_analysis_spatial_motif.py, utils/fewshot_export_helpers.py, utils/test_gen3_analyse.py, zero_shot_fewshot_analysis.py, zero_shot_fewshot_extract_only.py
+
+使用示例 / Usage Example:
+    from dataset.gen3_zero import Gen3ZeroDataset
+    hybrid_set = Gen3ZeroDataset(data_dir='../npy', mode='train')
+    print(f"Hybrid samples: {len(hybrid_set)} (pos + neg)")
+    from torch_geometric.loader import DataLoader
+    loader = DataLoader(hybrid_set, batch_size=4, shuffle=True)
+    for batch in loader:
+        x, edge_index, y = batch.x, batch.edge_index, batch.y
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
+"""
+
 import numpy as np
 import torch
 from torch.utils.data import Dataset

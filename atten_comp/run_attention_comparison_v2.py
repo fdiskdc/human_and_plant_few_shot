@@ -1,17 +1,43 @@
-'''
-Author: Chao Deng && chaodeng987@outlook.com
-Date: 2026-05-10 09:49:13
-LastEditors: Chao Deng && chaodeng987@outlook.com
-LastEditTime: 2026-05-10 11:08:14
-FilePath: /rgcnformer_sum/atten_comp/run_attention_comparison_v2.py
-Description: 
-那只是一场游戏一场梦
- 
-https://orcid.org/0009-0009-8520-1656
-DOI: 10.3390/app15158626
-DOI: 10.3390/rs17142354
-Copyright (c) 2026 by ${Chao Deng}, All Rights Reserved. 
-'''
+"""
+atten_comp/run_attention_comparison_v2.py - 长序列注意力对比实验 v2 / Long-Sequence Attention Comparison v2
+
+v2 版本流水线:1) 选代表性序列 2) mRModN 全长推理 3) MultiRM 51nt 滑动窗口 4) modX 1001nt 全长 (无滑动窗口) 5) EvoRMD 41nt 滑动窗口
+6) 生成 v2 对比图 (背景色块)。
+V2 pipeline: 1) Select sequences 2) mRModN full 3) MultiRM 51nt 4) modX 1001nt full 5) EvoRMD 41nt 6) Generate v2 figures.
+
+功能模块 / Modules:
+- 选代表性序列 / Select representative sequences
+- 4 模型推理 (modX 改为全长) / 4-model inference (modX full-length)
+- v2 对比图生成 / V2 comparison figure generation
+- main: 主入口 / Main entry point
+
+输入 / Inputs:
+- json/human.json: 推理配置 / Inference config
+- 4 个模型 checkpoints / 4 model checkpoints
+- 命令行参数 / CLI: --output_dir, --top_n
+
+输出 / Outputs:
+- figs_atten/xxx/seq_XXXX.pdf, seq_XXXX.png: v2 对比图 / V2 comparison figures
+- 4 模型 npz 注意力 / 4-model npz attention
+
+数据流 / Data Flow:
+1. 选代表性序列 / Select representative sequences
+2. 4 模型推理 (modX 改为全长) / 4-model inference (modX full)
+3. 拼接注意力 / Stitch attention
+4. 生成 v2 对比图 (背景色块) / Generate v2 figures (background blocks)
+
+相关文件 / Related Files:
+- 调用 / Calls: select_representative_sequences, inference_*, atten_comp/inference_modx_full, atten_comp/visualize_attention_comparison_v2
+- 被调用 / Called by: shell scripts, manual CLI
+
+使用示例 / Usage Example:
+    python atten_comp/run_attention_comparison_v2.py
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
+"""
+
 #!/usr/bin/env python3
 """
 Run All v2: Long-Sequence Attention Comparison Experiment

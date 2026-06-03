@@ -1,3 +1,51 @@
+
+"""
+modx_collect_atten.py - modX 模型 收集注意力输出变体 (1001nt) / modX variant that collects attention outputs (1001nt)
+
+modx.py 的修改版，保留 RNAClassifierWithWord2Vec 模型结构，但前向同时返回
+context_vector 和 (广播到 12 类的) attention_weights，用于可视化与下游分析。
+类末尾保留 alias `RNAClassifierWithWord2Vec = RNAClassifierWithWord2Vec_Collect_Atten`
+以兼容原模型检查点加载。
+A modified version of modx.py that keeps the same RNAClassifierWithWord2Vec structure
+but additionally returns the context_vector and (broadcast-to-12-classes) attention_weights
+in the forward. An alias `RNAClassifierWithWord2Vec = RNAClassifierWithWord2Vec_Collect_Atten`
+is registered at the end for checkpoint-loading compatibility.
+
+功能模块 / Modules:
+- BahdanauAttention: 单头加性注意力 / Single-head additive attention
+- RNAClassifierWithWord2Vec_Collect_Atten: input_proj + BiLSTM + Bahdanau + FC，return_attention=True 时额外返回 context_vector / input_proj + BiLSTM + Bahdanau + FC, additionally returns context_vector when return_attention=True
+- RNAClassifierWithWord2Vec (alias): 兼容原模型权重加载的别名 / Alias for original model weight loading
+
+输入 / Inputs:
+- x: (B*1001, 4) 或 (B, 1001, 4) one-hot RNA 序列 / (B*1001, 4) or (B, 1001, 4) one-hot RNA sequence
+- edge_index: (2, E) PyG 边索引 (未使用) / (2, E) PyG edge indices (unused)
+- batch: (Total_Nodes,) 批次分配向量 / (Total_Nodes,) batch assignment vector
+- return_attention: bool 是否返回 context_vector 和 attention_weights / bool whether to return context_vector and attention_weights
+
+输出 / Outputs:
+- 默认 / Default: logits [B, 12] / logits [B, 12]
+- return_attention=True: (logits [B,12], context_vector [B, 2*hidden_dim], attn_weights [B,12,1001]) / (logits [B,12], context_vector [B, 2*hidden_dim], attn_weights [B,12,1001])
+
+数据流 / Data Flow:
+1. one-hot 序列经 input_proj 映射到 embedding 空间 / one-hot projected to embedding via input_proj
+2. BiLSTM 编码为序列特征 / BiLSTM encodes into sequence features
+3. Bahdanau 注意力汇聚为 context_vector (2*hidden_dim) / Bahdanau attention aggregates to context_vector (2*hidden_dim)
+4. FC 输出 12 类 logits；return_attention=True 时同时返回 context_vector 和广播的 attn_weights / FC outputs 12-class logits; additionally returns context_vector and broadcasted attn_weights
+
+相关文件 / Related Files:
+- 调用 / Calls: torch, torch.nn, torch.nn.functional / torch, torch.nn, torch.nn.functional
+- 被调用 / Called by: collect_modx_atten.py, inference_modx_segmented.py (checkpoint 加载) / collect_modx_atten.py, inference_modx_segmented.py (checkpoint loading)
+
+使用示例 / Usage Example:
+    from model.modx_collect_atten import RNAClassifierWithWord2Vec_Collect_Atten
+    model = RNAClassifierWithWord2Vec_Collect_Atten(input_dim=4, hidden_dim=128, output_dim=12)
+    logits, ctx, attn = model(x, edge_index, batch, return_attention=True)
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
+"""
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

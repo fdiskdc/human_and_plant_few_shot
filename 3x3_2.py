@@ -1,12 +1,42 @@
 """
-3x3 Training Analysis Script for Human-to-Plant Zero-Shot Transfer
-Refactored to 3 independent binary classification tasks (one-vs-rest)
+3x3_2.py - 人类到植物零样本3x3迁移 v2 (单任务) / Human-to-Plant Zero-Shot 3x3 v2 (Single Task)
 
-Key Changes:
-1. Each target modification (Y/m5C/m6A) becomes an independent binary task
-2. Human: per-class one-vs-rest with 1:1 balanced train/test
-3. Plant: per-class plant positives + matched plant other-modification negatives with 1:1 balance
-4. Three separate models/training processes, one per task
+3x3.py 的 v2 版本:每个 m6A 单任务,带 --p_neg {zero,plant} 命令行选项选择负样本来源 (零背景或植物其他修饰)。
+V2 of 3x3.py: each m6A single task, with --p_neg {zero,plant} CLI option to choose negative source.
+
+功能模块 / Modules:
+- 3 个独立模型训练 / 3 independent model training
+- --p_neg 负样本选择 / Negative sample selection
+- 1:1 平衡 / 1:1 balance
+- 评估指标 / Evaluation metrics
+- main: 主入口 / Main entry point
+
+输入 / Inputs:
+- json/human_plant_3x3_v2.json: 训练配置 / Training config
+- human3/seq.npy, plant3/seq.npy, zero/seq.npy: 人类/植物/零数据 / Human/plant/zero data
+- 命令行参数 / CLI: --config, --gpu, --p_neg {zero,plant}
+
+输出 / Outputs:
+- checkpoints/3x3_v2_*.pt: 3 个模型 / 3 models
+- logs/3x3_v2_*/results.json: 评估结果 / Evaluation results
+
+数据流 / Data Flow:
+1. 加载数据 / Load data
+2. 根据 --p_neg 选择负样本 / Choose negatives based on --p_neg
+3. 训练 3 个独立二分类模型 / Train 3 independent binary models
+4. 零样本评估 / Zero-shot evaluation
+5. 保存结果 / Save results
+
+相关文件 / Related Files:
+- 调用 / Calls: model.main_model, dataset.{human,plant,plant_single}
+- 被调用 / Called by: shell scripts, manual CLI
+
+使用示例 / Usage Example:
+    python 3x3_2.py --config json/human_plant_3x3_v2.json --p_neg plant --gpu 0
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import os

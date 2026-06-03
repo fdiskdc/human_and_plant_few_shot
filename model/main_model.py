@@ -1,18 +1,49 @@
 
 """
-RNA_ClassQuery_Model - Multi-scale Class-Query Classification Model for RNA
+main_model.py - RGCNFormer 多尺度类查询分类模型 (人类12类mRNA修饰) / RGCNFormer multi-scale class-query classification model (human 12-class mRNA modification)
 
-This module implements the main model for RNA 12-class multi-label classification.
-The model combines:
-1. Parallel CNN for multi-scale local feature extraction
-2. GCN for graph-structured feature propagation
-3. Class-Query attention for per-class prediction
+实现RNA 12类多标签修饰分类主模型，结合多尺度CNN局部特征提取、GCN图结构特征传播，
+以及基于可学习类查询的注意力分类头。序列长度固定为1001nt。
+Supports three classification head modes: standard Class-Query attention, simple attention pooling,
+and hierarchical 4-group (A/C/G/U) to 12-class query derivation. Used as the primary backbone
+for human multi-label RNA modification prediction at full sequence length.
 
-Sub-modules:
-- ParallelCNNBlock: Multi-scale CNN feature extraction
-- GCNBlock: Graph Convolutional Network block
-- ClassQueryHead: Class-Query classification head using Cross-Attention
-- HierarchicalClassQueryHeadPooling: Hierarchical head with Group-to-Class derivation
+功能模块 / Modules:
+- ParallelCNNBlock: 多尺度并行一维卷积块 (核大小 1/3/5/7) / Multi-scale parallel 1D CNN with kernel sizes 1/3/5/7
+- GCNBlock: 残差图卷积块 (多层 GCNConv + LayerNorm) / Residual GCN block (multi-layer GCNConv + LayerNorm)
+- ClassQueryHead: 基于 TransformerDecoder 的类查询交叉注意力头 / TransformerDecoder-based class-query cross-attention head
+- ClassQueryHeadPooling: 基于缩放点积注意力的简化类查询池化头 / Scaled dot-product attention pooling class-query head
+- HierarchicalClassQueryHeadPooling: 4-组到12-类的层级查询派生 + MHA 头 / 4-group-to-12-class hierarchical query derivation + MHA head
+- RNA_ClassQuery_Model: 端到端模型，整合 CNN + GCN + 选定的分类头 / End-to-end model integrating CNN + GCN + selected head
+
+输入 / Inputs:
+- x: (B, 1001, 4) 或 (Total_Nodes, 4) one-hot RNA序列 / (B, 1001, 4) or (Total_Nodes, 4) one-hot RNA sequence
+- edge_index: (2, E) PyG 格式的图边索引 / (2, E) PyG-format graph edge indices
+- batch: (Total_Nodes,) 批次分配向量 (PyG 格式时需要) / (Total_Nodes,) batch assignment vector (required for PyG format)
+
+输出 / Outputs:
+- 标准头 (training) / Standard head (training): (logits [B,12], None) / (logits [B,12], None)
+- 标准头 (eval) / Standard head (eval): logits [B, 12] / logits [B, 12]
+- 简单池化头 / Simple pooling head: (logits [B,12], attn_weights [B,12,1001]) / (logits [B,12], attn_weights [B,12,1001])
+- 层级头 / Hierarchical head: (logits_12 [B,12], logits_4 [B,4], attn_weights_12 [B,12,1001]) / (logits_12 [B,12], logits_4 [B,4], attn_weights_12 [B,12,1001])
+
+数据流 / Data Flow:
+1. one-hot 序列进入多尺度 CNN 提取局部 k-mer 特征 / one-hot sequence enters multi-scale CNN to extract local k-mer features
+2. CNN 输出 reshape 为图节点特征，经 GCN 进行图结构传播 (带残差) / CNN output reshaped as graph node features, propagated through GCN with residuals
+3. GCN 节点特征送入选定的分类头，生成 12 类 logits (及 4 组 logits) / GCN node features fed to selected head to produce 12-class logits (and 4-group logits)
+
+相关文件 / Related Files:
+- 调用 / Calls: torch, torch.nn, torch_geometric.nn.GCNConv, utils.common.GROUP_TO_CLASS_INDICES / torch, torch.nn, torch_geometric.nn.GCNConv, utils.common.GROUP_TO_CLASS_INDICES
+- 被调用 / Called by: train_human.py, train_plant.py, test_gen3.py, collect_human.py, collect_human_atten.py, prepare_umap_data.py, SpatialMotif.py, 3x3.py, 3x3_2.py, fewshot_*.py / train_human.py, train_plant.py, test_gen3.py, collect_human.py, collect_human_atten.py, prepare_umap_data.py, SpatialMotif.py, 3x3.py, 3x3_2.py, fewshot_*.py
+
+使用示例 / Usage Example:
+    from model.main_model import RNA_ClassQuery_Model
+    model = RNA_ClassQuery_Model(num_classes=12, use_hierarchical=True)
+    logits_12, logits_4, attn = model(x, edge_index, batch)  # hierarchical
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import torch

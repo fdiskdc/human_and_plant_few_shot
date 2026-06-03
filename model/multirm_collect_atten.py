@@ -1,3 +1,53 @@
+
+"""
+multirm_collect_atten.py - MultIRM 基线 收集上下文向量变体 (51nt) / MultIRM baseline variant that collects context vectors (51nt)
+
+multirm.py 的修改版，主类 model_v3_Collect_Atten 在 return_attention=True 时额外返回
+context_vector，用于可视化和下游分析。类末尾保留 alias `model_v3 = model_v3_Collect_Atten`
+以兼容原模型检查点加载。
+A modified version of multirm.py where model_v3_Collect_Atten additionally returns the
+context_vector when return_attention=True for visualization and downstream analysis. An
+alias `model_v3 = model_v3_Collect_Atten` is registered at the end for checkpoint-loading
+compatibility.
+
+功能模块 / Modules:
+- NaiveNet / NaiveNet_v1 / NaiveNet_v2: 同 multirm.py 的基线变体 / Same baseline variants as multirm.py
+- BahdanauAttention: 经典 Bahdanau 加性注意力 / Classical Bahdanau additive attention
+- model_v3_Collect_Atten: train.py 兼容的 BiLSTM + Bahdanau 主基线，可选返回 context_vector / train.py-compatible BiLSTM + Bahdanau primary baseline, optionally returns context_vector
+- model_v3 (alias): 兼容原模型权重加载的别名 / Alias for original model weight loading
+
+输入 / Inputs:
+- x: (B, 4, 51) 或 (Total_Nodes, 4) one-hot RNA 51nt 子序列 / (B, 4, 51) or (Total_Nodes, 4) one-hot RNA 51nt subsequence
+- edge_index: (2, E) PyG 边索引 (未使用) / (2, E) PyG edge indices (unused)
+- batch: (Total_Nodes,) 批次分配向量 / (Total_Nodes,) batch assignment vector
+- return_attention: bool 是否返回 context_vector 和 attention_weights / bool whether to return context_vector and attention_weights
+
+输出 / Outputs:
+- 默认 / Default: logits [B, 12] / logits [B, 12]
+- 层级默认 / Hierarchical default: (logits_12 [B,12], logits_4 [B,4], None) / (logits_12 [B,12], logits_4 [B,4], None)
+- return_attention=True: (logits [B,12], context_vector [B,num_task,512], attn_weights [B,12,51]) / (logits [B,12], context_vector [B,num_task,512], attn_weights [B,12,51])
+- 层级 + return_attention=True: (logits_12, logits_4, context_vector, attn_weights) / (logits_12, logits_4, context_vector, attn_weights)
+
+数据流 / Data Flow:
+1. one-hot 子序列经 3 层 1D CNN 提取局部特征 / one-hot subsequence through 3-layer 1D CNN for local features
+2. CNN 特征 reshape 后经 BiLSTM 编码 (B, 51, 512) / CNN features reshaped and encoded by BiLSTM (B, 51, 512)
+3. 末层双向隐状态作为 query，BiLSTM 输出作为 key/value，经 Bahdanau 注意力汇聚为 (B, 12, 512) 上下文 / Last-layer bi-hidden as query, BiLSTM output as key/value, Bahdanau attention aggregates to (B, 12, 512) context
+4. 上下文经每类 FC 头输出 12 个二分类 logits (及 4 组 max-pool logits) / Context via per-class FC heads outputs 12 binary logits (and 4-group max-pool logits)
+
+相关文件 / Related Files:
+- 调用 / Calls: torch, torch.nn, numpy / torch, torch.nn, numpy
+- 被调用 / Called by: collect_multirm_atten.py, train_human_multirm.py, train_multirm_dataset.py, test_multirm_4class.py, test_multirm_oversampling.py, inference_multirm_segmented.py / collect_multirm_atten.py, train_human_multirm.py, train_multirm_dataset.py, test_multirm_4class.py, test_multirm_oversampling.py, inference_multirm_segmented.py
+
+使用示例 / Usage Example:
+    from model.multirm_collect_atten import model_v3_Collect_Atten
+    model = model_v3_Collect_Atten(num_task=12, use_hierarchical=True)
+    l12, l4, ctx, attn = model(x, edge_index, batch, return_attention=True)
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
+"""
+
 import torch
 import numpy as np
 from torch import nn

@@ -1,0 +1,37 @@
+# ==============================================================================
+# plot_zero_fewshot_export.R - 零样本/少样本结果导出版可视化 / Export-ready R visualization
+# ==============================================================================
+#
+# plot_zero_fewshot_analysis.R 的"导出版"：更精炼的论文配色（PAPER_CLASS_COLORS /
+# PAPER_SPECIES_COLORS）和统一的 PNG/PDF 输出尺寸；用于把 Python 流水线导出的 CSV
+# 直接生成可投稿的 figure。
+# A leaner "export" sibling of plot_zero_fewshot_analysis.R with a tighter
+# paper palette (PAPER_CLASS_COLORS / PAPER_SPECIES_COLORS) and unified PNG/PDF
+# output sizing; turns Python-exported CSVs into submission-ready figures.
+#
+# 功能模块 / Modules:
+# - PAPER_CLASS_COLORS / PAPER_SPECIES_COLORS: 论文级配色 / Paper-grade palettes
+# - theme_paper: 自定义 theme / Custom theme
+# - 多 panel 绘图函数: 零样本/少样本/合成数据对比 / Multi-panel comparison plotters
+#
+# 输入 / Inputs:
+# --input_dir: dir - Python 导出数据目录 / Python-exported data dir
+# --output_dir: dir - 输出目录 / Output dir
+#
+# 输出 / Outputs:
+# --output_dir/*.png 与 *.pdf / PNG and PDF figures
+#
+# 数据流 / Data Flow:
+# 1. 解析 CLI / Parse CLI
+# 2. 读 CSV 拼长表 / Read CSVs and pivot
+# 3. 主题化 ggplot 渲染 / Render themed ggplot
+# 4. 写 PNG+PDF / Write PNG+PDF
+#
+# 相关文件 / Related Files:
+# - 调用 / Calls: ggplot2, dplyr, tidyr, readr, scales, forcats, ggrastr, gridExtra
+# - 被调用 / Called by: Python 零样本/少样本流水线 / Python zero/few-shot pipeline
+#
+# 使用示例 / Usage Example:
+#     Rscript plot_zero_fewshot_export.R --input_dir output/zero_fewshot --output_dir output/figures
+#
+# ==============================================================================

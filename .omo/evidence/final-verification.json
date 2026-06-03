@@ -1,0 +1,11 @@
+{
+  "f1_compliance": {
+    "present": 92,
+    "missing": [],
+    "no_header": []
+  },
+  "f1_verdict": "APPROVE",
+  "f2_quality": "PASS-WITH-NOTE",
+  "f3_spot_check": "PASS",
+  "f4_scope": "PASS"
+}

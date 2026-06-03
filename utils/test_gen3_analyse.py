@@ -1,3 +1,46 @@
+"""
+utils/test_gen3_analyse.py - 3gen 推理 + Top-K 定位分布图 / 3gen Inference + Top-K Localization Distribution
+
+3gen 数据集推理 + Top-K 定位分布图 + tolerant-M (tolerateM) 指标变体。
+3gen dataset inference + Top-K localization distribution plots + tolerant-M (tolerateM) metric variants.
+
+功能模块 / Modules:
+- 3gen 推理 / 3gen inference
+- Top-K 定位 / Top-K localization
+- Tolerant-M 指标 / Tolerant-M metrics
+- 分布图 / Distribution plots
+- main: 主入口 / Main entry point
+
+输入 / Inputs:
+- json/gen3.json: 配置 / Config
+- checkpoints/best_gen3.pt: 预训练模型 / Pretrained model
+- 3gen/seq.npy, 3gen/1001loc.npy: 3gen 数据 / 3gen data
+- 命令行参数 / CLI: --config, --checkpoint, --output
+
+输出 / Outputs:
+- logs/gen3_analyse_*/results.json: 评估结果 / Evaluation results
+- fig/gen3_topk_distribution_*.png: Top-K 分布图 / Top-K distribution plots
+- tolerant-M 指标 / tolerant-M metrics
+
+数据流 / Data Flow:
+1. 加载数据 / Load data
+2. 模型推理 / Model inference
+3. Top-K 定位 / Top-K localization
+4. 计算 tolerant-M / Compute tolerant-M
+5. 绘图 + 保存 / Plot + save
+
+相关文件 / Related Files:
+- 调用 / Calls: dataset.gen3.Gen3Dataset, model.main_model, utils.{common,metrics}
+- 被调用 / Called by: manual execution
+
+使用示例 / Usage Example:
+    python -m utils.test_gen3_analyse --config json/gen3.json
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
+"""
+
 import os
 import random
 import json

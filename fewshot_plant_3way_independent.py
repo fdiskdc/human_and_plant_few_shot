@@ -1,29 +1,45 @@
 """
-Plant 3-Way Classification - INDEPENDENT Binary Tasks (One-vs-Rest)
+fewshot_plant_3way_independent.py - 植物3路独立二分类训练 / Plant 3-Way Independent Binary Classification Training
 
-This script implements 3 INDEPENDENT Binary Classification Tasks to avoid gradient interference
-between classes with vastly different difficulties (m5C is easy, Y/m6A are hard).
+3 个独立二分类任务 (one-vs-rest) 训练,避免类别难度差异 (m5C 简单,Y/m6A 难) 之间的梯度干扰。
+为每个目标类 (Y=5, m5C=8, m6A=9) 训练单独的模型:每个模型从 checkpoint 重新加载并针对二分类任务特化。
+3 independent binary classification tasks (one-vs-rest), avoiding gradient interference between classes of vastly different difficulties.
+Trains separate models for each target class (Y=5, m5C=8, m6A=9): each model is reloaded from scratch and specialized.
 
-Core Strategy:
---------------
-Instead of training one model for all 3 classes, we train 3 SEPARATE models:
-- Model 1: Class 5 (Y) vs. Rest (Classes 8, 9)
-- Model 2: Class 8 (m5C) vs. Rest (Classes 5, 9)
-- Model 3: Class 9 (m6A) vs. Rest (Classes 5, 8)
+功能模块 / Modules:
+- 3 个独立模型训练 / 3 independent model training
+- 1:1 二元采样 / 1:1 binary sampling
+- 动态偏差冻结 / Dynamic bias freezing
+- 二元 Focal Loss / Binary Focal Loss
+- 一对多评估 / One-vs-Rest evaluation
+- main: 主入口 / Main entry point
 
-Each model is reloaded from scratch and specialized for its binary task.
+输入 / Inputs:
+- json/plant_3way.json: 训练配置 / Training config
+- plant3/seq.npy, plant3/12loc.npy: 植物数据 / Plant data
+- 命令行参数 / CLI: --config, --gpu, --seed
 
-Key Innovations:
---------------
-1. INDEPENDENT MODELS: Each class gets its own fresh model from checkpoint
-2. BINARY SAMPLING (1:1 Balance): K positives (target class) + K negatives (other plant classes)
-3. HYBRID TRAINING: Dynamic bias freezing retained from hybrid strategy
-4. BINARY FOCAL LOSS: Focuses on hard examples for each binary task
-5. BINARY EVALUATION: One-vs-Rest metrics (AUC, F1, Precision, Recall)
+输出 / Outputs:
+- checkpoints/plant_y.pt, plant_m5c.pt, plant_m6a.pt: 3 个独立模型 / 3 independent models
+- logs/plant_3way_*/results.json: 评估结果 / Evaluation results
 
-Plant Classes: 5 (Y), 8 (m5C), 9 (m6A)
+数据流 / Data Flow:
+1. 加载植物数据 / Load plant data
+2. 初始化 3 个模型 / Init 3 models
+3. 独立二分类训练 / Independent binary training
+4. 一对多评估 (AUC, F1, Precision, Recall) / One-vs-Rest evaluation
+5. 保存 3 个模型 / Save 3 models
 
-IMPORTANT: This is Plant vs. Plant (no Zero/background samples).
+相关文件 / Related Files:
+- 调用 / Calls: model.main_model.RNA_ClassQuery_Model, dataset.plant.PlantDataset
+- 被调用 / Called by: shell scripts, manual CLI
+
+使用示例 / Usage Example:
+    python fewshot_plant_3way_independent.py --config json/plant_3way.json --gpu 0
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import os

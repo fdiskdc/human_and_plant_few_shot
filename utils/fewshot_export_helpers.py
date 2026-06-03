@@ -1,14 +1,40 @@
 """
-Few-shot Analysis Export Helpers
+utils/fewshot_export_helpers.py - 小样本结果 CSV/JSON 导出 / Few-shot Result CSV/JSON Export
 
-This module contains helper functions for exporting analysis data in tidy CSV/JSON format
-for consumption by R visualization scripts.
+整洁 (tidy) 的 CSV/JSON 导出函数,供 R 脚本消费。
+Tidy CSV/JSON export functions for R script consumption.
 
-Key design principles:
-- All UMAP point CSVs have consistent schema: sample_id, species, class_name, class_idx,
-  umap_x, umap_y, is_synthetic, point_role, source_group, shot, reference_type, target_class_name
-- Real and synthetic points are distinguished via is_synthetic flag
-- Colors are fixed per the global color specification
+功能模块 / Modules:
+- tidy 格式转换 / Tidy format conversion
+- CSV 导出 / CSV export
+- JSON 导出 / JSON export
+- 一致的 schema 强制 / Consistent schema enforcement
+
+输入 / Inputs:
+- 数据字典/列表 / Data dict/list
+- 输出路径 / Output path
+
+输出 / Outputs:
+- *.csv 文件 / CSV files
+- *.json 文件 / JSON files
+- 一致的 schema 供 R 消费 / Consistent schema for R
+
+数据流 / Data Flow:
+1. 整理数据为 tidy 格式 / Tidy data
+2. 保存 CSV / Save CSV
+3. 保存 JSON / Save JSON
+
+相关文件 / Related Files:
+- 调用 / Calls: pandas, json
+- 被调用 / Called by: zero_shot_fewshot_extract_only.py
+
+使用示例 / Usage Example:
+    from utils.fewshot_export_helpers import export_tidy
+    export_tidy(data_dict, output_dir='output/zero_fewshot/data')
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import csv

@@ -1,9 +1,44 @@
 """
-Few-Shot Learning Benchmark Functions for RNA Multi-label Classification
+utils/few_shot.py - 植物与ac4C小样本基准测试 / Few-shot Benchmark for Plant and AC4C
 
-This module contains:
-- run_few_shot_benchmark: Few-shot benchmark for Plant dataset
-- run_few_shot_benchmark_ac4c: Few-shot benchmark for AC4C dataset (balanced and unbalanced)
+为植物 (Y/m5C/m6A) 和 ac4C 数据集提供小样本基准测试:动态冻结、软偏差初始化、高级数据增强。
+Provides few-shot benchmarking for Plant (Y/m5C/m6A) and AC4C datasets: dynamic freezing, soft bias init, advanced augmentation.
+
+功能模块 / Modules:
+- run_few_shot_benchmark: 植物小样本基准 / Plant few-shot benchmark
+- run_few_shot_benchmark_ac4c: ac4C 小样本基准 / AC4C few-shot benchmark
+- 动态偏差冻结 / Dynamic bias freezing
+- 软偏差初始化 / Soft bias init
+- 高级数据增强 / Advanced data augmentation
+
+输入 / Inputs:
+- json/plant_single.json, json/ac4c.json: 配置 / Config
+- checkpoints/best_model.pt: 预训练模型 / Pretrained model
+- plant3/ 或 ac4c/ 数据 / plant or ac4c data
+- 命令行参数 / CLI: --n_shots, --n_queries, --n_runs
+
+输出 / Outputs:
+- 输出目录结果 / Output dir results
+- 多次运行的均值±标准差 / Mean ± std across runs
+- logs/few_shot_*/results.json
+
+数据流 / Data Flow:
+1. 加载预训练模型 / Load pretrained model
+2. 初始化小样本配置 / Init few-shot config
+3. 多次运行 / Multiple runs
+4. 统计指标 / Aggregate metrics
+5. 保存结果 / Save results
+
+相关文件 / Related Files:
+- 调用 / Calls: model.main_model, dataset.{plant,ac4c,plant_single}
+- 被调用 / Called by: train_*.py, fewshot_*.py
+
+使用示例 / Usage Example:
+    from utils.few_shot import run_few_shot_benchmark
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import torch

@@ -1,16 +1,45 @@
 """
-Attention Comparison Visualization — m6A Focus
+visualize_attention_comparison.py - m6A注意力对比可视化(4模型) / m6A Attention Comparison Visualization (4 Models)
 
-Generates per-sequence figures comparing m6A attention patterns across 4 models:
-  - mRModN (per-class MHA, full 1001nt)
-  - MultiRM (shared Bahdanau, 51nt sliding window)
-  - modx (shared Bahdanau, 101nt sliding window)
-  - EvoRMD (shared scalar, 41nt sliding window)
+为每条序列生成 4 模型 m6A 注意力模式对比图:mRModN (1001nt per-class MHA) / MultiRM (51nt 共享 Bahdanau) /
+modx (101nt 共享 Bahdanau) / EvoRMD (41nt 共享 scalar)。每图 4 子图,m6A 注意力曲线 + 真实位点 + 窗口边界。
+Style: Times New Roman 18pt, Morandi 配色,期刊质量。
+Generates per-sequence figures comparing m6A attention patterns across 4 models. Each figure: 4 subplots,
+m6A attention curve + true sites + window boundaries. Style: Times New Roman 18pt, Morandi palette, journal quality.
 
-Each figure: 4 subplots (one per model), m6A attention curve + true sites + window boundaries.
-Output: fig/attention_comparison/seq_XXXX.pdf + seq_XXXX.png
+功能模块 / Modules:
+- 4 模型注意力加载 / Load 4-model attention
+- 每子图绘制 (注意力曲线 + 真实位点 + 窗口边界) / Per-subplot drawing
+- 期刊质量样式 / Journal-quality styling
+- main: 主入口 / Main entry point
 
-Style: Times New Roman 18pt, Morandi palette, journal quality.
+输入 / Inputs:
+- npy/mrmodn_full_atten.npz: mRModN 全长注意力 / mRModN full-length attention
+- npy/multirm_segmented_atten.npz: MultiRM 51nt 滑动窗口 / MultiRM 51nt sliding window
+- npy/modx_segmented_atten.npz: modX 101nt 滑动窗口 / modX 101nt sliding window
+- npy/evormd_segmented_atten.npz: EvoRMD 41nt 滑动窗口 / EvoRMD 41nt sliding window
+- npy/selected_*.npy: 预选序列 / Pre-selected sequences
+
+输出 / Outputs:
+- fig/attention_comparison/seq_XXXX.pdf, seq_XXXX.png: 每序列对比图 / Per-sequence comparison
+- PNG + PDF 双格式 / PNG + PDF dual format
+
+数据流 / Data Flow:
+1. 加载 4 模型注意力 / Load 4-model attention
+2. 选代表性序列 / Select representative sequences
+3. 绘制 4 子图 / Draw 4 subplots
+4. 保存 PNG + PDF / Save PNG + PDF
+
+相关文件 / Related Files:
+- 调用 / Calls: numpy, matplotlib, sliding_window_utils
+- 被调用 / Called by: run_attention_comparison.py
+
+使用示例 / Usage Example:
+    python visualize_attention_comparison.py
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import os

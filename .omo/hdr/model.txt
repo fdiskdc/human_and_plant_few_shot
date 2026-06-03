@@ -1,0 +1,42 @@
+"""
+model.py - EvoRMD 模型组件 / Model components for EvoRMD
+
+定义 PyTorch Dataset（带 organ/cell/subcell/species 完整元信息）、可配置深度的
+多类分类器（mlp_depth 1/2/3）以及一个作用于 token 序列的可学习 attention 层。
+This module defines the full PyTorch Dataset (with organ/cell/subcell/species
+metadata), a configurable-depth MulticlassClassifier (mlp_depth 1/2/3), and a
+TrainableAttention layer that produces attention weights over the token axis.
+
+功能模块 / Modules:
+- RNAFMDataset: 6 元组 (seq, label, organ, cell, subcell, species) / 6-tuple dataset
+- MulticlassClassifier: mlp_depth=1/2/3 三种分类头 / Three MLP depths
+- TrainableAttention: token 级 attention 权重 (B, L) / Per-token attention weights
+
+输入 / Inputs:
+- RNAFMDataset(data): data 是含 sequence/mod_type/organ/cell/subcellular_location/species 的 DataFrame
+- MulticlassClassifier(emb_dim, num_classes, mlp_depth)
+- TrainableAttention(emb_dim)
+
+输出 / Outputs:
+- RNAFMDataset.__getitem__: (seq, label, organ, cell, subcell, species) 6 元组 / 6-tuple
+- MulticlassClassifier.forward: (B, num_classes) logits / logits
+- TrainableAttention.forward: (B, L) attention 概率 / attention weights
+
+数据流 / Data Flow:
+1. RNAFMDataset 把 DataFrame 字段缓存为 list / Cache DataFrame columns to lists
+2. MulticlassClassifier: x -> (Linear [+ ReLU] x) -> logits
+3. TrainableAttention: token_emb -> Linear -> softmax -> weights
+
+相关文件 / Related Files:
+- 调用 / Calls: torch, torch.utils.data.Dataset, torch.nn
+- 被调用 / Called by: main.py, train_val_test.py, dataset.py(同 Dataset 类的精简版)
+
+使用示例 / Usage Example:
+    ds = RNAFMDataset(df)
+    clf = MulticlassClassifier(800, num_classes, mlp_depth=2)
+    att = TrainableAttention(800)
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
+"""

@@ -1,11 +1,43 @@
 """
-MultiRM Segmented Inference — 51nt Sliding Window
+inference_multirm_segmented.py - MultiRM 51nt滑动窗口分段推理 / MultiRM 51nt Sliding-Window Segmented Inference
 
-Uses the adapted MultiRM checkpoint (BiLSTM + BahdanauAttention) trained on human data.
-Runs 51nt sliding windows (stride=1) over 1001nt sequences.
-Collects attention per window and stitches back to full-length [N, 12, 1001].
+使用适配 MultiRM 检查点 (BiLSTM + BahdanauAttention) 在 1001nt 序列上以 51nt 窗口 (stride=1) 滑动推理。
+收集每窗口注意力并通过高斯加权 (gaussian_weighted_stitch) 拼回全长 [N, 12, 1001]。
+Uses the adapted MultiRM checkpoint (BiLSTM + BahdanauAttention) on 1001nt sequences with 51nt sliding windows (stride=1).
+Collects per-window attention and stitches back to full-length [N, 12, 1001] via Gaussian-weighted stitching.
 
-Output: npy/multirm_segmented_atten.npz
+功能模块 / Modules:
+- sliding_window_inference: 滑动窗口推理 / Sliding window inference
+- 高斯加权拼接 / Gaussian-weighted stitching
+- main: 主入口 / Main entry point
+
+输入 / Inputs:
+- checkpoints/best_multirm.pt: PyTorch state_dict / Model weights
+- json/multirm_inference.json: 推理配置 (window_size=51, stride=1) / Inference config
+- npy/selected_*.npy: 预选序列 / Pre-selected sequences
+- 命令行参数 / CLI: --checkpoint, --config, --output_dir
+
+输出 / Outputs:
+- npy/multirm_segmented_atten.npz: NumPy 压缩注意力 / NumPy compressed attention
+  * 包含 / Contains: attn_weights [N, 12, 1001], labels [N, 12], seqs [N]
+
+数据流 / Data Flow:
+1. 加载模型 / Load model
+2. 加载配置与序列 / Load config and sequences
+3. 51nt 滑动窗口推理 / 51nt sliding window inference
+4. 高斯加权拼接 / Gaussian-weighted stitching
+5. 保存到 npz / Save to npz
+
+相关文件 / Related Files:
+- 调用 / Calls: model.multirm_collect_atten, sliding_window_utils, utils.common
+- 被调用 / Called by: run_attention_comparison.py, manual CLI
+
+使用示例 / Usage Example:
+    python inference_multirm_segmented.py --checkpoint checkpoints/best_multirm.pt --output npy/multirm_atten.npz
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import os

@@ -1,12 +1,45 @@
 #!/usr/bin/env python3
 """
-SpatialMotif.py - Visualize "Spatial Motifs" with Top-K Sequence Logos
+SpatialMotif.py - 空间修饰基序可视化与 Top-K 序列标志 / Spatial Motif Visualization with Top-K Sequence Logos
 
-NEW FEATURE: Latent Space Activation Clustering
-- Extract embeddings from GCN layer (before classification head)
-- Cluster samples in latent space using PCA + K-Means
-- Generate separate Sequence Logos for each cluster
-This prevents "signal washout" caused by averaging across different topologies.
+提取 GCN 层嵌入 (分类头前),在潜空间用 PCA + K-Means 聚类,生成每簇独立的序列标志。
+避免跨拓扑平均造成的 "信号洗出"。每个空间位点 (左/右) 独立分析。
+Extract embeddings from GCN layer (before classification head), cluster in latent space using PCA + K-Means,
+generate separate sequence logos for each cluster. Prevents "signal washout" caused by averaging across topologies.
+
+功能模块 / Modules:
+- GCN 嵌入提取 / GCN embedding extraction
+- PCA + K-Means 聚类 / PCA + K-Means clustering
+- 序列标志生成 / Sequence logo generation
+- main: 主入口 / Main entry point
+
+输入 / Inputs:
+- human3/seq.npy, human3/1001loc.npy: 人类数据 / Human data
+- checkpoints/best_model.pt: 预训练模型 / Pretrained model
+- 命令行参数 / CLI: --n_clusters, --top_k, --mod_type
+
+输出 / Outputs:
+- motif_logo_clustered/seq_*.png: 聚类序列标志 / Clustered sequence logos
+- motif_logo_clustered/cluster_*.png: 簇可视化 / Cluster visualization
+- att_fig/spatial_*.png: 空间修饰图 / Spatial modification figures
+
+数据流 / Data Flow:
+1. 加载数据与模型 / Load data and model
+2. 提取 GCN 嵌入 / Extract GCN embeddings
+3. PCA + K-Means 聚类 / PCA + K-Means clustering
+4. Top-K 序列标志 / Top-K sequence logos
+5. 保存图表 / Save figures
+
+相关文件 / Related Files:
+- 调用 / Calls: dataset.human_motif.Mer100DatasetMotif, model.main_model, logomaker, sklearn
+- 被调用 / Called by: manual execution
+
+使用示例 / Usage Example:
+    python SpatialMotif.py --n_clusters 3 --top_k 10 --mod_type m6A
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import os

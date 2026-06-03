@@ -1,0 +1,36 @@
+# ==============================================================================
+# generate_plot.R - 参数量 vs AUC 气泡图 / Parameter-count vs AUC bubble plot
+# ==============================================================================
+#
+# 读取 para_comp/ 下三份 Excel（51.xlsx, 101.xlsx, 1001.xlsx），把不同序列长度
+# 下的 (Model, PARA, AUC) 合并，用颜色编码 Sequence_Length、用形状编码 Model
+# 画 莫兰迪色 气泡图（log X 轴）。
+# Reads the three Excel files (51.xlsx, 101.xlsx, 1001.xlsx) under para_comp/,
+# merges (Model, PARA, AUC) across sequence lengths, and plots a Morandi-colored
+# bubble chart with color = sequence length and shape = model (log-x axis).
+#
+# 功能模块 / Modules:
+# - read_excel x3: 读 51/101/1001 序列长度数据 / Load three sequence-length tables
+# - bind_rows: 合并三份数据 / Concatenate
+# - ggplot + geom_point: 气泡图 / Bubble chart
+#
+# 输入 / Inputs:
+# - 51.xlsx, 101.xlsx, 1001.xlsx: 三组序列长度下的模型参数与 AUC / Per-length tables
+#
+# 输出 / Outputs:
+# - bubble_chart_R.png / .pdf: 气泡图 / Bubble chart
+#
+# 数据流 / Data Flow:
+# 1. 读三份 xlsx / Read 3 xlsx
+# 2. mutate Sequence_Length / bind_rows / Add length & merge
+# 3. ggplot 画气泡 / Plot bubble
+# 4. ggsave / Save
+#
+# 相关文件 / Related Files:
+# - 调用 / Calls: ggplot2, readxl, dplyr, scales
+# - 被调用 / Called by: 参数量对比流水线 / Parameter-comparison pipeline
+#
+# 使用示例 / Usage Example:
+#     Rscript ipynb/para_comp/generate_plot.R
+#
+# ==============================================================================

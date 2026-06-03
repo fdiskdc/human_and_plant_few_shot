@@ -1,3 +1,57 @@
+"""
+multirm.py - MultIRM 多类别RNA修饰分类数据集 / MultIRM Multi-class RNA Modification Classification Dataset
+
+本模块实现 MultIRM 数据集的高性能加载器，支持 12 种 RNA 修饰的多类分类任务。
+采用"预计算 Tensor 驻留"策略：初始化时将所有数据预转为 Tensor 格式，__getitem__ 期间
+零计算开销仅做查表。支持训练集 Oversampling with Max-Length Alignment 策略以平衡各类样本数。
+This module implements a high-performance loader for the MultIRM dataset, supporting multi-class
+classification of 12 RNA modification types. It uses a "precomputed tensor resident" strategy:
+all data is pre-converted to tensors at init, so __getitem__ is pure lookup with zero compute.
+Training mode also supports Oversampling with Max-Length Alignment to balance class sample counts.
+
+功能模块 / Modules:
+- MultirmDataset: PyG Dataset类,加载 npy/multirm/51split/{class}/{pos|neg}/{mode}_in.npy 等数据 / PyG Dataset class loading pos/neg samples per class
+- _load_raw_data: 加载所有类 (12种) 的正负样本 {train,test,valid}_in.npy 与 {train,test,valid}_out.npy / Loads pos/neg samples for all 12 classes
+- _load_structure_cache: 一次性从 H5 缓存加载所有序列的二级结构 / One-shot load of all sequence structures from H5 cache
+- _build_indices_map: 训练模式生成 Oversampling with Max-Length Alignment 虚拟索引 / Generates oversampling virtual indices for training
+- precompute_all_structures: 预计算二级结构并保存为 H5 缓存 (区别于 human.py 的 npz) / Precomputes structures and saves as H5 cache
+
+输入 / Inputs:
+- npy/multirm/51split/{class_name}/{pos|neg}/{mode}_in.npy: NumPy字节数组, 1001nt RNA序列 / 1001nt RNA sequences per class
+- npy/multirm/51split/{class_name}/{pos|neg}/{mode}_out.npy: NumPy数组, 12类多标签 / 12-class multi-labels
+- npy/multirm/51split/{class_name}/{pos|neg}/{mode}_out_4class.npy: NumPy数组, 4类核苷酸组标签 (可选) / Optional 4-class nucleotide group labels
+- 配置文件 / Config: LINEARFOLD_PATH, cache_dir, numsample, use_4class - 缓存目录与采样参数 / Cache dir and sampling params
+- 12类修饰 / 12 classes: Am, Cm, Gm, Um, m1A, m5C, m5U, m6A, m6Am, m7G, Psi, AtoI
+
+输出 / Outputs:
+- PyG Data对象 / PyG Data objects: x=(1001,4) one-hot (Tensor), edge_index=(2,E) 边索引, y=(1,12) 12类多标签, class_idx=(1,) 类别索引, y_4=(1,4) 4类组标签 (可选) / Pre-built tensors for zero-compute lookup
+- H5缓存 / H5 cache: multirm_{mode}_structures_cache.h5 - 二级结构边索引HDF5缓存 / HDF5 cache of secondary structure edge indices
+- 虚拟索引 / Virtual indices: training模式下使用 oversampling 索引, virtual_length = max_class_len * num_buckets
+
+数据流 / Data Flow:
+1. 加载原始npy / Load raw npy: 遍历12类×pos/neg加载所有 sequence_bytes / label / label_4class / Iterate 12 classes x pos/neg, load all samples
+2. 预处理为Tensor / Preprocess to Tensor: 用 BYTE_TO_INDEX 查表 + ONE_HOT_EMB 嵌入矩阵直接生成 (1001,4) Tensor / Use BYTE_TO_INDEX + ONE_HOT_EMB for direct tensor generation
+3. 加载H5边索引缓存 / Load H5 edge cache: 一次性读入所有边索引到内存, 边索引查表零计算 / One-shot load of all edges into memory for zero-compute lookup
+4. 训练模式Oversampling / Training oversampling: 按 (class_name, is_pos) 分桶, 各桶扩展到 max_len 形成虚拟索引 / Group by (class, pos/neg), expand each bucket to max_len
+5. __getitem__ 查表 / __getitem__ lookup: 根据虚拟索引直接返回预构建 Tensor Data对象 / Return pre-built Tensor Data by virtual index
+
+相关文件 / Related Files:
+- 调用 / Calls: torch.utils.data.Dataset, torch_geometric.data.Data, subprocess (LinearFold), h5py (HDF5缓存) / Uses h5py for H5 cache
+- 被调用 / Called by: train_multirm_dataset.py, test_multirm_4class.py, test_multirm_oversampling.py
+
+使用示例 / Usage Example:
+    from dataset.multirm import MultirmDataset
+    train_set = MultirmDataset(numsample=50, mode='train', use_4class=True)
+    from torch_geometric.loader import DataLoader
+    loader = DataLoader(train_set, batch_size=32, shuffle=True, num_workers=4)
+    for batch in loader:
+        x, edge_index, y = batch.x, batch.edge_index, batch.y
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
+"""
+
 import numpy as np
 import torch
 from torch.utils.data import Dataset

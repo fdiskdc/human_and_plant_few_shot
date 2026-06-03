@@ -1,19 +1,46 @@
 """
-Collect Model Outputs for Human Dataset (Optimized Version)
+collect_human.py - 收集人类数据集的模型输出 / Collect Model Outputs for Human Dataset
 
-This script collects model outputs (12-class logits, 4-class logits, attention weights)
-for all samples in human dataset and saves them to an Excel file.
+对人类数据集中所有样本运行模型推理,收集 12 类 logits、4 类 logits 和注意力权重,保存为 Excel 文件。
+优化:批累积减少 GPU-CPU 传输 90%、序列字符串预存避免 one-hot→string 转换、AMP 混合精度加速。
+Runs model inference on all human dataset samples, collecting 12-class logits, 4-class logits, and attention weights, saved as Excel.
+Optimizations: batch accumulation reduces GPU-CPU transfer by 90%, pre-stored sequence string, AMP mixed precision.
 
-OPTIMIZATIONS:
-1. Batch accumulation: Accumulate multiple batches before GPU-CPU transfer (reduces transfers by 90%)
-2. Sequence string in dataset: Avoid one-hot to string conversion during inference
-3. AMP support: Use automatic mixed precision for faster inference
+功能模块 / Modules:
+- load_model_from_checkpoint: 从 checkpoint 加载模型 / Load model from checkpoint
+- AMP 混合精度推理 / AMP mixed precision inference
+- main: 主入口 / Main entry point
 
-Output format (human.xlsx):
-    - seq: RNA sequence string (length 1001)
-    - l12: 12-class logits (space-separated values)
-    - l4: 4-class logits (space-separated values)
-    - atten: attention weights (space-separated values)
+输入 / Inputs:
+- checkpoints/best_model.pt: PyTorch state_dict / Model weights
+- json/human.json: 推理配置 / Inference config
+- human3/seq.npy, human3/1001loc.npy, human3/12loc.npy: 人类数据 / Human data
+- 命令行参数 / CLI: --checkpoint, --config, --output
+
+输出 / Outputs:
+- npy/human.xlsx: pandas DataFrame 包含 / pandas DataFrame containing:
+  * seq: RNA 序列字符串 (1001nt) / RNA sequence string
+  * l12: 12 类 logits / 12-class logits
+  * l4: 4 类 logits / 4-class logits
+  * atten: 注意力权重 / Attention weights
+
+数据流 / Data Flow:
+1. 加载模型与数据 / Load model and data
+2. 批累积推理 / Batched inference with accumulation
+3. AMP 加速 / AMP speedup
+4. 收集 logits + 注意力 / Collect logits and attention
+5. 保存为 xlsx / Save as xlsx
+
+相关文件 / Related Files:
+- 调用 / Calls: dataset.human_with_seq.Mer100DatasetWithSeq, model.main_model, torch.cuda.amp
+- 被调用 / Called by: analysis pipelines, manual CLI
+
+使用示例 / Usage Example:
+    python collect_human.py --checkpoint checkpoints/best_model.pt --config json/human.json --output npy/human.xlsx
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import os

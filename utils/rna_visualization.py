@@ -1,17 +1,46 @@
-'''
-Author: Chao Deng && chaodeng987@outlook.com
-Date: 2026-01-19 17:49:22
-LastEditors: Chao Deng && chaodeng987@outlook.com
-LastEditTime: 2026-01-19 22:01:05
-FilePath: /rgcnformer_sum/rna_visualization.py
-Description: 
-那只是一场游戏一场梦
- 
-https://orcid.org/0009-0009-8520-1656
-DOI: 10.3390/app15158626
-DOI: 10.3390/rs17142354
-Copyright (c) 2026 by ${Chao Deng}, All Rights Reserved. 
-'''
+"""
+utils/rna_visualization.py - 单样本RNA预测可视化 / Single-Sample RNA Prediction Visualization
+
+单条 RNA 序列的模型预测可视化:模型加载、多阈值预测、注意力提取、二级结构、绘图 (matplotlib/plotly/networkx/forgi)。
+Single RNA sequence model prediction visualization: model loading, multi-threshold prediction, attention extraction, plotting.
+
+功能模块 / Modules:
+- 模型加载 / Model loading
+- 多阈值预测 / Multi-threshold prediction
+- 注意力提取 / Attention extraction
+- 二级结构 / Secondary structure
+- 多种绘图后端 / Multiple plotting backends
+
+输入 / Inputs:
+- checkpoints/best_model.pt: 预训练模型 / Pretrained model
+- 一条 RNA 序列 / One RNA sequence
+- LinearFold 二级结构 / LinearFold secondary structure
+
+输出 / Outputs:
+- matplotlib 图表 / matplotlib plots
+- plotly 交互式 / plotly interactive
+- networkx 图 / networkx graph
+- forgi 二级结构 / forgi secondary structure
+
+数据流 / Data Flow:
+1. 加载模型 / Load model
+2. 单序列推理 / Single sequence inference
+3. 提取注意力 / Extract attention
+4. 多种可视化 / Multiple visualizations
+
+相关文件 / Related Files:
+- 调用 / Calls: model.main_model, matplotlib, plotly, networkx, forgi
+- 被调用 / Called by: utils/rna_visualization.ipynb
+
+使用示例 / Usage Example:
+    from utils.rna_visualization import visualize_rna_prediction
+    visualize_rna_prediction(sequence, model_path='checkpoints/best.pt')
+
+作者 / Author: RGCNFormer Project (C. Deng, DOI 10.3390/app15158626)
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
+"""
+
 import json
 import torch
 import numpy as np

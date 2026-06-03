@@ -1,13 +1,55 @@
 """
-Common utilities for RNA Multi-label Classification Training
+utils/common.py - RNA多标签分类训练核心工具与常量 / Core Utilities & Constants for RNA Multi-label Training
 
-This module contains:
-- Hierarchical classification constants
-- Configuration loading
-- Model checkpointing
-- Batch samplers for multi-label data
-- Data split functions
-- Training/testing functions
+RGCNFormer 项目的中央工具与常量中心:层级分类常量 (12类修饰, 4类核苷酸组)、配置加载、模型 checkpoint、
+批采样器 (多标签)、数据划分、训练/测试函数、Top-K 定位指标、最优阈值逻辑。几乎所有项目脚本都会导入。
+Central hub of RGCNFormer project constants and utilities: hierarchical classification constants (12 mods, 4 groups),
+config loading, checkpointing, batch samplers, data splits, train/test functions, top-K localization metrics,
+optimal threshold logic. Imported by virtually all project scripts.
+
+功能模块 / Modules:
+- 12 类修饰常量: MOD_NAMES, INDEX_TO_NUCLEOTIDE, NUCLEOTIDE_GROUPS / 12-class modification constants
+- 层级映射: GROUP_TO_INDEX, GROUP_TO_CLASS_INDICES, GROUP_SIZES / Hierarchical mappings
+- 植物常量: PLANT_VALID_CLASS_INDICES / Plant constants
+- 工具函数: get_center_nucleotide, hash_cache_key / Helper functions
+- 配置: load_config / Config loading
+- Checkpoint: save_checkpoint, load_checkpoint / Checkpoint utilities
+- 批采样器: MultilabelBalancedBatchSampler, DynamicBalancedBatchSampler / Batch samplers
+- 数据划分: multi_label_disjoint_split / Disjoint data split
+- 训练/测试: train_epoch, test_epoch / Train/test epochs
+- 评估: evaluate_unbalance, evaluate_balanceb, evaluate_4class_with_optimal_threshold, evaluate_with_optimal_threshold / Evaluations
+- Top-K 定位: calculate_topk_recall, print_topk_table / Top-K localization
+- 全面定位指标: calculate_comprehensive_localization_metrics / Comprehensive metrics
+
+输入 / Inputs:
+- json/*.json: JSON 配置文件 (model, training, data) / JSON config
+- PyTorch 模型与数据集 / PyTorch model and dataset
+- 命令行参数 / CLI: --config, --batch_size, --lr, --epochs
+
+输出 / Outputs:
+- 模型 checkpoint (state_dict) / Model checkpoint
+- 训练日志 / Training logs
+- 评估指标 / Evaluation metrics
+
+数据流 / Data Flow:
+1. 加载常量 / Load constants
+2. 加载配置 / Load config
+3. 构造数据集 / Build dataset
+4. 划分/采样 / Split / sample
+5. 训练/测试 / Train / test
+6. 评估 + 保存 / Evaluate + save
+
+相关文件 / Related Files:
+- 调用 / Calls: torch, numpy, sklearn, json, pickle
+- 被调用 / Called by: 几乎所有项目脚本 / Virtually all project scripts
+
+使用示例 / Usage Example:
+    from utils import setup_logging, load_config, save_checkpoint
+    config = load_config('json/human.json')
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import os

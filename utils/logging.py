@@ -1,10 +1,47 @@
 """
-Logging configuration and formatted table output for RNA Multi-label Classification
+utils/logging.py - 日志配置与格式化输出 / Logging Configuration & Formatted Output
 
-This module contains:
-- Logging setup (file and console)
-- Tensorboard setup and logging
-- Formatted table generation for evaluation results
+日志设置 (文件 + 控制台)、TensorBoard 设置与记录、PrettyTable 格式化的评估/小样本结果输出。
+Logger setup (file + console), TensorBoard setup and logging, PrettyTable formatted evaluation/few-shot result output.
+
+功能模块 / Modules:
+- setup_logging: 文件+控制台日志设置 / File+console logger setup
+- setup_tensorboard: TensorBoard SummaryWriter / TensorBoard writer
+- log_metrics_to_tensorboard: 记录指标到 TB / Log metrics to TB
+- print_evaluation_results: 评估结果 PrettyTable / Evaluation PrettyTable
+- print_few_shot_results: 小样本结果 PrettyTable / Few-shot PrettyTable
+- print_comprehensive_table: 综合表输出 / Comprehensive table output
+- print_topk_table: Top-K 表输出 / Top-K table output
+- logger 配置类 / Logger config classes
+
+输入 / Inputs:
+- 日志目录 / Log directory
+- 评估结果字典 / Evaluation result dict
+- PrettyTable 样式 / PrettyTable style
+
+输出 / Outputs:
+- train_*.log 文件 / train log file
+- TensorBoard events 文件 / TensorBoard event files
+- 终端 PrettyTable / Terminal PrettyTable
+
+数据流 / Data Flow:
+1. 设置 logger / Setup logger
+2. 设置 TB writer / Setup TB writer
+3. 训练时记录 / Record during training
+4. 评估时输出 / Output during evaluation
+
+相关文件 / Related Files:
+- 调用 / Calls: logging, tensorboardX, prettytable
+- 被调用 / Called by: train_*.py, test_*.py, evaluation scripts
+
+使用示例 / Usage Example:
+    from utils import setup_logging, setup_tensorboard
+    logger, log_file = setup_logging(log_dir='logs/')
+    writer = setup_tensorboard(log_dir='logs/tb/')
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import os

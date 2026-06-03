@@ -1,12 +1,43 @@
 """
-Calculate FLOPs for the 16 ablation configurations (4 query_types x 4 dims).
+cal_flops_mohe.py - 16消融配置 FLOPs 计算 (无外部库) / FLOPs Counter for 16 Ablation Configs (No External Lib)
 
-No external FLOPs library required — manually counts multiply-accumulate operations
-for Linear, Conv1d, GCNConv, MultiheadAttention, and TransformerEncoder layers.
+手工计算 16 个消融配置 (4 query types x 4 dims) 的 FLOPs,无需外部 FLOPs 库。
+统计 Linear、Conv1d、GCNConv、MultiheadAttention、TransformerEncoder 层的乘加运算。
+Manual FLOPs counter for 16 ablation configs (4 query types x 4 dims), no external FLOPs library.
+Counts multiply-accumulate ops for Linear, Conv1d, GCNConv, MHA, TransformerEncoder.
 
-Usage:
+功能模块 / Modules:
+- 手工 FLOPs 计数器 / Manual FLOPs counter
+- 16 配置循环 / 16-config loop
+- CSV 输出 / CSV output
+- main: 主入口 / Main entry point
+
+输入 / Inputs:
+- json/abla_human.json: 消融配置 / Ablation config
+- 命令行参数 / CLI: --config
+
+输出 / Outputs:
+- logs_abla/flops_results.csv: FLOPs 结果 CSV / FLOPs results CSV
+- 终端详细输出 / Detailed terminal output
+
+数据流 / Data Flow:
+1. 加载配置 / Load config
+2. 16 配置循环 / 16-config loop
+3. 构造模型并计算 FLOPs / Build model and compute FLOPs
+4. 累加每层 FLOPs / Sum per-layer FLOPs
+5. 输出 CSV / Output CSV
+
+相关文件 / Related Files:
+- 调用 / Calls: model.abla_model.AblationModel
+- 被调用 / Called by: manual execution
+
+使用示例 / Usage Example:
     python cal_flops_mohe.py
     python cal_flops_mohe.py --config json/abla_human.json
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import os

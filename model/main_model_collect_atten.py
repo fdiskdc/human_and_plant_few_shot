@@ -1,14 +1,48 @@
-"""
-RNA_ClassQuery_Model_Collect_Atten - Modified model to collect attention outputs
 
-This is a modified version of main_model.py that returns attn_out_12 and attn_out_4
-from the MultiheadAttention layers for collection purposes.
-
-Sub-modules:
-- ParallelCNNBlock: Multi-scale CNN feature extraction
-- GCNBlock: Graph Convolutional Network block
-- HierarchicalClassQueryHeadPooling: Hierarchical head that returns attention outputs
 """
+main_model_collect_atten.py - RGCNFormer 收集注意力输出变体 (1001nt) / RGCNFormer variant that collects attention outputs (1001nt)
+
+main_model.py 的修改版，将 MultiheadAttention 的中间输出 (attn_out_12, attn_out_4) 一并返回，
+用于可视化和下游分析。前向签名扩展为 5 元组。
+A modified version of main_model.py that returns the MultiheadAttention intermediate
+outputs (attn_out_12, attn_out_4) for visualization and downstream analysis. The forward
+signature is extended to a 5-tuple.
+
+功能模块 / Modules:
+- ParallelCNNBlock: 多尺度并行 1D CNN 块 (1/3/5/7 核) / Multi-scale parallel 1D CNN block (kernels 1/3/5/7)
+- GCNBlock: 残差图卷积块 / Residual GCN block
+- HierarchicalClassQueryHeadPooling: 层级头 (forward 返回 attn_out 而非仅 logits) / Hierarchical head (forward returns attn_out instead of only logits)
+- RNA_ClassQuery_Model_Collect_Atten: 端到端模型，专门用于收集注意力输出 / End-to-end model specialized for collecting attention outputs
+
+输入 / Inputs:
+- x: (B, 1001, 4) 或 (Total_Nodes, 4) one-hot RNA 序列 / (B, 1001, 4) or (Total_Nodes, 4) one-hot RNA sequence
+- edge_index: (2, E) PyG 边索引 / (2, E) PyG edge indices
+- batch: (Total_Nodes,) 批次分配向量 / (Total_Nodes,) batch assignment vector
+- return_attention: 总是返回注意力 (接口保留) / always returns attention (interface reserved)
+
+输出 / Outputs:
+- 5 元组 / 5-tuple: (logits_12 [B,12], logits_4 [B,4], attn_out_12 [B,12,Dim], attn_out_4 [B,4,Dim], attn_weights_12 [B,12,1001]) / (logits_12 [B,12], logits_4 [B,4], attn_out_12 [B,12,Dim], attn_out_4 [B,4,Dim], attn_weights_12 [B,12,1001])
+
+数据流 / Data Flow:
+1. one-hot 进入多尺度 CNN 提取 k-mer 特征 / one-hot enters multi-scale CNN for k-mer features
+2. GCN 残差块进行图传播 / GCN residual block performs graph propagation
+3. 层级头 (含 2 个 MHA) 返回 5 个值：双层 logits、attn_out_12、attn_out_4、attn_weights_12 / Hierarchical head (2 MHAs) returns 5 values: dual-level logits, attn_out_12, attn_out_4, attn_weights_12
+4. attn_out_* 是 MHA 在 value 上的加权汇聚，可用于 UMAP / 可视化下游分析 / attn_out_* are MHA's weighted aggregations over values, used for UMAP / visualization downstream
+
+相关文件 / Related Files:
+- 调用 / Calls: torch, torch.nn, torch_geometric.data, torch_geometric.nn.GCNConv, utils.common.GROUP_TO_CLASS_INDICES / torch, torch.nn, torch_geometric.data, torch_geometric.nn.GCNConv, utils.common.GROUP_TO_CLASS_INDICES
+- 被调用 / Called by: collect_human_atten.py, prepare_umap_data.py, inference_mrmodn_full.py / collect_human_atten.py, prepare_umap_data.py, inference_mrmodn_full.py
+
+使用示例 / Usage Example:
+    from model.main_model_collect_atten import RNA_ClassQuery_Model_Collect_Atten
+    model = RNA_ClassQuery_Model_Collect_Atten(num_classes=12, use_hierarchical=True)
+    l12, l4, ao12, ao4, aw = model(x, edge_index, batch)
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
+"""
+
 
 import torch
 import torch.nn as nn

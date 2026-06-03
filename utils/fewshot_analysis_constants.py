@@ -1,7 +1,37 @@
 """
-Few-shot Analysis Constants
+utils/fewshot_analysis_constants.py - 小样本分析常量 / Few-shot Analysis Constants
 
-This module contains all constants used in the few-shot analysis pipeline.
+小样本分析所有常量:目标类 (Y/m5C/m6A)、SHOT_COUNTS、UMAP/调色板颜色、插值参数。
+All constants for few-shot analysis: target classes (Y/m5C/m6A), SHOT_COUNTS, UMAP/palette colors, interpolation params.
+
+功能模块 / Modules:
+- TARGET_CLASSES: 目标类 / Target classes
+- SHOT_COUNTS: shot 数列表 / Shot count list
+- UMAP_PARAMS: UMAP 参数 / UMAP parameters
+- PALETTE_COLORS: 调色板 / Palette colors
+- INTERPOLATION_PARAMS: 插值参数 / Interpolation parameters
+- DEFAULT_CHECKPOINT_PATH, DEFAULT_CONFIG_PATH: 默认路径 / Default paths
+
+输入 / Inputs:
+- 无 (纯常量模块) / None (constants only module)
+
+输出 / Outputs:
+- 导入符号 / Exported symbols
+
+数据流 / Data Flow:
+1. 定义常量 / Define constants
+2. 导出供其他模块使用 / Export for other modules
+
+相关文件 / Related Files:
+- 调用 / Calls: 无 / None
+- 被调用 / Called by: utils.fewshot_analysis_*, zero_shot_fewshot_*.py
+
+使用示例 / Usage Example:
+    from utils.fewshot_analysis_constants import TARGET_CLASSES, SHOT_COUNTS
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 # Target classes and names

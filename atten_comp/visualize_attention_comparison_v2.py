@@ -1,19 +1,41 @@
 """
-Attention Comparison Visualization v2 — m6A Focus (Background Blocks)
+atten_comp/visualize_attention_comparison_v2.py - m6A注意力对比可视化 v2 (背景块) / m6A Attention Comparison v2 (Background Blocks)
 
-Generates per-sequence figures comparing m6A attention patterns across 4 models:
-  - mRModN (per-class MHA, full 1001nt)
-  - MultiRM (shared Bahdanau, 51nt sliding window)
-  - modX (shared Bahdanau, full 1001nt inference, 101-window boundary visualization)
-  - EvoRMD (shared scalar, 41nt sliding window)
+v2 版本:用 ax.axvspan 交替背景色块显示窗口边界,避免与真实 m6A 位点标记的视觉混淆。
+替换虚线垂直线为背景色块,其他与 v1 相同 (4 模型 m6A 注意力对比)。
+V2 version: uses ax.axvspan alternating background color blocks for window boundaries, avoiding visual confusion
+with true m6A site markers. Replaces dashed vertical lines with background blocks.
 
-Each figure: 4 subplots (one per model), m6A attention curve + true sites + window region shading.
-Window boundaries are shown as alternating background color blocks (ax.axvspan) instead of
-dashed vertical lines, avoiding visual confusion with True m6A site markers.
+功能模块 / Modules:
+- 4 模型注意力加载 / Load 4-model attention
+- 背景色块窗口边界 / Background block window boundaries
+- 每子图绘制 / Per-subplot drawing
+- main: 主入口 / Main entry point
 
-Output: fig/attention_comparison/seq_XXXX.pdf + seq_XXXX.png
+输入 / Inputs:
+- npy/mrmodn_full_atten.npz, npy/multirm_segmented_atten.npz, npy/modx_segmented_atten.npz, npy/evormd_segmented_atten.npz
+- npy/selected_*.npy: 预选序列 / Pre-selected sequences
 
-Style: Times New Roman 18pt, Morandi palette, journal quality.
+输出 / Outputs:
+- fig/attention_comparison/seq_XXXX.pdf, seq_XXXX.png: 每序列对比图 / Per-sequence comparison
+- Style: Times New Roman 18pt, Morandi 配色 / Morandi palette
+
+数据流 / Data Flow:
+1. 加载 4 模型注意力 / Load 4-model attention
+2. 选代表性序列 / Select representative sequences
+3. 绘制 4 子图 (背景色块) / Draw 4 subplots (background blocks)
+4. 保存 PNG + PDF / Save PNG + PDF
+
+相关文件 / Related Files:
+- 调用 / Calls: numpy, matplotlib, sliding_window_utils
+- 被调用 / Called by: atten_comp/run_attention_comparison_v2.py
+
+使用示例 / Usage Example:
+    python atten_comp/visualize_attention_comparison_v2.py
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import os

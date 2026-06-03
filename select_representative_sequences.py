@@ -1,16 +1,45 @@
 """
-Select Representative Sequences by m6A Modification Density
+select_representative_sequences.py - 按m6A修饰密度选代表性序列 / Select Representative Sequences by m6A Density
 
-Sorts sequences by number of m6A sites, selects both high-density and low-density
-groups for attention comparison visualization.
+按 m6A 修饰位点数对序列排序,选择高密度与低密度两组,用于注意力对比可视化。
+Sorts sequences by number of m6A sites, selects both high-density and low-density groups for attention comparison.
 
-Output:
-    - npy/selected_indices.npy  — indices of selected sequences
-    - npy/selected_sequences.npy — one-hot sequences (deprecated)
-    - npy/selected_labels.npy   — 12-class multi-hot labels
-    - npy/selected_sites.npy    — per-position site labels (1001)
-    - npy/selected_seqs_str.npy — sequence strings
-    - npy/selected_group.npy    — group label (0=high, 1=low) per sequence
+功能模块 / Modules:
+- m6A 位点数统计 / m6A site count statistics
+- 高/低密度分组 / High/low density grouping
+- 序列与标签选择 / Sequence and label selection
+- main: 主入口 / Main entry point
+
+输入 / Inputs:
+- human3/seq.npy: 1001nt RNA 序列 / 1001nt RNA sequences
+- human3/1001loc.npy: 1001 位点级标签 / 1001 site-level labels
+- human3/12loc.npy: 12 类多热标签 / 12-class multi-hot labels
+- M6A_LABEL = 10 (m6A 索引) / m6A index
+
+输出 / Outputs:
+- npy/selected_indices.npy: 选中序列的索引 / Selected indices
+- npy/selected_sequences.npy: one-hot 序列 (deprecated) / One-hot sequences
+- npy/selected_labels.npy: 12 类多热标签 / 12-class multi-hot labels
+- npy/selected_sites.npy: 1001 位点标签 / 1001 site-level labels
+- npy/selected_seqs_str.npy: 序列字符串 / Sequence strings
+- npy/selected_group.npy: 组标签 (0=高密度, 1=低密度) / Group label
+
+数据流 / Data Flow:
+1. 加载序列与位点标签 / Load sequences and site labels
+2. 统计每序列 m6A 位点数 / Count m6A sites per sequence
+3. 排序 + 选 top-N / Sort + select top-N
+4. 保存选中索引与数据 / Save selected indices and data
+
+相关文件 / Related Files:
+- 调用 / Calls: numpy
+- 被调用 / Called by: run_attention_comparison.py, visualize_attention_comparison.py
+
+使用示例 / Usage Example:
+    python select_representative_sequences.py --top_n 50
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import os

@@ -1,18 +1,53 @@
 
 """
-Ablation variants of HierarchicalClassQueryHeadPooling for RNA classification.
+abla_model.py - 层级类查询头 (MOHE) 消融变体 / Hierarchical class-query head (MOHE) ablation variants
 
-This module contains ablation head variants WITHOUT modifying the original main_model.py.
-Each head supports a configurable group_query_dim that controls the dimensionality of
-the learnable query parameters (separate from the MHA hidden_dim).
+包含 4 个消融分类头变体 (1query, 4query, 12query, fullattn)，用于消融研究层级类查询
+机制的贡献。AblationModel 是统一入口：根据 query_type 选择对应头，并支持 1query 退化
+backbone。所有变体对外暴露与 RNA_ClassQuery_Model 兼容的 (logits_12, logits_4, attn) 接口。
+Contains four ablation head variants (1query, 4query, 12query, fullattn) for studying the
+contribution of the hierarchical class-query mechanism. AblationModel is a unified entry
+point that selects the head by query_type and supports a degraded backbone for 1query.
+All variants expose a (logits_12, logits_4, attn) interface compatible with RNA_ClassQuery_Model.
 
-Ablation heads:
-- HierarchicalClassQueryHead1Query:   1 global query + 12-way MLP classifier
-- HierarchicalClassQueryHead4Query:   4-group hierarchical (replica of baseline)
-- HierarchicalClassQueryHead12Query:  12 independent learnable queries
-- HierarchicalClassQueryHeadFullAttn: 12 queries with self-attention + cross-attention
-- AblationModel: Unified model that accepts query_type + group_query_dim
+功能模块 / Modules:
+- HierarchicalClassQueryHead1Query: 退化基线 — 无 query/attention/LN，仅均值池化 + Linear / Degraded baseline — no query/attention/LN, mean-pool + Linear only
+- HierarchicalClassQueryHead4Query: 4 组层级查询 + 组投影派生 12 类 (基线复刻) / 4-group hierarchical queries + group projectors derive 12 classes (baseline replica)
+- HierarchicalClassQueryHead12Query: 12 个独立可学习查询 + 12 个独立 MHA / 12 independent learnable queries + 12 independent MHA modules
+- HierarchicalClassQueryHeadFullAttn: 无可学习查询，纯 TransformerEncoder 自注意力 + 均值池化 / No learnable queries, pure TransformerEncoder self-attention + mean-pool
+- AblationModel: 统一消融模型，按 query_type 注册头 (支持 group_query_dim) / Unified ablation model, registers head by query_type (supports group_query_dim)
+
+输入 / Inputs:
+- x: (B, 1001, 4) 或 (Total_Nodes, 4) one-hot RNA 序列 / (B, 1001, 4) or (Total_Nodes, 4) one-hot RNA sequence
+- edge_index: (2, E) PyG 边索引 / (2, E) PyG edge indices
+- batch: (Total_Nodes,) 批次分配向量 / (Total_Nodes,) batch assignment vector
+- query_type: str in {"1query","4query","12query","fullattn"} 选择头 / str in {"1query","4query","12query","fullattn"} to select head
+- group_query_dim: int 可学习的 query 参数维度 (None=hidden_dim) / int dim of learnable query params (None=hidden_dim)
+
+输出 / Outputs:
+- logits_12: (B, 12) 12 类 logits (prune 后可更小) / (B, 12) 12-class logits (smaller after pruning)
+- logits_4: (B, 4) 4 组 (A/C/G/U) logits (prune 后可更小) / (B, 4) 4-group (A/C/G/U) logits (smaller after pruning)
+- attn_weights_12: (B, 12, 1001) 12 类对 1001nt 位置的注意力权重 / (B, 12, 1001) per-class attention weights over 1001nt positions
+
+数据流 / Data Flow:
+1. 序列经 ParallelCNNBlock (1query 退化用单核) 提取局部 k-mer 特征 / Sequence passes through ParallelCNNBlock (1query uses single kernel)
+2. (1query 除外) 特征经 GCNBlock 图传播；1query 路径经 backbone_proj 映射到 head 维度 / (except 1query) Features propagated through GCNBlock; 1query path uses backbone_proj to head dim
+3. 选定的分类头处理节点特征，生成 12 类 logits、4 组 logits、12 类注意力权重 / Selected head processes node features, produces 12-class logits, 4-group logits, 12-class attention weights
+
+相关文件 / Related Files:
+- 调用 / Calls: torch, torch.nn, torch_geometric.data, torch_geometric.nn, utils.common.GROUP_TO_CLASS_INDICES, model.main_model.ParallelCNNBlock/GCNBlock / torch, torch.nn, torch_geometric.data, torch_geometric.nn, utils.common.GROUP_TO_CLASS_INDICES, model.main_model.ParallelCNNBlock/GCNBlock
+- 被调用 / Called by: abla_mohe.py, cal_flops_mohe.py / abla_mohe.py, cal_flops_mohe.py
+
+使用示例 / Usage Example:
+    from model.abla_model import AblationModel
+    model = AblationModel(query_type="4query", group_query_dim=128)
+    logits_12, logits_4, attn = model(x, edge_index, batch)
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
+
 
 import torch
 import torch.nn as nn

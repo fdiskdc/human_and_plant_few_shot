@@ -1,3 +1,56 @@
+"""
+human_motif.py - 人类RNA全数据集Motif可视化加载器 / Human RNA Full-Dataset Motif Visualization Loader
+
+本模块是 human.py 的轻量化变体，专用于 Motif (RNA修饰上下文基序) 可视化任务。
+关键差异：加载所有可用数据 (合并 train+test 或直接读取 human3 完整文件)，不做 train/test 切分。
+用于分析模型在不同位点上下文上的注意力模式与基序偏好。复用 human.py 的标签体系与辅助函数。
+This module is a lightweight variant of human.py specifically for Motif (RNA modification context
+motif) visualization. Key difference: it loads ALL available data (merging train+test or reading
+the full human3 directory) without train/test split. Used to analyze model attention patterns
+and motif preferences at modification sites. Reuses label system and helper functions from human.py.
+
+功能模块 / Modules:
+- Mer100DatasetMotif: PyG Dataset类,加载 human3 全部数据或合并 train+test,专用于 Motif 可视化 / PyG Dataset class loading all data for motif visualization
+- precompute_all_structures: 预计算全部数据的二级结构 (强制 mode='all' 缓存文件名) / Precomputes all structures with mode='all' cache filename
+- _load_legacy_full_data: 向后兼容模式,合并 train+test 旧 npz 数据 / Legacy mode merging train+test npz data
+- run_linearfold / build_edge_index_from_structure: 复用 human.py 简化版 / Reused from human.py
+
+输入 / Inputs:
+- human3/seq.npy: NumPy字节数组, 形状 (N, 1001) |S1 - 全部 human3 RNA序列 / Full human3 RNA sequences
+- human3/1001loc.npy: NumPy int8数组, 形状 (N, 1001) - 全部位点级标签 / All site-level labels
+- human3/12loc.npy: NumPy int8数组, 形状 (N, 12) - 全部12类多标签 / All 12-class multi-labels
+- human3/4loc.npy: NumPy int8数组, 形状 (N, 4) - 全部4类组标签 / All 4-class group labels
+- (可选) Legacy npz: {nuc}_expert_train.npy / {nuc}_expert_test.npy, 4 nucleotides x 2 modes / Optional legacy npz
+- 配置文件 / Config: LINEARFOLD_PATH, cache_dir, use_human3 - 路径与缓存 / Path and cache
+
+输出 / Outputs:
+- PyG Data对象 / PyG Data objects: x=(1001,4) one-hot, edge_index=(2,E) 边索引, y=(1,12) 12类, y_4class=(1,4) 4类, y_site=(1001,) 位点级 / x: one-hot; edge_index: edges; y: 12-class; y_4class: 4-class; y_site: site-level
+- 缓存文件名 / Cache filename: human_all_structures_cache.npz - 区别于 human.py 的 human_{train|test}_structures_cache.npz / Differs from human.py's per-mode cache
+
+数据流 / Data Flow:
+1. 加载全量数据 / Load full data: 默认从 human3 加载全部 N 个样本, 或从 legacy npz 合并 train+test / Load all N from human3, or merge train+test from legacy npz
+2. 字节流one-hot编码 / Byte-to-onehot: 使用 _BYTE_TO_ONEHOT_MAPPING 查表 / Use lookup table
+3. LinearFold二级结构 / Secondary structure: 调用 LinearFold 或读取 human_all_*.npz 缓存 / Use LinearFold or read human_all_*.npz cache
+4. 构建PyG Data / Build PyG Data: 组装节点特征、边索引、标签为 PyG Data 对象 / Assemble features, edges, labels
+
+相关文件 / Related Files:
+- 调用 / Calls: torch.utils.data.Dataset, torch_geometric.data.Data, subprocess (LinearFold), numpy/pickle / Standard utilities
+- 被调用 / Called by: SpatialMotif.py, SpatialMotif_nobackground.py - 空间Motif可视化脚本 / Spatial motif visualization scripts
+
+使用示例 / Usage Example:
+    from dataset.human_motif import Mer100DatasetMotif
+    full_set = Mer100DatasetMotif(use_human3=True, preload_cache=True)
+    print(f"Total samples for motif analysis: {len(full_set)}")
+    from torch_geometric.loader import DataLoader
+    loader = DataLoader(full_set, batch_size=32, shuffle=False)
+    for batch in loader:
+        x, edge_index, y = batch.x, batch.edge_index, batch.y
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
+"""
+
 import numpy as np
 import torch
 from torch.utils.data import Dataset

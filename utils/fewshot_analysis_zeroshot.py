@@ -1,7 +1,45 @@
 """
-Few-shot Analysis Zero-shot Module
+utils/fewshot_analysis_zeroshot.py - 零样本对齐分析 / Zero-shot Alignment Analysis
 
-This module contains functions for zero-shot feature alignment analysis.
+零样本对齐:数据集准备、UMAP 降维、合成点生成、对齐指标、联合 UMAP。
+Zero-shot alignment: dataset preparation, UMAP reduction, synthetic point generation, alignment metrics, joint UMAP.
+
+功能模块 / Modules:
+- 数据集准备 / Dataset preparation
+- UMAP 降维 / UMAP reduction
+- 合成点生成 / Synthetic point generation
+- 对齐指标 / Alignment metrics
+- 联合 UMAP / Joint UMAP
+- main 分析函数 / Main analysis functions
+
+输入 / Inputs:
+- human3/, plant3/ 数据 / human, plant data
+- features: 提取的特征 / Extracted features
+- labels: 标签 / Labels
+
+输出 / Outputs:
+- 对齐指标 (MMD, Wasserstein) / Alignment metrics
+- 联合 UMAP 图 / Joint UMAP plot
+- 合成插值点 / Synthetic interpolation points
+
+数据流 / Data Flow:
+1. 准备人类+植物数据 / Prepare human+plant data
+2. UMAP 降维 / UMAP reduction
+3. 合成点生成 / Generate synthetic points
+4. 对齐指标 / Alignment metrics
+5. 联合 UMAP / Joint UMAP
+
+相关文件 / Related Files:
+- 调用 / Calls: utils.fewshot_analysis_constants, sklearn, umap
+- 被调用 / Called by: zero_shot_fewshot_analysis.py
+
+使用示例 / Usage Example:
+    from utils.fewshot_analysis_zeroshot import run_zeroshot_alignment
+    run_zeroshot_alignment(features, labels)
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import csv

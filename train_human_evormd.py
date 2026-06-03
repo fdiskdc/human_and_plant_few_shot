@@ -1,17 +1,48 @@
 """
-RNA Multi-label Classification Training Script (EvoRMD Architecture)
+train_human_evormd.py - EvoRMD架构人类训练脚本 / EvoRMD Architecture Human Training Script
 
-Ported from train_human_multirm.py, replacing model_v3 (BiLSTM + BahdanauAttention)
-with EvoRMD-style architecture (Conv1dEmbedder + TrainableAttention + MulticlassClassifier).
+使用 EvoRMD 风格架构 (Conv1dEmbedder + TrainableAttention + MulticlassClassifier) 在人类 12 类数据集上训练。
+从 train_human_multirm.py 移植,替换 model_v3 为 EvoRMD-style 轻量 CNN + MIL 注意力模型。
+Trains the EvoRMD-style architecture (Conv1dEmbedder + TrainableAttention + MulticlassClassifier) on the human 12-class dataset.
+Ported from train_human_multirm.py, replacing model_v3 with the lightweight EvoRMD-style CNN + MIL attention model.
 
-This script implements:
-1. Multi-label disjoint data split (7:3 train/test)
-2. Smoothed class weighting for imbalanced learning
-3. Dual evaluation modes (Unbalance & BalanceB)
-4. Comprehensive metrics (F1, Acc, Precision, Recall, AUC, AUPRC, MCC, Sensitivity, Specificity)
-5. Logging to file and console
-6. Tensorboard visualization
-7. TQDM progress monitoring
+功能模块 / Modules:
+- main: 主训练函数 / Main training function
+- 7:3 不相交划分 / Disjoint 7:3 train/test split
+- 平滑类别权重 / Smoothed class weighting
+- Unbalance / BalanceB 评估 / Dual evaluation modes
+- 完整指标记录 / Comprehensive metrics logging
+- TensorBoard + TQDM 监控 / TensorBoard + TQDM monitoring
+
+输入 / Inputs:
+- json/human.json: 训练配置 / Training config
+- human3/seq.npy, human3/1001loc.npy, human3/12loc.npy: 训练数据 / Training data
+- EvoRMDForHuman: 1001nt 全长 CNN + MIL / 1001nt full-length CNN + MIL
+- 命令行参数 / CLI: --config, --gpu, --seed
+
+输出 / Outputs:
+- checkpoints/best_evormd.pt: 最佳 EvoRMD 模型 / Best EvoRMD model
+- logs/evormd_*/train_*.log: 训练日志 / Training logs
+- logs/evormd_*/results.json: 评估结果 / Evaluation results
+- TensorBoard events: 可视化 / Visualization
+
+数据流 / Data Flow:
+1. 加载配置 / Load config
+2. 构建 dataset.human.Mer100Dataset / Build Mer100Dataset
+3. 划分 + 初始化 EvoRMDForHuman / Split + init model
+4. 训练循环 / Training loop
+5. 评估 + 保存 / Evaluate and save
+
+相关文件 / Related Files:
+- 调用 / Calls: model.evormd_human.EvoRMDForHuman, dataset.human.Mer100Dataset, utils.{common,metrics,logging}
+- 被调用 / Called by: shell scripts, manual CLI invocations
+
+使用示例 / Usage Example:
+    python train_human_evormd.py --config json/human.json --gpu 0
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import os

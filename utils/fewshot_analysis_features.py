@@ -1,7 +1,40 @@
 """
-Few-shot Analysis Feature Extraction
+utils/fewshot_analysis_features.py - 特征提取器 / Feature Extractor
 
-This module contains classes and functions for extracting features from models.
+FeatureExtractor 类用 hooks 提取模型中间层特征;load_model_from_checkpoint 加载模型;extract_dataset_features 提取数据集特征。
+FeatureExtractor class uses hooks to extract intermediate layer features; load_model_from_checkpoint loads model; extract_dataset_features extracts features.
+
+功能模块 / Modules:
+- FeatureExtractor: 用 hooks 提取特征 / Extract features via hooks
+- load_model_from_checkpoint: 加载模型 / Load model
+- extract_dataset_features: 提取数据集特征 / Extract dataset features
+
+输入 / Inputs:
+- model: nn.Module 模型 / nn.Module model
+- data: 数据加载器 / Data loader
+- checkpoint 路径 / Checkpoint path
+
+输出 / Outputs:
+- features: numpy 数组 / numpy array
+- labels: numpy 数组 / numpy array
+
+数据流 / Data Flow:
+1. 加载模型 / Load model
+2. 注册 hook / Register hook
+3. 前向 + 收集特征 / Forward + collect features
+4. 返回特征 / Return features
+
+相关文件 / Related Files:
+- 调用 / Calls: torch, torch_geometric
+- 被调用 / Called by: zero_shot_fewshot_*.py, utils.fewshot_analysis_*
+
+使用示例 / Usage Example:
+    extractor = FeatureExtractor(model, layer_name='attention_output')
+    features = extractor.extract(dataloader)
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import numpy as np

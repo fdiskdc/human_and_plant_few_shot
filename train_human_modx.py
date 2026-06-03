@@ -1,14 +1,48 @@
 """
-RNA Multi-label Classification Training Script
+train_human_modx.py - modX架构人类训练脚本 / modX Architecture Human Training Script
 
-This script implements:
-1. Multi-label disjoint data split (7:3 train/test)
-2. Smoothed class weighting for imbalanced learning
-3. Dual evaluation modes (Unbalance & BalanceB)
-4. Comprehensive metrics (F1, Acc, Precision, Recall, AUC, AUPRC, MCC, Sensitivity, Specificity)
-5. Logging to file and console
-6. Tensorboard visualization
-7. TQDM progress monitoring
+使用 modX 基线 (RNAClassifierWithWord2Vec: BiLSTM + Bahdanau) 在人类 12 类数据集上训练。
+与 train_human.py 共享训练框架,但模型替换为 1001nt 全长 BiLSTM 注意力架构。
+Trains the modX baseline (RNAClassifierWithWord2Vec: BiLSTM + Bahdanau) on the human 12-class dataset.
+Shares the training framework with train_human.py but uses a 1001nt full-length BiLSTM attention model.
+
+功能模块 / Modules:
+- main: 主训练函数 / Main training function
+- 7:3 不相交划分 / Disjoint 7:3 train/test split
+- 平滑类别权重 / Smoothed class weighting
+- Unbalance / BalanceB 评估 / Dual evaluation modes
+- 完整指标记录 / Comprehensive metrics logging
+- TensorBoard + TQDM 监控 / TensorBoard + TQDM monitoring
+
+输入 / Inputs:
+- json/human.json: 训练配置 / Training config
+- human3/seq.npy, human3/1001loc.npy, human3/12loc.npy: 训练数据 / Training data
+- RNAClassifierWithWord2Vec: 1001nt 全长 BiLSTM / 1001nt full-length BiLSTM
+- 命令行参数 / CLI: --config, --gpu, --seed
+
+输出 / Outputs:
+- checkpoints/best_modx.pt: 最佳 modX 模型 / Best modX model
+- logs/modx_*/train_*.log: 训练日志 / Training logs
+- logs/modx_*/results.json: 评估结果 / Evaluation results
+- TensorBoard events: 可视化 / Visualization
+
+数据流 / Data Flow:
+1. 加载配置 / Load config
+2. 构建 dataset.human.Mer100Dataset / Build Mer100Dataset
+3. 划分 + 初始化 RNAClassifierWithWord2Vec / Split + init model
+4. 训练循环 (1001nt 全长) / Training loop (1001nt full-length)
+5. 评估 + 保存 / Evaluate and save
+
+相关文件 / Related Files:
+- 调用 / Calls: model.modx.RNAClassifierWithWord2Vec, dataset.human.Mer100Dataset, utils.{common,metrics,logging}
+- 被调用 / Called by: shell scripts, manual CLI invocations
+
+使用示例 / Usage Example:
+    python train_human_modx.py --config json/human.json --gpu 0
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import os

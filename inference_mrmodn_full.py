@@ -1,13 +1,43 @@
 """
-mRModN Full-Length Inference — Collect Per-Class Attention Weights
+inference_mrmodn_full.py - mRModN 1001nt全长推理与注意力收集 / mRModN Full-Length 1001nt Inference with Attention
 
-Runs mRModN (GCN + per-class MHA) on full 1001nt sequences for selected samples.
-Collects attn_weights_12: [N, 12, 1001] — per-class attention over full sequence.
+在 1001nt 全长序列上运行 mRModN (GCN + per-class MHA),收集 attn_weights_12: [N, 12, 1001] — 每个类别对全长序列的注意力。
+优化:矢量化 one-hot,带 per-graph 偏移的批处理 edge_index,直接 tensor 输入 (无 Data/Batch 开销)。
+Runs mRModN (GCN + per-class MHA) on full 1001nt sequences, collecting attn_weights_12: [N, 12, 1001].
+Optimizations: vectorized one-hot, batched edge_index with per-graph offsets, direct tensor feed.
 
-Optimized: vectorized one-hot, batched edge_index with per-graph offsets,
-direct tensor feed (no Data/Batch.from_data_list overhead).
+功能模块 / Modules:
+- model: 模型前向 + 注意力收集 / Model forward + attention collection
+- one-hot 矢量化编码 / Vectorized one-hot encoding
+- main: 主入口 / Main entry point
 
-Output: npy/mrmodn_full_atten.npz
+输入 / Inputs:
+- checkpoints/best_mrmodn.pt: PyTorch state_dict / Model weights
+- json/mrmodn_inference.json: 推理配置 / Inference config
+- npy/selected_*.npy: 预选序列 / Pre-selected sequences
+- 命令行参数 / CLI: --checkpoint, --config, --output_dir
+
+输出 / Outputs:
+- npy/mrmodn_full_atten.npz: NumPy 压缩注意力 / NumPy compressed attention
+  * 包含 / Contains: attn_weights_12 [N, 12, 1001], labels [N, 12], seqs [N]
+
+数据流 / Data Flow:
+1. 加载模型 / Load model
+2. 矢量化 one-hot 编码 / Vectorized one-hot encoding
+3. 单次前向 1001nt / Single forward pass on 1001nt
+4. 收集 per-class 注意力 / Collect per-class attention
+5. 保存到 npz / Save to npz
+
+相关文件 / Related Files:
+- 调用 / Calls: model.main_model_collect_atten, utils.common
+- 被调用 / Called by: run_attention_comparison.py, manual CLI
+
+使用示例 / Usage Example:
+    python inference_mrmodn_full.py --checkpoint checkpoints/best_mrmodn.pt --output npy/mrmodn_atten.npz
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import os

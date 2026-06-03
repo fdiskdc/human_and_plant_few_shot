@@ -1,0 +1,46 @@
+"""
+downsampling.py - 对 RNA 修饰数据做对数尺度下采样平衡 / Log-downsampling for balanced RNA modification data
+
+对原始 RNAdata CSV 按 (species, mod_type) 分组统计，对样本过多的目标修饰（默认 m6a/m5c）
+做 log-压缩下采样，使其规模向其他修饰的几何平均靠拢；其他类别样本全部保留。
+This module reads the raw RNAdata CSV, groups by (species, mod_type), and applies
+log-compression downsampling to over-represented target modifications (m6a/m5c by
+default) so their size moves towards the geometric mean of the other modifications;
+all non-target modification samples are kept.
+
+功能模块 / Modules:
+- log_downsample_target: log 压缩计算目标修饰保留量 / Log-scale compression of target size
+- downsampling_from_raw: 主入口，读 CSV -> 分组 -> 采样 -> 返回 (df, encoder) / Main entry
+- 内部 helper: floor 分配 + remainder 贪心 / Floor allocation + greedy remainder
+
+输入 / Inputs:
+- raw_csv: str - 原始数据 CSV 路径 (含 mod_type, species, sequence 等列) / Raw data CSV
+- alpha: float - log 插值系数，越大越接近原始规模 / Log interpolation coefficient
+- target_mods: list[str] - 需要下采样的目标修饰 / Target modifications to downsample
+- min_keep: int - 每个物种最少保留数 / Minimum samples per species
+- seed: int|None - 随机种子 / Random seed
+
+输出 / Outputs:
+- balanced_df: pd.DataFrame - 平衡后的数据（T->U 转换，mod_type 已整数编码）/ Balanced DataFrame
+- label_encoder: sklearn LabelEncoder - mod_type 标签编码器 / Fitted label encoder
+
+数据流 / Data Flow:
+1. 读 CSV 并 lower/strip 规范化 / Read CSV and normalize
+2. 按 (species, mod_type) 统计 count / Group and count
+3. 计算 target 修饰的目标保留量 / Compute target totals via log compression
+4. 物种间 log-weighted 分配配额 / Allocate across species (log-weighted)
+5. 各物种内随机抽样 / Random sample within each species
+6. 不足时全局补齐 / Top-up from remaining pool if needed
+7. LabelEncoder 拟合 mod_type / Fit LabelEncoder
+
+相关文件 / Related Files:
+- 调用 / Calls: pandas, numpy, sklearn.preprocessing.LabelEncoder
+- 被调用 / Called by: main.py
+
+使用示例 / Usage Example:
+    df, le = downsampling_from_raw("data.csv", alpha=0.6, target_mods=["m6a","m5c"], seed=42)
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
+"""

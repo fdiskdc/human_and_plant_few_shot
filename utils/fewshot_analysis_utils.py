@@ -1,7 +1,41 @@
 """
-Few-shot Analysis Utilities
+utils/fewshot_analysis_utils.py - 小样本分析工具函数 / Few-shot Analysis Utility Functions
 
-This module contains utility functions used across the few-shot analysis pipeline.
+输出目录创建、JSON 保存、R 脚本调用、绘图样式助手。
+Output dir creation, JSON saving, R script invocation, plotting style helpers.
+
+功能模块 / Modules:
+- build_output_dir: 创建时间戳输出目录 / Build timestamped output dir
+- save_json: 保存 JSON / Save JSON
+- invoke_r_script: 调用 R 脚本 / Invoke R script
+- plotting style helpers: 绘图样式助手 / Plotting style helpers
+
+输入 / Inputs:
+- 数据字典 / Data dict
+- 输出路径 / Output path
+
+输出 / Outputs:
+- 时间戳子目录 / Timestamped subdir
+- JSON 文件 / JSON file
+- R 进程输出 / R process output
+
+数据流 / Data Flow:
+1. 创建目录 / Create dir
+2. 保存数据 / Save data
+3. 调用 R 脚本 / Invoke R script
+4. 收集输出 / Collect output
+
+相关文件 / Related Files:
+- 调用 / Calls: json, subprocess, pathlib
+- 被调用 / Called by: zero_shot_fewshot_*.py, utils.fewshot_analysis_*
+
+使用示例 / Usage Example:
+    from utils.fewshot_analysis_utils import build_output_dir
+    out_dir = build_output_dir('output/zero_fewshot')
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import csv

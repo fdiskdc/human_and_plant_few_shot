@@ -1,16 +1,43 @@
 """
-Collect Attention Outputs for Human Dataset
+collect_human_atten.py - 收集人类数据集的注意力输出 / Collect Attention Outputs for Human Dataset
 
-This script collects attention outputs (attn_out_12, attn_out_4) for all samples
-in human dataset and saves them to an NPZ file.
+对人类数据集中所有样本运行推理,收集注意力输出 (attn_out_12, attn_out_4) 并保存为 NPZ 文件。
+Runs model inference on all human dataset samples, collecting attention outputs (attn_out_12, attn_out_4) and saving as NPZ.
 
-Output format (human_atten.npz):
-    - attn_out_12: Attention outputs for 12-class task [num_samples, 12, hidden_dim]
-    - attn_out_4: Attention outputs for 4-class task [num_samples, 4, hidden_dim]
-    - label12: 12-class ground truth labels (multilabel) [num_samples, 12]
-    - label4: 4-class ground truth labels (multilabel) [num_samples, 4]
-    - seqs: RNA sequences as strings [num_samples,]
-    - probs12: 12-class softmax probabilities [num_samples, 12]
+功能模块 / Modules:
+- 注意力收集推理 / Attention collection inference
+- main: 主入口 / Main entry point
+
+输入 / Inputs:
+- checkpoints/best_model.pt: PyTorch state_dict / Model weights
+- json/human.json: 推理配置 / Inference config
+- human3/seq.npy, human3/1001loc.npy, human3/12loc.npy: 人类数据 / Human data
+- 命令行参数 / CLI: --checkpoint, --config, --output
+
+输出 / Outputs:
+- npy/human_atten.npz: NumPy 压缩格式 / NumPy compressed format
+  * attn_out_12: 12 类注意力输出 [N, 12, hidden_dim] / 12-class attention outputs
+  * attn_out_4: 4 类注意力输出 [N, 4, hidden_dim] / 4-class attention outputs
+  * label12, label4: 12/4 类多热标签 / 12/4-class multi-hot labels
+  * seqs: RNA 序列字符串 / RNA sequence strings
+  * probs12: 12 类 softmax 概率 / 12-class softmax probabilities
+
+数据流 / Data Flow:
+1. 加载模型 / Load model
+2. 推理 + 注意力收集 / Inference + attention collection
+3. 拼接 attn_out_12/4 / Concatenate attn_out_12/4
+4. 保存到 npz / Save to npz
+
+相关文件 / Related Files:
+- 调用 / Calls: dataset.human_with_seq.Mer100DatasetWithSeq, model.main_model_collect_atten
+- 被调用 / Called by: prepare_umap_from_npz.py, analysis pipelines
+
+使用示例 / Usage Example:
+    python collect_human_atten.py --checkpoint checkpoints/best_model.pt --output npy/human_atten.npz
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import os

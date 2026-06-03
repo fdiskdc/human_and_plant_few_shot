@@ -1,0 +1,36 @@
+"""
+dataset.py - EvoRMD 的轻量 PyTorch 数据集 / Lightweight PyTorch Dataset for EvoRMD
+
+为 EvoRMD 模型定义一个极简的 PyTorch Dataset：仅返回 RNA 序列字符串与修饰类型标签，
+不承载 RNA-FM 嵌入或元信息。完整字段（organ/cell/subcell/species）版本见 model.py。
+This module defines a minimal PyTorch Dataset for EvoRMD that returns only the
+RNA sequence string and modification label. It does NOT handle RNA-FM embeddings
+or metadata; the extended version with organ/cell/subcell/species lives in model.py.
+
+功能模块 / Modules:
+- RNAFMDataset.__init__: 读取序列与标签 / Read sequences and labels into memory
+- RNAFMDataset.__getitem__: 返回 (sequence, label) / Yield (sequence, label) per index
+
+输入 / Inputs:
+- data: pd.DataFrame - 必须包含 Sequence_41 (str) 与 modType (int) / Must contain Sequence_41 and modType columns
+
+输出 / Outputs:
+- __getitem__: (sequence: str, label: int) - 单条样本 / Single sample tuple
+
+数据流 / Data Flow:
+1. 构造时把 DataFrame 列转 list / ndarray / Convert DataFrame columns to list/ndarray
+2. __len__ 返回样本数 / __len__ returns sample count
+3. __getitem__ 按下标取一条 / __getitem__ returns one item
+
+相关文件 / Related Files:
+- 调用 / Calls: torch.utils.data.Dataset
+- 被调用 / Called by: main.py, train_val_test.py (DDP DataLoader)
+
+使用示例 / Usage Example:
+    ds = RNAFMDataset(df)
+    loader = DataLoader(ds, batch_size=128, sampler=train_sampler)
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
+"""

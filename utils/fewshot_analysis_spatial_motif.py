@@ -1,7 +1,43 @@
 """
-Few-shot Analysis Spatial Motif Module
+utils/fewshot_analysis_spatial_motif.py - Captum 空间 motif 分析 / Captum Spatial Motif Analysis
 
-This module contains functions for spatial motif analysis.
+使用 Captum Integrated Gradients 进行特征归因,生成 motif logo,可选 KMeans 聚类。
+Uses Captum Integrated Gradients for feature attribution, generates motif logos, optional KMeans clustering.
+
+功能模块 / Modules:
+- Captum IG 归因 / Captum IG attribution
+- Motif logo 生成 / Motif logo generation
+- KMeans 聚类 / KMeans clustering
+- main 分析函数 / Main analysis functions
+
+输入 / Inputs:
+- features, labels: 特征与标签 / Features and labels
+- mod_type: 修饰类型 / Modification type
+- n_clusters: 聚类数 / Number of clusters
+
+输出 / Outputs:
+- motif_logo/seq_*.png: motif logo
+- 聚类可视化 / Cluster visualization
+- 归因分数 / Attribution scores
+
+数据流 / Data Flow:
+1. IG 归因 / IG attribution
+2. 提取序列上下文 / Extract sequence context
+3. 聚类 (可选) / Cluster (optional)
+4. 生成 logo / Generate logo
+5. 保存 / Save
+
+相关文件 / Related Files:
+- 调用 / Calls: captum, logomaker, sklearn
+- 被调用 / Called by: zero_shot_fewshot_analysis.py
+
+使用示例 / Usage Example:
+    from utils.fewshot_analysis_spatial_motif import run_spatial_motif_analysis
+    run_spatial_motif_analysis(features, labels, mod_type='m6A')
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import os

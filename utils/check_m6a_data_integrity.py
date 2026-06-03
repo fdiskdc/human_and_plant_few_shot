@@ -1,6 +1,39 @@
 """
-m6A 数据完整性检查脚本
-检查 npy/3gen 目录下的 m6A 修饰标签及其关联的序列特征
+utils/check_m6a_data_integrity.py - m6A 标签+序列完整性检查 / m6A Label+Sequence Integrity Check
+
+m6A 修饰标签 + 序列完整性检查:验证 m6A 修饰位点都是 A 核苷酸。
+m6A modification label + sequence integrity check: verify m6A modification sites are all A nucleotides.
+
+功能模块 / Modules:
+- m6A 标签加载 / m6A label loading
+- 序列加载 / Sequence loading
+- A 核苷酸验证 / A nucleotide verification
+- main: 主入口 / Main entry point
+
+输入 / Inputs:
+- human3/seq.npy: RNA 序列 / RNA sequences
+- human3/1001loc.npy: 1001 位点级标签 / 1001 site-level labels
+
+输出 / Outputs:
+- 终端检查结果 / Terminal check results
+- 不匹配位点报告 / Mismatch site report
+
+数据流 / Data Flow:
+1. 加载序列与标签 / Load sequences and labels
+2. 提取 m6A 位点 / Extract m6A sites
+3. 验证 A 核苷酸 / Verify A nucleotides
+4. 报告不匹配 / Report mismatches
+
+相关文件 / Related Files:
+- 调用 / Calls: numpy
+- 被调用 / Called by: manual execution
+
+使用示例 / Usage Example:
+    python -m utils.check_m6a_data_integrity
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import numpy as np

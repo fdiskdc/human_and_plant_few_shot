@@ -1,12 +1,40 @@
 """
-Human Dataset Modification Sites Violin Plot Analysis
+view_human.py - 人类数据集修饰位点小提琴图分析 / Human Dataset Modification Sites Violin Plot Analysis
 
-This script analyzes and visualizes the distribution of modification site counts
-for each of the 12 modification types in the human dataset.
+分析与可视化人类数据集中每种 12 类修饰的位点计数分布。复用 view3.py 的 Morandi 配色与小提琴图样式。
+Analyzes and visualizes the distribution of modification site counts for each of the 12 modification types in the human dataset.
+Reuses Morandi color scheme and violin plot style from view3.py.
 
-Referenced files:
-- view3.py: for Morandi color scheme, violin plot style, and helper functions
-- dataset/human.py: for MOD_NAMES, LABEL_MAPPING, and data structure conventions
+功能模块 / Modules:
+- 12 类修饰位点统计 / 12-class modification site statistics
+- 小提琴图绘制 / Violin plot rendering
+- Morandi 配色方案 / Morandi color scheme
+- main: 主入口 / Main entry point
+
+输入 / Inputs:
+- human3/1001loc.npy: 1001 位点级标签 / 1001 site-level labels
+- MOD_NAMES, LABEL_MAPPING from dataset.human
+
+输出 / Outputs:
+- att_fig/12mod_violin.png: 12 类小提琴图 / 12-class violin plot
+- 终端统计输出 / Terminal statistics output
+
+数据流 / Data Flow:
+1. 加载位点标签 / Load site labels
+2. 统计每类位点数 / Count sites per class per sequence
+3. 绘制小提琴图 / Draw violin plot
+4. 保存为 PNG / Save as PNG
+
+相关文件 / Related Files:
+- 调用 / Calls: numpy, seaborn, matplotlib
+- 被调用 / Called by: manual execution
+
+使用示例 / Usage Example:
+    python view_human.py
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import numpy as np
