@@ -1,3 +1,56 @@
+"""
+ac4c.py - ac4C 修饰专用的12类多标签分类数据集 / ac4C Modification Specific 12-class Multi-Label Classification Dataset
+
+本模块加载 ac4C (N4-acetylcytidine, 4类位点) 修饰数据并复用12类多标签分类框架。与 human.py
+格式类似但不含 1001loc.npy 位点级标签，因此使用全0的虚拟 full_labels 保持接口一致。
+数据集分为 balanced 与 unbalanced 两个版本，默认使用 balanced 版本。提供少样本切分工具。
+This module loads ac4C (N4-acetylcytidine) modification data and reuses the 12-class multi-label
+classification framework. Unlike human.py, it lacks 1001loc.npy (site-level) labels, so a virtual
+all-zero full_labels is used to keep the interface consistent. Two versions are available:
+balanced (default) and unbalanced, with few-shot splitting support.
+
+功能模块 / Modules:
+- AC4CDataset: PyG Dataset类,加载balanced_ac4c或unbalanced_ac4c子目录下train/test的npy数据 / PyG Dataset class loading npy data from balanced_ac4c or unbalanced_ac4c subdirs
+- get_few_shot_split: 生成 Few-Shot Support Pool (10%) 与 Fixed Test Set (90%) 索引 / Generates Few-Shot support pool (10%) and fixed test set (90%) indices
+- precompute_all_structures: 多进程预计算所有序列二级结构 / Multiprocess precomputation of all sequence secondary structures
+- _generate_uniform_attention_masks: AC4C无位点标签,使用均匀分布注意力掩码 / AC4C has no site-level labels, so uniform attention masks are used
+
+输入 / Inputs:
+- npy/ac4c_processed/balanced_ac4c/train|test/seq.npy: NumPy字节数组, 形状 (N, 1001) |S1 - ac4C RNA序列 / ac4C RNA sequences
+- npy/ac4c_processed/balanced_ac4c/train|test/12loc.npy: NumPy int8数组, 形状 (N, 12) - 12类多标签 / 12-class multi-labels
+- npy/ac4c_processed/balanced_ac4c/train|test/4loc.npy: NumPy int8数组, 形状 (N, 4) - 4类核苷酸组标签 / 4-class nucleotide group labels
+- (无1001loc.npy - 用全0虚拟标签填充) / (No 1001loc.npy - filled with virtual zero labels)
+- 配置文件 / Config: LINEARFOLD_PATH, cache_dir, data_dir - 路径与缓存配置 / Path and cache configuration
+
+输出 / Outputs:
+- PyG Data对象 / PyG Data objects: x=(1001,4) one-hot, edge_index=(2,E) 边索引, y=(1,12) 12类多标签, y_4class=(1,4) 4类标签, y_site=(1001,) 全0虚拟标签 / x: one-hot; edge_index: edges; y: 12-class (1,12); y_4class: (1,4); y_site: virtual zeros (1001,)
+- 均匀注意力掩码 / Uniform attention masks: attn_mask_A/C/G/U (1001,) - 全1/1001均匀分布 / All uniform 1/1001
+- Few-Shot Split: (support_indices, test_indices) - 元组 / Tuple
+
+数据流 / Data Flow:
+1. 加载npy / Load npy: 检测balanced/unbalanced目录,加载train或test子目录的seq/12loc/4loc / Detect balanced/unbalanced, load seq/12loc/4loc from train/test subdirs
+2. 虚拟full_label生成 / Virtual full_label: 由于没有1001loc,生成全0的 (N, 1001) 数组 / Generate all-zero (N, 1001) since no 1001loc available
+3. 字节流one-hot编码 / Byte-to-onehot: 使用_BYTE_TO_ONEHOT_MAPPING查表 / Use lookup table for one-hot encoding
+4. 均匀注意力掩码 / Uniform masks: 为4个核苷酸生成均匀分布掩码 / Generate uniform masks for 4 nucleotides
+5. 构建PyG Data / Build PyG Data: 整合所有字段返回PyG Data对象 / Integrate all fields into PyG Data
+
+相关文件 / Related Files:
+- 调用 / Calls: torch.utils.data.Dataset, torch_geometric.data.Data, subprocess (LinearFold), human.py (复用常量) / Reuses from human.py
+- 被调用 / Called by: fewshot_ac4c_balance.py, fewshot_ac4c_unbalan.py, train_human.py, train_human_modx.py, train_human_multirm.py, utils/train_gen3.py
+
+使用示例 / Usage Example:
+    from dataset.ac4c import AC4CDataset
+    train_set = AC4CDataset(mode='train', data_dir='npy/ac4c_processed/balanced_ac4c')
+    from torch_geometric.loader import DataLoader
+    loader = DataLoader(train_set, batch_size=32, shuffle=True)
+    for batch in loader:
+        x, edge_index, y = batch.x, batch.edge_index, batch.y
+
+作者 / Author: RGCNFormer Project (C. Deng, DOI:10.3390/app15158626)
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
+"""
+
 '''
 Author: Chao Deng && chaodeng987@outlook.com
 Date: 2026-01-09 16:22:08

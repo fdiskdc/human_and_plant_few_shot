@@ -1,14 +1,47 @@
 """
-Ablation script for HierarchicalClassQueryHeadPooling on human dataset.
+abla_mohe.py - HierarchicalClassQueryHeadPooling 消融实验 / MOHE Hierarchical Head Ablation Study
 
-Runs 8 ablation configurations and outputs:
-  - logs_abla/ablation_results.csv
-  - logs_abla/fig1_query_ablation.png
-  - logs_abla/fig2_dim_ablation.png
-  - logs_abla/fig3_class_heatmap.png
+运行 8 个消融配置 (4 query types x 2 dims) 输出:
+- logs_abla/ablation_results.csv: 消融结果 / Ablation results
+- logs_abla/fig1_query_ablation.png: query 类型对比 / query type comparison
+- logs_abla/fig2_dim_ablation.png: dim 对比 / dim comparison
+- logs_abla/fig3_class_heatmap.png: 类别热图 / class heatmap
+Runs 8 ablation configs (4 query_types x 2 dims) outputting CSV and figures.
 
-Usage:
+功能模块 / Modules:
+- 8 配置消融训练 / 8-config ablation training
+- 结果聚合 / Result aggregation
+- 3 张图表生成 / 3 figure generation
+- main: 主入口 / Main entry point
+
+输入 / Inputs:
+- json/abla_human.json: 消融配置 / Ablation config
+- human3/seq.npy, human3/1001loc.npy: 人类数据 / Human data
+- 命令行参数 / CLI: --config, --gpu, --seed
+
+输出 / Outputs:
+- logs_abla/ablation_results.csv: 消融结果 CSV / Ablation CSV
+- logs_abla/fig1_query_ablation.png: query 类型对比图 / Query type comparison
+- logs_abla/fig2_dim_ablation.png: dim 对比图 / Dim comparison
+- logs_abla/fig3_class_heatmap.png: 类别热图 / Class heatmap
+
+数据流 / Data Flow:
+1. 加载配置 / Load config
+2. 8 配置循环训练 / 8-config loop training
+3. 评估每配置 / Evaluate each config
+4. 聚合结果 / Aggregate results
+5. 生成图表 / Generate figures
+
+相关文件 / Related Files:
+- 调用 / Calls: model.abla_model.AblationModel, dataset.human, utils.{common,logging}
+- 被调用 / Called by: manual execution
+
+使用示例 / Usage Example:
     python abla_mohe.py
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import os

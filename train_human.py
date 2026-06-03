@@ -1,14 +1,47 @@
 """
-RNA Multi-label Classification Training Script
+train_human.py - 人类12类mRNA修饰多标签分类训练主脚本 / Human 12-class mRNA Modification Multi-Label Classification Training Script
 
-This script implements:
-1. Multi-label disjoint data split (7:3 train/test)
-2. Smoothed class weighting for imbalanced learning
-3. Dual evaluation modes (Unbalance & BalanceB)
-4. Comprehensive metrics (F1, Acc, Precision, Recall, AUC, AUPRC, MCC, Sensitivity, Specificity)
-5. Logging to file and console
-6. Tensorboard visualization
-7. TQDM progress monitoring
+主训练入口：加载 RGCNFormer (RNA_ClassQuery_Model) 在人类 12 类修饰 (Am, Atol, Cm, Gm, Tm, Y, ac4C, m1A, m5C, m6A, m6Am, m7G) 多标签数据集上训练。
+Main training entry: trains RGCNFormer (RNA_ClassQuery_Model) on the human 12-class modification multi-label dataset.
+
+功能模块 / Modules:
+- main: 主训练函数 / Main training function
+- 数据加载与划分 / Data loading and disjoint 7:3 train/test split
+- 平滑类别权重 / Smoothed class weighting for imbalanced data
+- Unbalance / BalanceB 评估模式 / Dual evaluation modes
+- 完整指标 / Comprehensive metrics: F1, Acc, Precision, Recall, AUC, AUPRC, MCC
+- TensorBoard 与 TQDM 监控 / TensorBoard and TQDM monitoring
+
+输入 / Inputs:
+- json/human.json: JSON 训练配置 (batch_size, lr, epochs, model_type) / JSON training config
+- human3/seq.npy: NumPy 字节数组 (N, 1001) |S1 - 1001nt RNA 序列 / 1001nt RNA sequences
+- human3/1001loc.npy: NumPy int8 (N, 1001) - 1001 位点级修饰标签 (1-12) / Site-level labels
+- human3/12loc.npy: NumPy int8 (N, 12) - 12 类多热标签 / 12-class multi-hot labels
+- 命令行参数 / CLI: --config, --gpu, --seed, --batch_size, --lr, --epochs
+
+输出 / Outputs:
+- checkpoints/best_model.pt: PyTorch state_dict 最佳模型 / Best model state dict
+- logs/human_*/train_*.log: 训练日志 / Training logs
+- logs/human_*/results.json: 测试集评估指标 / Test set evaluation results
+- logs/human_*/events.*: TensorBoard 事件文件 / TensorBoard event files
+
+数据流 / Data Flow:
+1. 加载配置与数据 / Load config and dataset
+2. 7:3 不相交划分 / Disjoint 7:3 train/test split
+3. 初始化模型与优化器 / Init model and optimizer
+4. 训练循环 (epoch) / Training loop with progress bar
+5. 评估 + 保存 checkpoint / Evaluate and save best checkpoint
+
+相关文件 / Related Files:
+- 调用 / Calls: model.main_model.RNA_ClassQuery_Model, dataset.human.Mer100Dataset, utils.{common,metrics,logging}
+- 被调用 / Called by: shell scripts, manual CLI invocations
+
+使用示例 / Usage Example:
+    python train_human.py --config json/human.json --gpu 0
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import os

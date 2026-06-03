@@ -1,5 +1,39 @@
 """
-Test script for MultIRM 4-class modifications
+test_multirm_4class.py - MultIRM 4 类模式冒烟测试 / MultIRM 4-Class Mode Smoke Test
+
+MultIRM 数据集的 4 类模式冒烟测试,验证 4 类层级分组训练与评估流程。
+Smoke test for 4-class hierarchical grouping mode of MultIRM dataset.
+
+功能模块 / Modules:
+- 4 类模式推理 / 4-class mode inference
+- 冒烟测试 / Smoke test
+- main: 主入口 / Main entry point
+
+输入 / Inputs:
+- json/multirm_4class.json: 配置 / Config
+- multirm/seq.npy, multirm/4loc.npy: 4 类标签 / 4-class labels
+- 命令行参数 / CLI: --config, --gpu
+
+输出 / Outputs:
+- 终端冒烟测试结果 / Terminal smoke test results
+- logs/multirm_4class_*/results.json
+
+数据流 / Data Flow:
+1. 加载 4 类数据 / Load 4-class data
+2. 加载模型 / Load model
+3. 4 类推理 / 4-class inference
+4. 4 类评估 / 4-class evaluation
+
+相关文件 / Related Files:
+- 调用 / Calls: dataset.multirm.MultirmDataset, model.main_model
+- 被调用 / Called by: manual execution
+
+使用示例 / Usage Example:
+    python test_multirm_4class.py --config json/multirm_4class.json
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import torch

@@ -1,14 +1,48 @@
 """
-RNA Multi-label Classification Training Script
+utils/train_gen3.py - 3gen数据集训练流水线 / 3rd-Generation Dataset Training Pipeline
 
-This script implements:
-1. Multi-label disjoint data split (7:3 train/test)
-2. Smoothed class weighting for imbalanced learning
-3. Dual evaluation modes (Unbalance & BalanceB)
-4. Comprehensive metrics (F1, Acc, Precision, Recall, AUC, AUPRC, MCC, Sensitivity, Specificity)
-5. Logging to file and console
-6. Tensorboard visualization
-7. TQDM progress monitoring
+3gen (PacBio/ONT) 数据集主训练流水线:数据划分、平衡采样、Unbalance/BalanceB 评估、TensorBoard、小样本基准测试。
+3gen (PacBio/ONT) dataset main training pipeline: data split, balanced sampling, dual evaluation, TensorBoard, few-shot.
+
+功能模块 / Modules:
+- main: 主训练函数 / Main training function
+- 数据划分 (7:3) / Data split (7:3)
+- 平衡采样 / Balanced sampling
+- Unbalance / BalanceB 评估 / Dual evaluation
+- TensorBoard / TensorBoard
+- 小样本基准 / Few-shot benchmark
+- 命令行参数 / CLI args
+
+输入 / Inputs:
+- json/gen3.json: 训练配置 / Training config
+- 3gen/seq.npy, 3gen/12loc.npy: 3gen 数据 / 3gen data
+- checkpoints/best_model.pt: 预训练模型 (可选) / Optional pretrained model
+- 命令行参数 / CLI: --config, --gpu, --seed
+
+输出 / Outputs:
+- checkpoints/best_gen3.pt: 最佳模型 / Best model
+- logs/gen3_*/train_*.log: 训练日志 / Training logs
+- logs/gen3_*/results.json: 评估结果 / Evaluation results
+- TensorBoard events: 可视化 / Visualization
+
+数据流 / Data Flow:
+1. 加载配置 / Load config
+2. 构建 3gen 数据集 / Build 3gen dataset
+3. 划分 / Split
+4. 训练循环 / Training loop
+5. 评估 + 小样本 / Evaluate + few-shot
+6. 保存 / Save
+
+相关文件 / Related Files:
+- 调用 / Calls: dataset.gen3.Gen3Dataset, model.main_model, utils.{common,metrics,logging}
+- 被调用 / Called by: shell scripts, manual CLI
+
+使用示例 / Usage Example:
+    python -m utils.train_gen3 --config json/gen3.json --gpu 0
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import os

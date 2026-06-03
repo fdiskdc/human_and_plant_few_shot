@@ -1,25 +1,45 @@
 """
-Prepare UMAP Data for RGCNFormer Human Dataset
+prepare_umap_data.py - 人类数据集 UMAP 数据准备 (含模型推理) / Prepare UMAP Data for Human Dataset
 
-This script:
-1. Loads the Human dataset using Mer100DatasetWithSeq
-2. Runs model inference to collect MHA attention outputs + softmax probabilities
-3. Filters pure samples (rowSums==1, single-label only) and performs stratified sampling
-4. Runs UMAP dimensionality reduction on attn_out_12 features [N, 12, 128]
-5. Computes KDE density contours for A/C/G/U groups
-6. Outputs a JSON file for web visualization
+加载人类数据集,运行模型推理收集 MHA 注意力输出 + softmax 概率,过滤纯样本,分层采样,UMAP 降维,
+计算 A/C/G/U 组的 KDE 密度等高线,输出 Web 可视化 JSON 文件。
+Loads human dataset, runs model inference to collect MHA attention outputs + softmax probabilities, filters
+pure samples, stratified sampling, UMAP reduction, KDE contours, outputs JSON for web visualization.
 
-Usage:
-    python prepare_umap_data.py \
-        --config json/human.json \
-        --checkpoint checkpoints/best_model.pt \
-        --output npy/umap_human_data.json \
-        --n-per-class 1000 \
-        --batch-size 128 \
-        --device cuda
+功能模块 / Modules:
+- 模型推理 + 注意力收集 / Model inference + attention collection
+- 纯样本过滤 + 分层采样 / Pure sample filtering + stratified sampling
+- UMAP 降维 / UMAP dimensionality reduction
+- KDE 密度等高线 / KDE density contours
+- main: 主入口 / Main entry point
 
-Environment Variables (for backend):
-    UMAP_DATA_PATH=/path/to/umap_human_data.json
+输入 / Inputs:
+- json/human.json: 配置 / Config
+- checkpoints/best_model.pt: 模型 / Model
+- 命令行参数 / CLI: --config, --checkpoint, --output, --n_per_class, --batch_size, --device
+
+输出 / Outputs:
+- npy/umap_human_data.json: Web 可视化 JSON / Web visualization JSON
+- 包含 UMAP 坐标、密度、组标签 / UMAP coords, density, group labels
+
+数据流 / Data Flow:
+1. 加载数据 / Load data
+2. 模型推理 + 注意力收集 / Inference + attention collection
+3. 过滤纯样本 / Filter pure samples
+4. UMAP 降维 / UMAP reduction
+5. KDE 等高线 / KDE contours
+6. 保存 JSON / Save JSON
+
+相关文件 / Related Files:
+- 调用 / Calls: dataset.human_with_seq.Mer100DatasetWithSeq, model.main_model, umap
+- 被调用 / Called by: web visualization
+
+使用示例 / Usage Example:
+    python prepare_umap_data.py --config json/human.json --checkpoint checkpoints/best_model.pt --output npy/umap_human_data.json
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import os

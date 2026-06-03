@@ -1,14 +1,48 @@
 """
-MultIRM Dataset Training Script
+train_multirm_dataset.py - MultIRM数据集多标签训练脚本 / MultIRM Dataset Multi-Label Training Script
 
-This script implements training for the MultIRM RNA modification dataset:
-1. Loads data from dataset/multirm.py with positive/negative sample pairing
-2. Precomputes all secondary structures on first run (stored in npy/cache/multirm)
-3. Uses 12 separate losses for each class (positive + negative samples)
-4. Comprehensive metrics evaluation
-5. Logging to file and console
-6. Tensorboard visualization
-7. TQDM progress monitoring
+MultIRM 数据集 (dataset/multirm.py) 的训练入口:正/负样本配对 12 类多标签 RNA 修饰分类。
+使用 12 个独立损失函数 (正+负样本对),并预计算 RNA 二级结构缓存以加速训练。
+Training entry for the MultIRM dataset (dataset/multirm.py): 12-class positive/negative paired RNA modification classification.
+Uses 12 separate losses (positive + negative pairs) and precomputed RNA secondary structure caching for training speed.
+
+功能模块 / Modules:
+- main: 主训练函数 / Main training function
+- 二级结构预计算 / Precompute secondary structures on first run
+- 正/负样本配对损失 / Positive/negative paired loss (12 separate losses)
+- 完整指标 (sklearn) / Comprehensive metrics (sklearn)
+- 详细日志 / Detailed logging
+- TensorBoard + TQDM / TensorBoard + TQDM
+
+输入 / Inputs:
+- json/multirm.json: 训练配置 / Training config
+- multirm/seq.npy, multirm/pos_idx.npy, multirm/neg_idx.npy: 训练数据 / Training data
+- 命令行参数 / CLI: --config, --gpu, --seed
+
+输出 / Outputs:
+- checkpoints/best_multirm_dataset.pt: 最佳模型 / Best model
+- logs/multirm_dataset_*/train_*.log: 训练日志 / Training logs
+- logs/multirm_dataset_*/results.json: 评估结果 / Evaluation results
+- npy/cache/multirm/structures_cache.npz: 二级结构缓存 / Secondary structure cache
+- TensorBoard events: 可视化 / Visualization
+
+数据流 / Data Flow:
+1. 加载数据 / Load data
+2. 预计算/加载二级结构缓存 / Precompute or load structure cache
+3. 构建 MultirmDataset (含正负对) / Build MultirmDataset
+4. 训练循环 (12 损失) / Training loop (12 losses)
+5. 评估 + 保存 / Evaluate and save
+
+相关文件 / Related Files:
+- 调用 / Calls: model.main_model.RNA_ClassQuery_Model, dataset.multirm.MultirmDataset, sklearn.metrics
+- 被调用 / Called by: shell scripts, manual CLI invocations
+
+使用示例 / Usage Example:
+    python train_multirm_dataset.py --config json/multirm.json --gpu 0
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import os

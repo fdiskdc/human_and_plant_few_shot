@@ -1,10 +1,49 @@
 """
-Evaluation metrics and functions for RNA Multi-label Classification
+utils/metrics.py - RNA多标签分类评估指标 / Evaluation Metrics for RNA Multi-label Classification
 
-This module contains:
-- Metric calculation functions
-- Optimal threshold finding
-- Evaluation functions (unbalance, balanceb, plant evaluations)
+全面的机器学习评估:最优阈值查找、Unbalance / BalanceB / Plant / Group 评估、4 类最优阈值、F1/Acc/Precision/Recall/AUC/MCC/AUPRC。
+Comprehensive ML evaluation: optimal threshold finding, unbalance/balanceb/plant/group evaluations, 4-class with optimal
+threshold, F1/Acc/Precision/Recall/AUC/MCC/AUPRC.
+
+功能模块 / Modules:
+- evaluate_unbalance: Unbalance 模式评估 / Unbalance mode evaluation
+- evaluate_balanceb: BalanceB 模式评估 / BalanceB mode evaluation
+- evaluate_plant_unbalance: 植物 Unbalance 评估 / Plant unbalance
+- evaluate_plant_balanceb: 植物 BalanceB 评估 / Plant balanceb
+- evaluate_group_balanceb: 4 组 BalanceB 评估 / 4-group balanceb
+- evaluate_4class_with_optimal_threshold: 4 类最优阈值评估 / 4-class with optimal threshold
+- evaluate_with_optimal_threshold: 12 类最优阈值评估 / 12-class with optimal threshold
+- find_optimal_threshold_per_class: 每类最优阈值 / Per-class optimal threshold
+- print_evaluation_results: 结果格式化输出 / Formatted result output
+- print_few_shot_results: 小样本结果输出 / Few-shot result output
+
+输入 / Inputs:
+- y_true: 真实标签 [N, num_classes] / Ground truth labels
+- y_score / y_pred: 预测分数或类别 / Predicted scores or labels
+- 各种参数 / Various parameters
+
+输出 / Outputs:
+- 评估指标字典 / Evaluation metrics dict
+- PrettyTable 输出 / PrettyTable output
+- 终端详细报告 / Detailed terminal report
+
+数据流 / Data Flow:
+1. 计算 y_score / Compute predictions
+2. 找最优阈值 / Find optimal threshold
+3. 计算每类指标 / Compute per-class metrics
+4. 聚合 + 输出 / Aggregate + output
+
+相关文件 / Related Files:
+- 调用 / Calls: sklearn.metrics, numpy, utils.common
+- 被调用 / Called by: train_*.py, test_*.py, evaluation scripts
+
+使用示例 / Usage Example:
+    from utils import evaluate_unbalance, evaluate_with_optimal_threshold
+    metrics = evaluate_unbalance(y_true, y_pred, y_score, MOD_NAMES)
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import numpy as np

@@ -1,4 +1,55 @@
 """
+plant.py - 植物RNA 12类修饰多标签分类数据集 / Plant RNA 12-class Modification Multi-Label Classification Dataset
+
+本模块加载植物RNA序列数据并执行12类细粒度修饰位点预测任务，结构与 human.py 高度相似但
+数据来自植物组织。复用 human.py 中的 LABEL_MAPPING、MOD_NAMES、run_linearfold 等常量与函数，
+通过 import 导入避免代码重复。本数据集在 12 分类之上提供 4 类核苷酸组 (A/C/G/U) 的层级标签。
+This module loads plant RNA sequences and performs 12-class fine-grained modification site prediction.
+It reuses constants and functions from human.py (LABEL_MAPPING, MOD_NAMES, run_linearfold, etc.) to
+avoid code duplication, and provides 4-class hierarchical nucleotide group (A/C/G/U) labels.
+
+功能模块 / Modules:
+- PlantDataset: PyG Dataset类,加载plant目录下的seq.npy/12loc.npy/4loc.npy/1001loc.npy / PyG Dataset class loading seq/12loc/4loc/1001loc from the plant directory
+- get_few_shot_split: 生成 Few-Shot Support Set (10%) 与 Fixed Query Test Set (90%) 索引 / Generates Few-Shot support pool (10%) and fixed query test set (90%) indices
+- precompute_all_structures: 多进程预计算二级结构并保存到批量 npz 缓存 (复用 human._worker_process_batch) / Precomputes secondary structures in parallel using human._worker_process_batch
+- run_linearfold / build_edge_index_from_structure: 从 human.py 复用 / Reused from human.py
+
+输入 / Inputs:
+- plant/seq.npy: NumPy字节数组, 形状 (N, 1001) |S1 - 1001nt长度的植物RNA序列 / Plant RNA sequences of length 1001
+- plant/12loc.npy: NumPy int8数组, 形状 (N, 12) - 12类多标签二值向量 / 12-class multi-label binary vectors
+- plant/1001loc.npy: NumPy int8数组, 形状 (N, 1001) - 位点级修饰标签 / Site-level modification labels
+- plant/4loc.npy: NumPy int8数组, 形状 (N, 4) - 4类核苷酸组标签 / 4-class nucleotide group labels
+- 配置文件 / Config: LINEARFOLD_PATH, cache_dir - LinearFold路径与二级结构缓存目录 / LinearFold path and cache directory
+
+输出 / Outputs:
+- PyG Data对象 / PyG Data objects: x=(1001,4) one-hot, edge_index=(2,E) 边索引, y=(1,12) 12类多标签 / x: one-hot (1001,4); edge_index: graph edges (2,E); y: 12-class multi-label (1,12)
+- (无 y_4class / y_site 字段 - 较 human.py 简化) / (No y_4class / y_site - simplified compared to human.py)
+- Few-Shot Split: (support_indices, test_indices) - 支持集与测试集索引元组 / Tuple of support and test indices
+
+数据流 / Data Flow:
+1. 加载npy / Load npy: 使用mmap_mode='r'加载植物RNA四类标签数据 / Load all four plant npy files with mmap_mode='r'
+2. 字节流one-hot编码 / Byte-to-onehot: 使用_BYTE_TO_ONEHOT_MAPPING查表将序列编码为(1001,4) / Encode byte stream to (1001,4) via lookup table
+3. LinearFold二级结构 / Secondary structure: 调用LinearFold预测点括号结构并构建edge_index / Predict structure and build edge_index
+4. 构建PyG Data / Build PyG Data: 组装节点特征、边索引、12类标签为PyG Data对象 / Assemble features, edges, labels into PyG Data
+
+相关文件 / Related Files:
+- 调用 / Calls: torch.utils.data.Dataset, torch_geometric.data.Data, subprocess, human.py (复用常量与函数) / Reuses from human.py
+- 被调用 / Called by: train_plant.py, fewshot_plant_3way_independent.py, train_human.py, train_human_modx.py, train_human_multirm.py, 3x3.py, 3x3_2.py, utils/few_shot.py, utils/fewshot_analysis_zeroshot.py, utils/fewshot_analysis_fewshot.py, utils/train_gen3.py
+
+使用示例 / Usage Example:
+    from dataset.plant import PlantDataset
+    plant_set = PlantDataset(plant_dir='plant', use_cache=True)
+    from torch_geometric.loader import DataLoader
+    loader = DataLoader(plant_set, batch_size=32, shuffle=True)
+    for batch in loader:
+        x, edge_index, y = batch.x, batch.edge_index, batch.y
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
+"""
+
+"""
 Plant RNA Multi-label Classification Dataset
 
 This module provides a dataset class for loading plant RNA modification data.

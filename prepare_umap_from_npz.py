@@ -1,21 +1,42 @@
 """
-Prepare UMAP Data from pre-collected human_atten.npz
+prepare_umap_from_npz.py - 从预收集的 npz 准备 UMAP 数据 (离线) / Prepare UMAP Data from Pre-Collected NPZ
 
-This script:
-1. Loads pre-collected attention outputs from human_atten.npz
-2. Filters pure samples (rowSums==1) AND correct predictions (argmax(probs)==argmax(label))
-3. Optionally caps per-class sample count (--n-per-class), or uses all filtered samples
-4. Runs UMAP dimensionality reduction on attn_out_12 features [N, 12, 128]
-5. Computes KDE density contours for A/C/G/U groups
-6. Outputs a JSON file for web visualization
+从预收集的 human_atten.npz 加载注意力输出,过滤纯样本 + 正确预测,可选每类数量上限,UMAP 降维,计算 KDE 等高线,输出 JSON。
+Loads pre-collected human_atten.npz, filters pure samples + correct predictions, optional per-class cap,
+UMAP reduction, KDE contours, outputs JSON.
 
-Usage:
-    python prepare_umap_from_npz.py \
-        --input npy/human_atten.npz \
-        --output npy/umap_human_data.json \
-        --n-per-class None \
-        --n-neighbors 30 \
-        --min-dist 0.3
+功能模块 / Modules:
+- npz 加载 / npz loading
+- 纯样本 + 正确预测过滤 / Pure sample + correct prediction filtering
+- UMAP 降维 / UMAP reduction
+- KDE 密度等高线 / KDE density contours
+- main: 主入口 / Main entry point
+
+输入 / Inputs:
+- npy/human_atten.npz: 预收集的注意力 / Pre-collected attention
+- 命令行参数 / CLI: --input, --output, --n_per_class, --n_neighbors, --min_dist
+
+输出 / Outputs:
+- npy/umap_human_data.json: Web 可视化 JSON / Web visualization JSON
+- 包含 UMAP 坐标、密度、组标签 / UMAP coords, density, group labels
+
+数据流 / Data Flow:
+1. 加载 npz / Load npz
+2. 过滤纯样本 + 正确预测 / Filter pure + correct
+3. UMAP 降维 / UMAP reduction
+4. KDE 等高线 / KDE contours
+5. 保存 JSON / Save JSON
+
+相关文件 / Related Files:
+- 调用 / Calls: utils.common, umap
+- 被调用 / Called by: web visualization
+
+使用示例 / Usage Example:
+    python prepare_umap_from_npz.py --input npy/human_atten.npz --output npy/umap_human_data.json
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import os

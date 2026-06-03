@@ -1,14 +1,41 @@
 """
-Collect Attention Outputs for Human Dataset using ModX Model
+collect_modx_atten.py - 使用modX模型收集人类数据集注意力 / Collect Attention Outputs for Human Dataset using ModX Model
 
-This script collects attention outputs (context_vector, attention_weights) for all samples
-in human dataset using the modx model and saves them to an NPY file.
+使用 modX 模型 (BiLSTM + BahdanauAttention) 对人类数据集中所有样本运行推理,收集 context_vector 和 attention_weights,保存为 NPY 文件。
+Runs modX model (BiLSTM + BahdanauAttention) on all human dataset samples, collecting context_vector and attention_weights, saved as NPY.
 
-Output format (modx_atten.npy):
-    - context_vector: Context vectors from attention mechanism [num_samples, hidden_dim]
-    - attention_weights: Attention weights for all classes [num_samples, num_classes, seq_len]
-    - label12: 12-class ground truth labels (multilabel) [num_samples, 12]
-    - label4: 4-class ground truth labels (multilabel) [num_samples, 4]
+功能模块 / Modules:
+- modX 注意力收集推理 / ModX attention collection inference
+- main: 主入口 / Main entry point
+
+输入 / Inputs:
+- checkpoints/best_modx.pt: PyTorch state_dict / ModX model weights
+- json/modx_inference.json: 推理配置 / Inference config
+- human3/seq.npy, human3/1001loc.npy, human3/12loc.npy: 人类数据 / Human data
+- 命令行参数 / CLI: --checkpoint, --config, --output
+
+输出 / Outputs:
+- npy/modx_atten.npy: NumPy 数组 / NumPy array
+  * context_vector: 注意力上下文向量 [N, hidden_dim] / Attention context vectors
+  * attention_weights: 注意力权重 [N, num_classes, seq_len] / Attention weights
+  * label12, label4: 多热标签 / Multi-hot labels
+
+数据流 / Data Flow:
+1. 加载 modX 模型 / Load modX model
+2. 推理 + 注意力收集 / Inference + attention collection
+3. 拼接结果 / Concatenate results
+4. 保存为 npy / Save as npy
+
+相关文件 / Related Files:
+- 调用 / Calls: dataset.human_with_seq.Mer100DatasetWithSeq, model.modx_collect_atten
+- 被调用 / Called by: analysis pipelines, attention comparison
+
+使用示例 / Usage Example:
+    python collect_modx_atten.py --checkpoint checkpoints/best_modx.pt --output npy/modx_atten.npy
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import os

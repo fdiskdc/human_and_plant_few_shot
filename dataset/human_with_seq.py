@@ -1,4 +1,52 @@
 """
+human_with_seq.py - 带序列字符串的人类RNA数据集 (推理加速版) / Human RNA Dataset with Sequence String (Inference-Accelerated)
+
+本模块继承 Mer100Dataset，在每个 PyG Data 对象中额外附加 seq_str 字段 (序列字符串)，
+避免推理时从 one-hot 反向转换为字符序列的昂贵计算。其他行为与 human.py 完全一致。
+This module inherits Mer100Dataset and adds a seq_str field (sequence string) to each PyG Data
+object, avoiding the expensive one-hot to character conversion during inference. All other
+behavior is identical to human.py.
+
+功能模块 / Modules:
+- Mer100DatasetWithSeq: 继承 Mer100Dataset,重写 __getitem__ 添加 seq_str 字段 / Inherits Mer100Dataset and overrides __getitem__ to add seq_str
+- human as human_module: 复用 human.py 中的全部常量与函数 / Reuses all constants and functions from human.py
+
+输入 / Inputs:
+- human3/seq.npy: NumPy字节数组, 形状 (N, 1001) |S1 - RNA序列 (从 human.py 复用) / RNA sequences (reused from human.py)
+- human3/1001loc.npy: NumPy int8数组, 形状 (N, 1001) - 位点级标签 / Site-level labels
+- human3/12loc.npy: NumPy int8数组, 形状 (N, 12) - 12类多标签 / 12-class multi-labels
+- human3/4loc.npy: NumPy int8数组, 形状 (N, 4) - 4类组标签 / 4-class group labels
+- 配置文件 / Config: mode, data_dir, cache_dir, use_human3, use_cache, preload_cache - 与 Mer100Dataset 相同 / Same as Mer100Dataset
+
+输出 / Outputs:
+- PyG Data对象 / PyG Data objects: 包含 human.py 所有字段 + 额外 seq_str (str, 长度1001) / All human.py fields + extra seq_str (str, len 1001)
+- 字段列表 / Fields: x, edge_index, y, y_4class, y_site, attn_mask_A/C/G/U, attn_mask_N, seq_str / All human.py fields plus seq_str
+
+数据流 / Data Flow:
+1. 复用 human.py 加载流程 / Reuse human.py loading: 调用 super().__init__() 完成 npy 加载与缓存初始化 / Call super().__init__() to load npy and init cache
+2. 字节转字符串 (一次性) / Byte-to-string (one-time): 在 __getitem__ 中将 sequence_bytes 转换为字符串并保存到 data.seq_str / Convert sequence_bytes to string and save as data.seq_str
+3. 字节流one-hot编码 / Byte-to-onehot: 使用 _BYTE_TO_ONEHOT_MAPPING 查表 / Use lookup table
+4. LinearFold二级结构 / Secondary structure: 复用 human.py 缓存与计算 / Reuse human.py cache and computation
+5. 构建PyG Data + seq_str / Build PyG Data + seq_str: 组装所有字段,附加 seq_str 用于推理 / Assemble all fields and attach seq_str
+
+相关文件 / Related Files:
+- 调用 / Calls: Mer100Dataset (继承), human.py 全部依赖 / Inherits from Mer100Dataset, reuses human.py
+- 被调用 / Called by: collect_human.py, collect_human_atten.py, collect_modx_atten.py, collect_multirm_atten.py, prepare_umap_data.py - 注意力收集与UMAP数据准备脚本 / Attention collection and UMAP data preparation scripts
+
+使用示例 / Usage Example:
+    from dataset.human_with_seq import Mer100DatasetWithSeq
+    train_set = Mer100DatasetWithSeq(mode='train', use_human3=True)
+    sample = train_set[0]
+    print(sample.seq_str[:50])  # 直接访问序列字符串,避免one-hot转换 / Direct access avoids one-hot conversion
+    from torch_geometric.loader import DataLoader
+    loader = DataLoader(train_set, batch_size=32, shuffle=False)
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
+"""
+
+"""
 Enhanced Mer100Dataset with sequence string support for efficient data collection
 
 This module extends the original human.py to include sequence string in Data objects,

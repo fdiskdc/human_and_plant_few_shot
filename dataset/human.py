@@ -1,3 +1,55 @@
+"""
+human.py - 人类RNA 12类修饰多标签分类数据集 / Human RNA 12-class Modification Multi-Label Classification Dataset
+
+本模块是RGCNFormer项目核心数据集加载器，加载人类RNA序列并执行12类细粒度修饰位点预测。
+数据集使用LinearFold预测的RNA二级结构构建图边索引，支持注意力监督和位点级标签。
+This module is the core dataset loader for the RGCNFormer project, loading human RNA sequences
+and performing 12-class fine-grained modification site prediction. It builds graph edge indices
+using RNA secondary structures predicted by LinearFold, supporting attention supervision and
+site-level labels for hierarchical multi-label classification.
+
+功能模块 / Modules:
+- Mer100Dataset: PyG Dataset类，加载human3目录下的npy数据并返回包含多层级标签的PyG Data对象 / PyG Dataset class that loads npy files from human3 directory and returns PyG Data objects with multi-level labels
+- run_linearfold: 调用LinearFold可执行文件批量预测RNA二级结构 / Invokes LinearFold executable to batch-predict RNA secondary structures
+- build_edge_index_from_structure: 根据点括号表示的二级结构构建图边索引 (顺序边 + 配对边) / Builds graph edge index (sequential + pairing edges) from dot-bracket secondary structure
+- LABEL_MAPPING / INDEX_TO_NUCLEOTIDE / MOD_NAMES: 12类修饰 (Am, Atol, Cm, Gm, Tm, Y, ac4C, m1A, m5C, m6A, m6Am, m7G) 标签体系映射表 / Mapping tables for the 12 modification classes
+- precompute_all_structures: 多进程预计算所有序列的二级结构并保存到批量npz缓存文件 / Multiprocess precomputation of all sequence secondary structures, saved to batch npz cache
+
+输入 / Inputs:
+- human3/seq.npy: NumPy字节数组, 形状 (N, 1001) |S1 - 1001nt长度的RNA序列字节流 / RNA sequences of length 1001 in byte stream
+- human3/1001loc.npy: NumPy int8数组, 形状 (N, 1001) - 1001位点级别的修饰标签 (1-12) / Site-level modification labels per position
+- human3/12loc.npy: NumPy int8数组, 形状 (N, 12) - 12类多标签二值向量 (0/1) / 12-class multi-label binary vectors
+- human3/4loc.npy: NumPy int8数组, 形状 (N, 4) - 4类核苷酸组多标签 (A/C/G/U) / 4-class nucleotide group multi-labels
+- 配置文件 / Config: LINEARFOLD_PATH, TARGET_LENGTH=1001, BATCH_CACHE_FILE - 预训练LinearFold可执行文件路径与缓存配置 / Path to LinearFold binary and cache configuration
+
+输出 / Outputs:
+- PyG Data对象 / PyG Data objects: x=(1001,4) one-hot编码, edge_index=(2,E) 边索引, y=(1,12) 12类多标签, y_4class=(1,4) 4类组标签, y_site=(1001,) 位点级标签 / x: one-hot (1001,4); edge_index: graph edges (2,E); y: 12-class multi-label (1,12); y_4class: 4-class group (1,4); y_site: site-level (1001,)
+- 注意力掩码 / Attention masks: attn_mask_A/C/G/U (1001,) - 每个核苷酸组的归一化位点注意力目标 / Normalized per-nucleotide attention targets
+- N字符掩码 / N-mask: attn_mask_N (1001,) - 标记序列中'N'字符位置 / Marks positions of 'N' characters in the sequence
+
+数据流 / Data Flow:
+1. 加载npy / Load npy: 使用mmap_mode='r'内存映射加载seq/1001loc/12loc/4loc四类数据，支持多进程共享 / Memory-map load all four npy files with mmap_mode='r' for multi-process sharing
+2. 字节流one-hot编码 / Byte-to-onehot: 使用预建_BYTE_TO_ONEHOT_MAPPING查表将ASCII字节快速转换为(1001,4)浮点one-hot / Fast lookup of ASCII bytes to (1001,4) float one-hot using pre-built table
+3. LinearFold二级结构 / Secondary structure: 调用LinearFold可执行文件预测点括号结构，构建配对边 + 顺序边生成edge_index / Invoke LinearFold to predict dot-bracket structure, then build pairing + sequential edge_index
+4. 构建PyG Data / Build PyG Data: 整合节点特征、边索引、多层级标签 (y/y_4class/y_site) 与注意力掩码为PyG Data对象 / Integrate node features, edge index, multi-level labels and attention masks into PyG Data
+
+相关文件 / Related Files:
+- 调用 / Calls: torch.utils.data.Dataset, torch_geometric.data.Data, subprocess (LinearFold), numpy/pickle (缓存) / torch data utilities, LinearFold CLI, numpy/pickle
+- 被调用 / Called by: train_human.py, train_human_modx.py, train_human_evormd.py, train_human_multirm.py, 3x3.py, 3x3_2.py, abla_mohe.py, collect_human.py, collect_human_atten.py, utils/few_shot.py, utils/rna_visualization.py, utils/common.py, utils/fewshot_analysis_zeroshot.py, utils/fewshot_analysis_gen3.py, zero_shot_fewshot_extract_only.py
+
+使用示例 / Usage Example:
+    from dataset.human import Mer100Dataset
+    train_set = Mer100Dataset(mode='train', use_human3=True)
+    from torch_geometric.loader import DataLoader
+    loader = DataLoader(train_set, batch_size=32, shuffle=True, num_workers=4)
+    for batch in loader:
+        x, edge_index, y = batch.x, batch.edge_index, batch.y
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
+"""
+
 import numpy as np
 import torch
 from torch.utils.data import Dataset

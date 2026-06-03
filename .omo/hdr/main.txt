@@ -1,0 +1,44 @@
+"""
+main.py - EvoRMD 训练主入口 / Main entry point for EvoRMD training
+
+负责加载 RNA-FM、构建层次/物种编码器、划分数据集、装配 TrainableAttention + 多类分类器，
+并通过 torchrun 多卡 DDP 训练；在验证集上挑选最优 checkpoint，最终在测试集上做评估。
+This script loads the RNA-FM model, builds hierarchical / species encoders, splits
+the dataset, assembles a TrainableAttention + MulticlassClassifier head, and runs
+multi-GPU DDP training via torchrun; it picks the best checkpoint on the
+validation set and finally evaluates on the test set.
+
+功能模块 / Modules:
+- set_seed: 固定 python/numpy/torch 随机种子 / Fix all RNG seeds for reproducibility
+- main(args): 全流程编排 / Orchestrate the full training pipeline
+- CLI (argparse): --raw_csv, --o, --result, --mlp_depth, --trainable 等 / See argparse help
+
+输入 / Inputs:
+- --raw_csv: str - 原始 RNAdata CSV 路径（含 sequence, mod_type, organ, cell, subcell, species）
+- --o: str - 最佳模型 .pth 保存路径 / Path to save best model checkpoint
+- --result: str - 训练/验证/测试结果 .pkl 保存路径 / Path to save train/val/test metrics
+
+输出 / Outputs:
+- best model state_dict (.pth) / Best classifier + attention state_dict
+- pickle dict with probs, preds, targets, attention_weights, embeddings, sequences
+
+数据流 / Data Flow:
+1. 初始化 DDP，加载 RNA-FM (fm.pretrained.rna_fm_t12) / Init DDP, load RNA-FM
+2. downsampling_from_raw 平衡数据 / Balance dataset via log-downsampling
+3. 训练集上构建 hier/species vocab，仅用训练集构建 / Vocab from train split only
+4. 训练 N 个 epoch，每个 epoch 训练 + 验证 / Train + validate N epochs
+5. 验证集最低 loss 时保存 checkpoint / Save best checkpoint on val loss
+6. 加载 best 做 test，输出 Accuracy/Precision/Recall/F1/MCC / Test on best
+
+相关文件 / Related Files:
+- 调用 / Calls: fm, torch, utils, downsampling, embedding, model, train_val_test
+- 被调用 / Called by: 用户通过 torchrun / launch.sh 启动 / Launched via torchrun / launch.sh
+
+使用示例 / Usage Example:
+    torchrun --nproc_per_node=2 model/EvoRMD/Script/main.py \
+        --raw_csv RNAdata/data.csv --o model.pth --result result.pkl
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
+"""

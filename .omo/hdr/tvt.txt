@@ -1,0 +1,46 @@
+"""
+train_val_test.py - EvoRMD DDP 训练/验证/测试循环 / Training, validation, and test loops for DDP EvoRMD
+
+实现 train / validate / test 三个函数：每个函数都基于 embedding.py 的融合流水线得到 MIL
+表示后送入分类器；并在 DDP 各 rank 间 all-gather 预测/概率/序列/attention，统一在 rank 0
+计算 acc/loss，并广播回所有 rank 同步日志。
+This module implements train / validate / test functions. Each uses the fusion pipeline
+in embedding.py to produce MIL embeddings, feeds them to the classifier, and all-gathers
+predictions/probs/sequences/attention across DDP ranks; rank 0 computes the metrics and
+broadcasts the loss/acc back to all ranks.
+
+功能模块 / Modules:
+- train: 训练一个 epoch，返回 acc/loss/dict / Train one epoch
+- validate: 验证一个 epoch，返回 acc/loss/dict / Validate one epoch
+- test: 加载 best_model_path，做整体+逐类指标 / Load best ckpt, compute metrics
+- 全部依赖: gather_targets / gather_probs / gather_sequences (utils)
+
+输入 / Inputs:
+- classifier, attention_layer, hier_encoder, species_encoder: nn.Module
+- train/val/test_dataloader: DataLoader (batch yields (seqs, labels, organs, cells, subcells, species))
+- criterion, optimizer, device, world_size, rank: 训练超参与分布式参数 / Training hparams & DDP context
+- best_model_path: str - 训练好的 checkpoint / Trained checkpoint path
+- num_classes: int, label_encoder: 类别数与标签编码器 / Number of classes & fitted encoder
+
+输出 / Outputs:
+- *_dict: 包含 probs/preds/targets/sequences/attention_weights/embeddings 的字典 / Dict with metrics & data
+- test: 返回 overall_acc, probs, preds, targets, dict / Returns test metrics & data
+
+数据流 / Data Flow:
+1. 每个 batch: batch_converter -> RNA-FM tokens / RNA-FM tokens per batch
+2. fusion: tokens + hier + species + attention -> mil / Fuse to MIL embedding
+3. classifier(mil) -> logits -> loss / classifier -> logits -> loss
+4. DDP: all-reduce loss, all-gather preds/probs/seqs / DDP sync
+5. rank 0 算 acc/loss，broadcast / rank 0 computes and broadcasts
+
+相关文件 / Related Files:
+- 调用 / Calls: torch, torch.nn.functional, sklearn.metrics, embedding.get_rnafm_with_*
+- 被调用 / Called by: main.py
+
+使用示例 / Usage Example:
+    tr_acc, tr_loss, tr_dict = train(classifier, attention_layer, train_loader, ...)
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
+"""

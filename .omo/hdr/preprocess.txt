@@ -1,0 +1,38 @@
+"""
+preprocess_data.py - EvoRMD 原始数据预处理 / Data preprocessing for EvoRMD (T->U, label encoding)
+
+对 RNAdata/*.csv 做最小预处理：把所有 RNA 序列中的 T 替换为 U（适配 RNA-FM 词表），
+用 sklearn.LabelEncoder 把 modType 标签编码为整数；处理后以 pickle 缓存。
+This script applies minimal preprocessing to RNAdata/*.csv: replaces T with U in
+sequences (to match the RNA-FM vocabulary) and uses sklearn.LabelEncoder to map
+modType labels to integers; results are cached as pickle files for fast reload.
+
+功能模块 / Modules:
+- pd.read_csv: 加载 11_NEG_data.csv / Load raw NEG dataset
+- LabelEncoder: 拟合/转换 modType 标签 / Fit and transform modType labels
+- to_pickle: 写出 DataFrame + 标签编码器 / Persist DataFrame + fitted encoder
+
+输入 / Inputs:
+- ../RNAdata/11_NEG_data.csv: raw CSV (sequence, modType, ...)
+
+输出 / Outputs:
+- ../RNAdata/11_NEG_preprocessed_data.pkl: 预处理后 DataFrame / Preprocessed DataFrame
+- ../RNAdata/11_NEG_label_encoder.pkl: 训练好的 LabelEncoder / Fitted LabelEncoder
+
+数据流 / Data Flow:
+1. 读取原始 CSV / Read raw CSV
+2. sequence T -> U 替换 / Replace T with U
+3. LabelEncoder 拟合 modType / Fit LabelEncoder on modType
+4. 写出 pkl 缓存 / Write pickle cache
+
+相关文件 / Related Files:
+- 调用 / Calls: pandas, sklearn.preprocessing.LabelEncoder, pickle
+- 被调用 / Called by: 一次性预处理脚本，main.py 通过 csv 路径直接读取 / One-off script
+
+使用示例 / Usage Example:
+    python model/EvoRMD/Script/preprocess_data.py
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
+"""

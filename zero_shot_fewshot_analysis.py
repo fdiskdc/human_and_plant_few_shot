@@ -1,22 +1,47 @@
 """
-Zero-shot Feature Alignment & Few-shot Trajectory Analysis
+zero_shot_fewshot_analysis.py - 零样本特征对齐与小样本轨迹分析 / Zero-shot Feature Alignment & Few-shot Trajectory Analysis
 
-This script is the main entry point for the few-shot analysis pipeline.
-It performs:
-1. Zero-shot feature alignment between human and plant samples.
-2. Few-shot trajectory analysis using the existing independent binary protocol
-   (Y / m5C / m6A, one-vs-rest on plant classes).
-3. 3-generation (gen3) data visualization (always run alongside plant analysis).
-4. Spatial motif analysis for plant and gen3 data (always run).
+小样本分析流水线主入口:零样本特征对齐 (人类 vs 植物) + 小样本轨迹分析 (Y/m5C/m6A 一对多) +
+3 代数据可视化 + 植物/3代空间 motif 分析。所有结果输出到同一时间戳目录。
+Main entry for few-shot analysis pipeline: zero-shot feature alignment (human vs plant) + few-shot trajectory
+(one-vs-rest on Y/m5C/m6A) + 3gen visualization + spatial motif analysis. All results in same timestamped output dir.
 
-All analysis results are stored in the same timestamped output directory.
+功能模块 / Modules:
+- 零样本特征对齐 / Zero-shot feature alignment
+- 小样本轨迹分析 / Few-shot trajectory analysis
+- 3 代数据可视化 / 3-generation data visualization
+- 空间 motif 分析 / Spatial motif analysis
+- R 脚本调用 / R script invocation
+- main: 主入口 / Main entry point
 
-Outputs are written under output/zero_fewshot_analysis as both PNG and PDF
-whenever figures are generated.
+输入 / Inputs:
+- json/plant_single.json: 配置 / Config
+- checkpoints/best_model.pt: 训练好的模型 / Trained model
+- human3/, plant3/, 3gen/ 数据 / human, plant, 3gen data
+- 命令行参数 / CLI: --config, --layer, --conda_env, --spatial_motif_classes
 
-Usage:
+输出 / Outputs:
+- output/zero_fewshot_analysis/figures/*.pdf, *.png: 图表 / Figures
+- output/zero_fewshot_analysis/data/*.csv, *.json: 数据 / Data
+- 时间戳子目录 / Timestamped subdirectory
+
+数据流 / Data Flow:
+1. 加载配置与模型 / Load config and model
+2. 零样本特征提取 / Zero-shot feature extraction
+3. 小样本轨迹 / Few-shot trajectory
+4. UMAP + motif 分析 / UMAP + motif analysis
+5. 图表 + 数据保存 / Save figures and data
+
+相关文件 / Related Files:
+- 调用 / Calls: utils.fewshot_analysis_*, model.main_model, plot_zero_fewshot_analysis.R
+- 被调用 / Called by: shell scripts, manual CLI
+
+使用示例 / Usage Example:
     python zero_shot_fewshot_analysis.py --config json/plant_single.json --layer attention_output
-    python zero_shot_fewshot_analysis.py --conda_env learn-new --spatial_motif_classes m6A m5C Y
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import argparse

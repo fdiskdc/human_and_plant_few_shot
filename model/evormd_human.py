@@ -1,21 +1,52 @@
-"""
-EvoRMD-style model adapted for the human multi-label RNA classification task.
 
-Architecture:
-    Input: one-hot (Total_Nodes, 4) from PyG batch
-      ↓
-    Reshape: (Batch, 1001, 4)
-      ↓
-    Conv1dEmbedder: Conv1d(4→d_fm, kernel=7) + ReLU + Conv1d(d_fm→d_fm) → (B, 1001, d_fm)
-      ↓
-    TrainableAttention(d_fm): Linear(d_fm, 1) → softmax → (B, 1001)
-      ↓
-    MIL Pooling: weighted sum → (B, d_fm)
-      ↓
-    MulticlassClassifier(d_fm, num_classes, depth): MLP → (B, num_classes)
-      ↓
-    Output: raw logits (B, num_classes) — compatible with BCEWithLogitsLoss
 """
+evormd_human.py - EvoRMD 风格的轻量 CNN+注意力 MIL 分类模型 / EvoRMD-style lightweight CNN+attention MIL classification model
+
+EvoRMD 流水线的人类多标签修饰适配版本。Conv1dEmbedder 替代原 RNA-FM 主干，
+TrainableAttention 实现多示例学习 (MIL) 池化，MulticlassClassifier 用 MLP 头输出
+12 类 logits。前向接口与 model_v3 完全兼容，可直接接入 train.py / test.py。
+A human multi-label adaptation of the EvoRMD pipeline. Conv1dEmbedder replaces the
+original RNA-FM backbone, TrainableAttention provides multiple-instance learning (MIL)
+pooling, and MulticlassClassifier is an MLP head producing 12-class logits. The forward
+interface is fully compatible with model_v3 and plugs into train.py / test.py.
+
+功能模块 / Modules:
+- Conv1dEmbedder: 双层 1D 卷积 + LayerNorm，将 4 维 one-hot 投影到 d_fm 维 token 嵌入 / Two-layer 1D conv + LayerNorm, maps 4-dim one-hot to d_fm-dim token embeddings
+- TrainableAttention: 线性层生成 token 注意力权重 (MIL 池化) / Linear layer producing token attention weights (MIL pooling)
+- MulticlassClassifier: 1/2/3 层 MLP 分类头 (depth 可配) / 1/2/3-layer MLP classification head (configurable depth)
+- EvoRMDForHuman: 端到端 EvoRMD-style 模型，forward 兼容 model_v3 接口 / End-to-end EvoRMD-style model with model_v3-compatible forward
+
+输入 / Inputs:
+- x: (Total_Nodes, 4) 或 (B, 1001, 4) one-hot RNA 序列 (1001nt) / (Total_Nodes, 4) or (B, 1001, 4) one-hot RNA sequence (1001nt)
+- edge_index: (2, E) PyG 边索引 (此模型不使用) / (2, E) PyG edge indices (unused)
+- batch: (Total_Nodes,) 批次分配向量 / (Total_Nodes,) batch assignment vector
+- return_attention: bool 是否返回注意力权重 (广播到 num_task) / bool, return attention weights (broadcast to num_task)
+
+输出 / Outputs:
+- 默认 / Default: logits [B, num_task] / logits [B, num_task]
+- 层级模式 / Hierarchical: (logits_12 [B,12], logits_4 [B,4]) 派生自 4 组 max-pool / (logits_12 [B,12], logits_4 [B,4]) derived via 4-group max-pool
+- return_attention=True: (logits, attn_per_task [B,num_task,1001]) 或 5 元组 / (logits, attn_per_task [B,num_task,1001]) or 5-tuple
+
+数据流 / Data Flow:
+1. (B, 1001, 4) one-hot 通过 Conv1dEmbedder 编码为 (B, 1001, d_fm) token 嵌入 / one-hot encoded to (B, 1001, d_fm) tokens
+2. TrainableAttention 输出 (B, 1001) 注意力权重，加权求和得到 (B, d_fm) 池化向量 / TrainableAttention produces (B, 1001) weights, weighted sum yields (B, d_fm) pool
+3. MulticlassClassifier (MLP) 输出 (B, num_task) 12 类 logits / MulticlassClassifier (MLP) outputs (B, num_task) 12-class logits
+4. 若 hierarchical=True，则通过 4 组 max-pool 派生 (B, 4) 组级 logits / If hierarchical=True, derive (B, 4) group-level logits via 4-group max-pool
+
+相关文件 / Related Files:
+- 调用 / Calls: torch, torch.nn, torch.nn.functional / torch, torch.nn, torch.nn.functional
+- 被调用 / Called by: train_human_evormd.py, inference_evormd_segmented.py / train_human_evormd.py, inference_evormd_segmented.py
+
+使用示例 / Usage Example:
+    from model.evormd_human import EvoRMDForHuman
+    model = EvoRMDForHuman(num_task=12, d_fm=640, mlp_depth=2, use_hierarchical=True)
+    logits_12, logits_4, attn = model(x, edge_index, batch, return_attention=True)
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
+"""
+
 
 import torch
 import torch.nn as nn

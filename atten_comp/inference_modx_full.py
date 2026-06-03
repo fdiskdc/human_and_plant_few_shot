@@ -1,12 +1,44 @@
 """
-ModX Full-Length Inference — 1001nt Single Pass (No Sliding Window)
+atten_comp/inference_modx_full.py - modX 1001nt全长单次推理 / modX 1001nt Full-Length Single-Pass Inference
 
-Runs modx (BiLSTM + BahdanauAttention) on full 1001nt sequences for selected samples.
-Collects attention weights over all 1001 positions in a single forward pass.
+对 1001nt 全长序列运行 modX (BiLSTM + BahdanauAttention) 单次前向 (无滑动窗口),收集 1001 位置注意力。
+矢量化 one-hot、直接 Data 构造 (无 per-sequence 循环),输出 modx_full_atten.npz。
+Runs modX (BiLSTM + BahdanauAttention) on full 1001nt sequences with single forward (no sliding window).
+Vectorized one-hot, direct Data construction, outputs modx_full_atten.npz.
 
-Optimized: vectorized one-hot, direct Data construction (no per-sequence loop).
+功能模块 / Modules:
+- 矢量化 one-hot 编码 / Vectorized one-hot encoding
+- 直接 Data 构造 / Direct Data construction
+- 1001nt 单次前向 / Single forward pass
+- main: 主入口 / Main entry point
 
-Output: npy/modx_full_atten.npz
+输入 / Inputs:
+- checkpoints/best_modx.pt: PyTorch state_dict / ModX model weights
+- json/modx_inference.json: 推理配置 / Inference config
+- npy/selected_*.npy: 预选序列 / Pre-selected sequences
+- 命令行参数 / CLI: --checkpoint, --config, --output_dir
+
+输出 / Outputs:
+- npy/modx_full_atten.npz: NumPy 压缩格式 / NumPy compressed format
+  * 包含 / Contains: attn_weights [N, 12, 1001], labels [N, 12], seqs [N]
+
+数据流 / Data Flow:
+1. 加载 modX 模型 / Load modX model
+2. 矢量化 one-hot 编码 / Vectorized one-hot encoding
+3. 1001nt 单次前向 / Single forward pass on 1001nt
+4. 收集注意力 / Collect attention
+5. 保存到 npz / Save to npz
+
+相关文件 / Related Files:
+- 调用 / Calls: model.modx_collect_atten, torch_geometric.data.Data
+- 被调用 / Called by: atten_comp/run_attention_comparison_v2.py
+
+使用示例 / Usage Example:
+    python atten_comp/inference_modx_full.py --checkpoint checkpoints/best_modx.pt
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import os

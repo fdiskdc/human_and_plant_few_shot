@@ -1,0 +1,55 @@
+TASK 1: model/ directory bilingual header documentation
+
+DATE: 2026-06-03
+SCOPE: 9 files in /home/dc/vscode/vscode20260406/rgcnformer_sum/model/
+
+FILES DOCUMENTED (9/9):
+  1. /home/dc/vscode/vscode20260406/rgcnformer_sum/model/main_model.py
+     - Replaced existing docstring (lines 2-16) with new bilingual header
+     - Header: RGCNFormer multi-scale class-query model (human 12-class)
+  2. /home/dc/vscode/vscode20260406/rgcnformer_sum/model/multirm.py
+     - Added new bilingual header BEFORE imports
+     - Header: MultIRM baseline BiLSTM+Bahdanau attention model (51nt)
+  3. /home/dc/vscode/vscode20260406/rgcnformer_sum/model/modx.py
+     - Added new bilingual header BEFORE imports
+     - Header: modX baseline BiLSTM+Bahdanau attention model (1001nt)
+  4. /home/dc/vscode/vscode20260406/rgcnformer_sum/model/evormd_human.py
+     - Replaced existing docstring (lines 1-18) with new bilingual header
+     - Header: EvoRMD-style lightweight CNN+attention MIL model
+  5. /home/dc/vscode/vscode20260406/rgcnformer_sum/model/abla_model.py
+     - Replaced existing docstring (lines 2-15) with new bilingual header
+     - Header: MOHE hierarchical class-query head ablation variants
+  6. /home/dc/vscode/vscode20260406/rgcnformer_sum/model/main_model_multirm.py
+     - Replaced existing docstring (lines 1-22) with new bilingual header
+     - Header: RGCNFormer multi-scale class-query model (MultIRM 51nt)
+  7. /home/dc/vscode/vscode20260406/rgcnformer_sum/model/main_model_collect_atten.py
+     - Replaced existing docstring (lines 1-11) with new bilingual header
+     - Header: RGCNFormer variant that collects attention outputs
+  8. /home/dc/vscode/vscode20260406/rgcnformer_sum/model/modx_collect_atten.py
+     - Added new bilingual header BEFORE imports
+     - Header: modX variant that collects context vector + attention
+  9. /home/dc/vscode/vscode20260406/rgcnformer_sum/model/multirm_collect_atten.py
+     - Added new bilingual header BEFORE imports
+     - Header: MultIRM baseline variant that collects context vectors
+
+VERIFICATION:
+  - python -m py_compile run on all 9 files: ALL FILES COMPILE OK
+  - No syntax errors, no import errors introduced
+
+SIZES (bytes):
+  1. main_model.py:                  25117 -> 27650
+  2. multirm.py:                     16929 -> 19922
+  3. modx.py:                         5509 ->  7975
+  4. evormd_human.py:                 7913 -> 10327
+  5. abla_model.py:                  22124 -> 24769
+  6. main_model_multirm.py:          17884 -> 20021
+  7. main_model_collect_atten.py:    16370 -> 18622
+  8. modx_collect_atten.py:           5753 ->  8513
+  9. multirm_collect_atten.py:       17145 -> 20336
+
+RULES FOLLOWED:
+  - All existing docstrings replaced (main_model.py, evormd_human.py, abla_model.py, main_model_multirm.py, main_model_collect_atten.py)
+  - All files starting with imports got new header prepended (multirm.py, modx.py, modx_collect_atten.py, multirm_collect_atten.py)
+  - No code below header was modified; only header replaced/prepended
+  - Bilingual format: every descriptive line has Chinese / English
+  - Each header includes: modules, inputs, outputs, data flow, related files, usage example, author/date/version

@@ -1,0 +1,37 @@
+# ==============================================================================
+# plot_ablation_scatter.R - 消融实验 Params-FLOPs-AUC 散点 / Ablation Params-FLOPs-AUC scatter
+# ==============================================================================
+#
+# 读取 data/ablation_results.csv，将 (query_type, group_query_dim) 组合画在
+# log-log 总参数量-FLOPs 平面上，点的大小映射 best_avg_auc，颜色映射 query_type，
+# 形状映射 group_query_dim；用 geom_text_repel 标注点。
+# Reads data/ablation_results.csv and plots each (query_type, group_query_dim)
+# configuration on a log-log total-params vs FLOPs plane; point size encodes
+# best_avg_auc, color encodes query_type, shape encodes group_query_dim; labels
+# use geom_text_repel to avoid overlap.
+#
+# 功能模块 / Modules:
+# - geom_point (color=query_type, shape=dim, size=AUC): 三重编码散点 / Triple-encoded scatter
+# - geom_text_repel: 名称标注 / Label repel
+# - scale_x_log10 / scale_y_log10: 双对数坐标 / Log-log axes
+#
+# 输入 / Inputs:
+# - data/ablation_results.csv: 消融实验 (params, flops, auc, query_type, dim)
+#
+# 输出 / Outputs:
+# - output/ablation_scatter.png 与 .pdf: 散点图 / Scatter plot
+#
+# 数据流 / Data Flow:
+# 1. 读 ablation_results.csv / Load CSV
+# 2. factor 化 query_type / group_query_dim / Factorize
+# 3. ggplot + 3 重编码 + repel / Triple-encode + repel
+# 4. ggsave / Save
+#
+# 相关文件 / Related Files:
+# - 调用 / Calls: ggplot2, dplyr, scales, ggrepel
+# - 被调用 / Called by: 消融实验流水线 / Ablation experiment pipeline
+#
+# 使用示例 / Usage Example:
+#     Rscript ipynb/plot_ablation_scatter.R
+#
+# ==============================================================================

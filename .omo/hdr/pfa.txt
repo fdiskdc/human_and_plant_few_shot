@@ -1,0 +1,36 @@
+# ==============================================================================
+# plot_flops_auc.R - FLOPs vs AUC 散点/柱状图 / FLOPs vs AUC scatter/bar plot
+# ==============================================================================
+#
+# 读取 data/flops_auc.csv（包含 model, auc, auc_err, flops, flops_err），对各基线
+# （RNAFold / Random / Sequential / Fully Connected / Empty）做 AUC 柱状图和
+# FLOPs 散点图，使用莫兰迪配色与 Times New Roman 字体。
+# Reads data/flops_auc.csv (model, auc, auc_err, flops, flops_err) and produces
+# AUC bar charts and FLOPs scatter plots for each baseline (RNAFold / Random /
+# Sequential / Fully Connected / Empty) using a Morandi palette and Times New Roman.
+#
+# 功能模块 / Modules:
+# - read.csv: 读取 flops_auc.csv / Load flops_auc.csv
+# - chart1: AUC 柱状图（含误差棒）/ AUC bar chart with error bars
+# - chart2: FLOPs 散点 / FLOPs scatter
+#
+# 输入 / Inputs:
+# - data/flops_auc.csv: 模型 AUC + FLOPs 数据 / Per-model AUC and FLOPs
+#
+# 输出 / Outputs:
+# - output/flops_auc_*.png 与 *.pdf: AUC / FLOPs 图表 / AUC / FLOPs figures
+#
+# 数据流 / Data Flow:
+# 1. 读 flops_auc.csv / Load CSV
+# 2. 翻译模型名为英文 / Translate model names to English
+# 3. 构造 AUC 柱状图 + FLOPs 散点 / Build AUC + FLOPs plots
+# 4. ggsave 写 PNG/PDF / Save PNG/PDF
+#
+# 相关文件 / Related Files:
+# - 调用 / Calls: ggplot2, dplyr, showtext
+# - 被调用 / Called by: FLOPs 对比实验流水线 / FLOPs comparison experiment pipeline
+#
+# 使用示例 / Usage Example:
+#     Rscript ipynb/plot_flops_auc.R
+#
+# ==============================================================================

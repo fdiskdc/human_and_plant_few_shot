@@ -1,0 +1,46 @@
+"""
+embedding.py - 层次(organ/cell/subcell)+物种编码与 RNA-FM 融合 / Hierarchical (organ/cell/subcell) + species + RNA-FM embeddings
+
+提供 HierEncoder（organ/cell/subcell 三级元信息编码）+ SpeciesEncoder（物种编码），
+以及 get_rnafm_with_hier_species_before_attention：在 attention 前把 RNA-FM token
+嵌入、层次元信息嵌入、物种嵌入按 token 位置拼接，再做 MIL attention pooling。
+This module provides a HierEncoder (organ/cell/subcellular-location metadata),
+a SpeciesEncoder, and the fusion function that concatenates RNA-FM token
+embeddings with hierarchical and species metadata BEFORE the attention layer,
+then performs MIL attention pooling.
+
+功能模块 / Modules:
+- HierEncoder / build_hier_encoder_from_df: organ/cell/subcell 编码器 / Hierarchical metadata encoder
+- SpeciesEncoder / build_species_encoder_from_df: 物种编码器 / Species encoder
+- get_rnafm_with_hier_species_before_attention: 融合函数（RNA-FM + hier + species + attention）/ Fusion
+- _build_vocab_from_df, _multi_hot_hybrid: 词表与多热+哈希向量 / Vocab & multi-hot+hash vector
+
+输入 / Inputs:
+- df: pd.DataFrame - 包含 organ/cell/subcellular_location/species 列 / With metadata columns
+- sequences: List[str] - RNA 序列（已 T->U）/ RNA sequences (T already replaced with U)
+- rnafm_model, batch_converter: RNA-FM (fm.pretrained.rna_fm_t12) 及其 alphabet
+
+输出 / Outputs:
+- token_concat: (B, L, D_fm+D_hier+D_species) - 融合 token 表示 / Fused token representations
+- mil_embeddings: (B, D_fm+D_hier+D_species) - attention pooling 后的样本级向量 / MIL-pooled vector
+- attention_weights: (B, L) - attention 权重 / Per-token attention weights
+
+数据流 / Data Flow:
+1. 训练集 df 构建 hier/species vocab / Build vocabularies from training set
+2. RNA-FM 编码 token 嵌入 / Encode tokens with RNA-FM
+3. HierEncoder + SpeciesEncoder 编码元信息 / Encode metadata
+4. 沿 L 广播并 concat / Broadcast along L and concatenate
+5. attention -> MIL pooling / Attention-based MIL pooling
+
+相关文件 / Related Files:
+- 调用 / Calls: torch, torch.nn, pandas, hashlib, fm
+- 被调用 / Called by: main.py, train_val_test.py
+
+使用示例 / Usage Example:
+    hier_enc, ov, cv, sv = build_hier_encoder_from_df(train_df, device=device)
+    _, mil, attn = get_rnafm_with_hier_species_before_attention(...)
+
+作者 / RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
+"""

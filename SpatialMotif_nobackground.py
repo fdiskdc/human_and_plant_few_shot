@@ -1,13 +1,41 @@
 #!/usr/bin/env python3
 """
-SpatialMotif_nobackground.py - Visualize "Spatial Motifs" with Top-K Sequence Logos
+SpatialMotif_nobackground.py - 空间修饰基序(无背景)/ Spatial Motif Visualization (No Background)
 
-NEW FEATURE: Hard Zeroing (No Background)
-- Background noise is completely removed (set to 0.0) instead of being faded to grey
-- Foreground features retain their absolute height (no re-normalization)
-- This creates a cleaner, more confident academic visualization with visual impact
+SpatialMotif.py 的无背景变体:硬零 (hard-zero) 处理,只显示有修饰的位点周围序列。
+V2: hard-zero treatment, only displays sequence context around modification sites.
 
-Based on SpatialMotif.py
+功能模块 / Modules:
+- GCN 嵌入提取 / GCN embedding extraction
+- PCA + K-Means 聚类 / PCA + K-Means clustering
+- 序列标志生成 (无背景) / Sequence logo generation (no background)
+- main: 主入口 / Main entry point
+
+输入 / Inputs:
+- human3/seq.npy, human3/1001loc.npy: 人类数据 / Human data
+- checkpoints/best_model.pt: 预训练模型 / Pretrained model
+- 命令行参数 / CLI: --n_clusters, --top_k, --mod_type
+
+输出 / Outputs:
+- motif_logo_clustered_noback/seq_*.png: 无背景聚类序列标志 / No-background clustered sequence logos
+
+数据流 / Data Flow:
+1. 加载数据与模型 / Load data and model
+2. 提取 GCN 嵌入 / Extract GCN embeddings
+3. PCA + K-Means 聚类 / PCA + K-Means clustering
+4. Top-K 序列标志 (无背景) / Top-K sequence logos (no background)
+5. 保存图表 / Save figures
+
+相关文件 / Related Files:
+- 调用 / Calls: dataset.human_motif.Mer100DatasetMotif, model.main_model, logomaker
+- 被调用 / Called by: manual execution
+
+使用示例 / Usage Example:
+    python SpatialMotif_nobackground.py --n_clusters 3 --top_k 10 --mod_type m6A
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import os

@@ -1,0 +1,41 @@
+"""
+utils.py - EvoRMD 分布式训练工具函数 / DDP distributed training utilities for EvoRMD
+
+封装 torch.distributed 常用操作：进程组初始化/销毁、跨 rank 的张量/序列聚合、模块
+解包（DataParallel/DDP）等；并提供训练集类别分布统计等小工具。
+This module wraps common torch.distributed operations: process-group init/teardown,
+cross-rank tensor & sequence gathering, module unwrapping (DDP/DataParallel), and
+also provides class-distribution counting helpers for the training set.
+
+功能模块 / Modules:
+- setup_distributed / cleanup_distributed: 初始化/销毁 NCCL 进程组 / Init/teardown NCCL process group
+- gather_targets / gather_probs / gather_sequences: 跨 rank 聚合 / All-gather tensors or python lists
+- count_class_distribution: 统计 (label) 类别频次 / Count label frequencies in a Dataset
+- unwrap_module / _unwrap_module: 解包 DDP / DataParallel / Strip DDP/DataParallel wrappers
+
+输入 / Inputs:
+- env vars: RANK, WORLD_SIZE, LOCAL_RANK, MASTER_ADDR, MASTER_PORT (NCCL)
+- dataset: torch Dataset whose items are (seq, label, ...)
+
+输出 / Outputs:
+- setup_distributed: (rank, world_size)
+- gather_*: 全局拼接后的 tensor / list / Globally concatenated tensor / list
+
+数据流 / Data Flow:
+1. main.py 调用 setup_distributed() 启动进程组 / main.py calls setup_distributed
+2. 各 rank 训练时调用 gather_* 同步结果 / Each rank gathers results via gather_*
+3. 训练结束后 cleanup_distributed() / cleanup_distributed on exit
+
+相关文件 / Related Files:
+- 调用 / Calls: torch.distributed, torch.nn.parallel.DDP
+- 被调用 / Called by: main.py, train_val_test.py
+
+使用示例 / Usage Example:
+    rank, ws = setup_distributed()
+    ...
+    cleanup_distributed()
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
+"""

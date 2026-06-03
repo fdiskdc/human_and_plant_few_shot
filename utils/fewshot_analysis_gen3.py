@@ -1,8 +1,45 @@
 """
-Few-shot Analysis Gen3 Module
+utils/fewshot_analysis_gen3.py - 3代数据分析 (vs 人类) / 3-Generation Data Analysis (vs Human)
 
-This module contains functions for 3-generation data analysis.
-Includes zero-shot alignment metrics comparing gen3 with human data.
+3 代数据 vs 人类数据分析:对齐指标、联合 UMAP、跨代比较。
+3-generation data vs human data analysis: alignment metrics, joint UMAP, cross-generation comparison.
+
+功能模块 / Modules:
+- 3gen 数据加载 / 3gen data loading
+- 对齐指标计算 / Alignment metrics computation
+- 联合 UMAP / Joint UMAP
+- 跨代比较 / Cross-generation comparison
+- main 分析函数 / Main analysis functions
+
+输入 / Inputs:
+- 3gen/seq.npy, 3gen/12loc.npy: 3gen 数据 / 3gen data
+- human3/seq.npy, human3/12loc.npy: 人类数据 / Human data
+- features: 提取的特征 / Extracted features
+- labels: 标签 / Labels
+
+输出 / Outputs:
+- 对齐指标 / Alignment metrics
+- 联合 UMAP 图 / Joint UMAP plot
+- 跨代比较图 / Cross-generation comparison plots
+
+数据流 / Data Flow:
+1. 加载 3gen + 人类数据 / Load 3gen + human data
+2. 提取特征 / Extract features
+3. 对齐 + UMAP / Alignment + UMAP
+4. 跨代比较 / Cross-generation comparison
+5. 保存图表 / Save plots
+
+相关文件 / Related Files:
+- 调用 / Calls: utils.fewshot_analysis_constants, sklearn, umap
+- 被调用 / Called by: zero_shot_fewshot_analysis.py
+
+使用示例 / Usage Example:
+    from utils.fewshot_analysis_gen3 import run_gen3_analysis
+    run_gen3_analysis(features, labels)
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import csv

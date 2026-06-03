@@ -1,6 +1,38 @@
 """
-12loc 标签矩阵深度审计脚本
-审计 npy/3gen/12loc.npy 的内部结构、修饰共存性与分布
+utils/audit_12loc_structure.py - 12类标签矩阵深度审计 / 12-class Label Matrix Deep Audit
+
+对 npy/3gen/12loc.npy 进行 12 类标签矩阵的深度审计:共现矩阵、列激活统计。
+Deep audit of 12-class label matrix from npy/3gen/12loc.npy: co-occurrence matrix, column activation statistics.
+
+功能模块 / Modules:
+- 共现矩阵 / Co-occurrence matrix
+- 列激活统计 / Column activation stats
+- 类别相关性 / Class correlation
+- main: 主入口 / Main entry point
+
+输入 / Inputs:
+- npy/3gen/12loc.npy: 12 类多热标签 / 12-class multi-hot labels
+
+输出 / Outputs:
+- 终端详细报告 / Detailed terminal report
+- 可选图表 (PNG/PDF) / Optional plots
+
+数据流 / Data Flow:
+1. 加载 12loc 矩阵 / Load 12loc matrix
+2. 计算共现 / Compute co-occurrence
+3. 列激活统计 / Column activation stats
+4. 输出报告 / Output report
+
+相关文件 / Related Files:
+- 调用 / Calls: numpy
+- 被调用 / Called by: manual execution
+
+使用示例 / Usage Example:
+    python -m utils.audit_12loc_structure
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import numpy as np

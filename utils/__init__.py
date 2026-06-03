@@ -1,13 +1,34 @@
 """
-Utils package for RNA Multi-label Classification Training
+utils/__init__.py - Utils 包初始化与符号重导出 / Utils Package Init & Symbol Re-export
 
-This package contains helper functions for:
-- Multi-label disjoint data split
-- Smoothed class weighting
-- Evaluation metrics calculation
-- Model checkpointing
-- Tensorboard logging
-- Batch sampling for imbalanced data
+RGCNFormer 项目的 utils 包入口:从所有 utils 子模块重导出公共符号供外部直接导入。
+Utils package entry: re-exports all public symbols from utils submodules for direct external import.
+
+功能模块 / Modules:
+- 符号重导出 / Symbol re-export
+- 包级文档 / Package-level documentation
+
+输入 / Inputs:
+- 无 (包初始化) / None (package init)
+
+输出 / Outputs:
+- 可导入符号: setup_logging, load_config, save_checkpoint, etc.
+- 所有 utils 公共 API / All utils public API
+
+数据流 / Data Flow:
+1. 导入子模块 / Import submodules
+2. 重导出符号 / Re-export symbols
+
+相关文件 / Related Files:
+- 调用 / Calls: utils.common, utils.metrics, utils.logging, utils.few_shot 等
+- 被调用 / Called by: 几乎所有项目脚本 (from utils import ...)
+
+使用示例 / Usage Example:
+    from utils import setup_logging, load_config, save_checkpoint, MOD_NAMES
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 # Import all constants

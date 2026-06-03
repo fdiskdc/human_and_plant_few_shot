@@ -1,12 +1,45 @@
 """
-3x3 Training Analysis Script for Human-to-Plant Zero-Shot Transfer
-Refactored to 3 independent binary classification tasks (one-vs-rest)
+3x3.py - 人类到植物零样本迁移3x3训练分析 / Human-to-Plant Zero-Shot 3x3 Training Analysis
 
-Key Changes:
-1. Each target modification (Y/m5C/m6A) becomes an independent binary task
-2. Human: per-class one-vs-rest with 1:1 balanced train/test
-3. Plant: per-class plant positives + matched zero negatives with 1:1 balance
-4. Three separate models/training processes, one per task
+3 个独立二分类任务 (one-vs-rest) 的人类到植物零样本迁移训练。每个目标修饰 (Y/m5C/m6A) 成为独立二分类任务。
+人类:每类一对多 1:1 平衡,植物:每类植物正样本 + 匹配的零背景负样本 1:1 平衡。
+3 independent binary tasks (one-vs-rest) for human-to-plant zero-shot transfer. Each target modification
+becomes an independent binary task with 1:1 balance.
+
+功能模块 / Modules:
+- 3 个独立模型训练 / 3 independent model training
+- 人类 1:1 一对多 / Human 1:1 one-vs-rest
+- 植物正样本 + 零背景 / Plant positives + zero background
+- 评估指标 / Evaluation metrics
+- main: 主入口 / Main entry point
+
+输入 / Inputs:
+- json/human_plant_3x3.json: 训练配置 / Training config
+- human3/seq.npy, plant3/seq.npy: 人类与植物数据 / Human and plant data
+- 命令行参数 / CLI: --config, --gpu, --seed
+
+输出 / Outputs:
+- checkpoints/3x3_y.pt, 3x3_m5c.pt, 3x3_m6a.pt: 3 个模型 / 3 models
+- logs/3x3_*/results.json: 评估结果 / Evaluation results
+- Spearman/Pearson 相关性 / Spearman/Pearson correlations
+
+数据流 / Data Flow:
+1. 加载人类与植物数据 / Load human and plant data
+2. 初始化 3 个模型 / Init 3 models
+3. 独立二分类训练 / Independent binary training
+4. 零样本评估 / Zero-shot evaluation
+5. 人类-植物相关性 / Human-plant correlation
+
+相关文件 / Related Files:
+- 调用 / Calls: model.main_model, dataset.{human,plant,plant_single}, scipy.stats
+- 被调用 / Called by: shell scripts, manual CLI
+
+使用示例 / Usage Example:
+    python 3x3.py --config json/human_plant_3x3.json --gpu 0
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import os

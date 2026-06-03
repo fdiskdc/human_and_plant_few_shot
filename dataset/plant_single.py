@@ -1,4 +1,65 @@
 """
+plant_single.py - 植物+零背景组合二分类数据集 / Plant + Zero Background Combined Binary Classification Dataset
+
+本模块将 Plant 数据 (正样本) 与 Zero 数据 (负样本/背景) 组合为虚拟索引的二分类数据集。
+索引 0..N-1 返回 Plant 样本 (正), N..M 返回 Zero 样本 (负)。提供 Zero 数据集的训练/测试
+确定性切分 (避免数据泄漏)。Plant 与 Zero 二级结构缓存分离存储,便于复用已有的 plant 缓存。
+This module combines Plant data (positives) and Zero data (negatives/background) into a virtual
+indexed binary classification dataset. Indices 0..N-1 return Plant samples (positives), N..M
+return Zero samples (negatives). Provides deterministic Zero train/test split to prevent data
+leakage. Plant and Zero secondary structure caches are stored separately.
+
+功能模块 / Modules:
+- PlantSingleDataset: PyG Dataset类,虚拟索引组合 Plant + Zero 数据用于二分类 / PyG Dataset class combining Plant+Zero for binary classification
+- get_zero_split: 确定性切分 Zero 数据集为 train/test 池 (默认 test_ratio=0.2) / Deterministic Zero train/test split
+- get_plant_indices_by_class: 获取含特定 class 的 Plant 样本全局索引 / Get global indices of Plant samples with target class
+- precompute_zero_structures: 仅预计算 Zero 数据的二级结构,保存到 zero_batch_cache.npz / Precompute Zero structures only, save to zero_batch_cache.npz
+- y_12class property: 无缝拼接 Plant 与 Zero 12类标签为 (total_samples, 12) / Seamless concatenation property
+
+输入 / Inputs:
+- plant_dir/seq.npy: NumPy字节数组, 形状 (N_plant, 1001) |S1 - Plant RNA序列 / Plant RNA sequences
+- plant_dir/12loc.npy: NumPy int8数组, 形状 (N_plant, 12) - 12类多标签 / 12-class multi-labels
+- plant_dir/4loc.npy: NumPy int8数组, 形状 (N_plant, 4) - 4类组标签 / 4-class group labels
+- plant_dir/1001loc.npy: NumPy int8数组, 形状 (N_plant, 1001) - 位点级标签 (可选) / Optional site-level labels
+- zero_dir/zero_seq.npy: NumPy字节数组, 形状 (N_zero, 1001) - Zero RNA序列 / Zero RNA sequences
+- zero_dir/zero_label12.npy: NumPy int8数组, 形状 (N_zero, 12) - Zero 12类标签 (通常全0) / Zero 12-class labels (usually all-zero)
+- zero_dir/zero_label4.npy: NumPy int8数组, 形状 (N_zero, 4) - Zero 4类组标签 / Zero 4-class group labels
+- zero_dir/zero_label1001.npy: NumPy int8数组 (可选) / Optional
+- 缓存文件 / Cache files: plant_structures_cache.npz (Plant), zero_batch_cache.npz (Zero) - 分离存储 / Stored separately
+- 配置文件 / Config: LINEARFOLD_PATH, cache_dir='npy/cache' - 路径与缓存 / Path and cache
+
+输出 / Outputs:
+- PyG Data对象 / PyG Data objects: x=(1001,4) one-hot, edge_index=(2,E) 边索引, y=(1,12) 12类, y_4class=(1,4) 4类, y_site=(1001,) 位点级 (或全0) / x: one-hot; edge_index: edges; y: 12-class; y_4class: 4-class; y_site: site-level (or all-zero)
+- 附加字段 / Extra fields: is_plant (bool), real_idx (int), seq_str (str) - 用于来源追踪 / Source tracking
+- Zero切分 / Zero split: (zero_train_global, zero_test_global) - 训练/测试全局索引 / Train/test global indices
+
+数据流 / Data Flow:
+1. 加载 Plant 数据 / Load Plant: mmap_mode='r' 加载 plant_dir 下的 npy 数据 / Load plant npy data
+2. 加载 Zero 数据 / Load Zero: mmap_mode='r' 加载 zero_dir 下的 npy 数据 / Load zero npy data
+3. 预加载缓存 / Preload caches: 加载 plant_structures_cache.npz 与 zero_batch_cache.npz / Load both caches
+4. 虚拟索引 / Virtual indexing: 0..num_plant-1 -> Plant, num_plant..total-1 -> Zero / 0..N-1 Plant, N..M Zero
+5. __getitem__ 路由 / __getitem__ routing: 根据 idx 范围分别取 Plant 或 Zero 数据,组装 PyG Data / Route to Plant/Zero based on idx range
+6. y_12class property / y_12class property: 拼接 np.concatenate([plant_y12, zero_y12], axis=0) / Concatenate Plant and Zero labels
+
+相关文件 / Related Files:
+- 调用 / Calls: torch.utils.data.Dataset, torch_geometric.data.Data, numpy/pickle, human.py (复用常量) / Reuses from human.py
+- 被调用 / Called by: 3x3.py, 3x3_2.py, fewshot_plant_3way_independent.py, utils/few_shot.py, utils/fewshot_analysis_zeroshot.py
+
+使用示例 / Usage Example:
+    from dataset.plant_single import PlantSingleDataset
+    dataset = PlantSingleDataset(plant_dir='plant', zero_dir='npy/zero', preload_cache=True)
+    print(f"Total: {len(dataset)} (Plant: {dataset.num_plant}, Zero: {dataset.num_zero})")
+    sample = dataset[0]  # Returns Plant sample
+    print(f"is_plant: {sample.is_plant}")  # True for 0..num_plant-1
+    # Get Zero train/test split
+    zero_train, zero_test = dataset.get_zero_split(test_ratio=0.2, seed=42)
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
+"""
+
+"""
 Plant + Zero Combined Dataset for Single-Class Binary Classification
 
 This module combines the Plant dataset (Positives) and the Zero dataset (Negatives/Background)

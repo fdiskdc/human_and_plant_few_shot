@@ -1,3 +1,53 @@
+
+"""
+multirm.py - MultIRM 基线 BiLSTM+Bahdanau 注意力模型 (51nt窗口) / MultIRM baseline BiLSTM+Bahdanau attention model (51nt window)
+
+实现 RNA 多标签修饰分类的基线模型族 (NaiveNet, NaiveNet_v1, NaiveNet_v2, model_v3)，
+组合 1D CNN、BiLSTM 和 Bahdanau 注意力。model_v3 是与 train.py 接口兼容的主基线，
+支持 12 类多标签输出和可选的 4 类层级分组。
+Contains several baseline variants for multi-label RNA modification classification,
+combining 1D CNN, BiLSTM, and Bahdanau attention. The model_v3 class is the primary
+baseline that matches the train.py interface and supports 12-class multi-label output
+with optional 4-class hierarchical grouping.
+
+功能模块 / Modules:
+- NaiveNet: 纯 CNN 基线 (无 LSTM) / Pure CNN baseline (no LSTM)
+- NaiveNet_v1: CNN + BiLSTM + Bahdanau Attention 基线 / CNN + BiLSTM + Bahdanau attention baseline
+- NaiveNet_v2: CNN + BiLSTM + Flatten+FC 基线 / CNN + BiLSTM + Flatten+FC baseline
+- BahdanauAttention: 经典 Bahdanau 加性注意力 (h*W + context) / Classical Bahdanau additive attention
+- model_v3: 与 train.py 兼容的 BiLSTM + Bahdanau 主基线 / train.py-compatible BiLSTM + Bahdanau primary baseline
+
+输入 / Inputs:
+- x: (B, 4, 51) 或 (Total_Nodes, 4) one-hot RNA子序列 (51nt) / (B, 4, 51) or (Total_Nodes, 4) one-hot RNA subsequence (51nt)
+- edge_index: (2, E) PyG 边索引 (此模型未使用，保留接口兼容) / (2, E) PyG edge indices (unused, kept for interface)
+- batch: (Total_Nodes,) 批次分配向量 / (Total_Nodes,) batch assignment vector
+- return_attention: bool, 是否返回注意力权重 / bool, whether to return attention weights
+
+输出 / Outputs:
+- 默认 / Default: logits [B, num_task] / logits [B, num_task]
+- return_attention=True: (logits [B,12], attn_weights [B,12,51]) 或 (logits_12, logits_4, attn_weights) 层级模式 / (logits [B,12], attn_weights [B,12,51]) or (logits_12, logits_4, attn_weights) hierarchical mode
+- return_attention=False 层级: (logits_12, logits_4, None) / (logits_12, logits_4, None)
+
+数据流 / Data Flow:
+1. one-hot 子序列通过 3 层 1D CNN 提取局部特征 (51->36->18 等) / one-hot subsequence passes through 3-layer 1D CNN for local features
+2. CNN 特征 reshape 为 (B, Seq, Feat) 后送入 BiLSTM / CNN features reshaped to (B, Seq, Feat) and fed to BiLSTM
+3. 最后隐藏态 h_n 与 BiLSTM 输出经 Bahdanau 注意力汇聚为上下文向量 / Last hidden state h_n and BiLSTM output aggregated by Bahdanau attention into context vector
+4. 上下文向量经每类独立的 FC 头输出 12 个二分类 logits / Context vector through per-class FC heads outputs 12 binary logits
+
+相关文件 / Related Files:
+- 调用 / Calls: torch, torch.nn, numpy / torch, torch.nn, numpy
+- 被调用 / Called by: train_human_multirm.py, train_multirm_dataset.py, test_multirm_4class.py, test_multirm_oversampling.py, inference_multirm_segmented.py, collect_multirm_atten.py / train_human_multirm.py, train_multirm_dataset.py, test_multirm_4class.py, test_multirm_oversampling.py, inference_multirm_segmented.py, collect_multirm_atten.py
+
+使用示例 / Usage Example:
+    from model.multirm import model_v3
+    model = model_v3(num_task=12, use_hierarchical=True)
+    logits, logits_4, attn = model(x, edge_index, batch, return_attention=True)
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
+"""
+
 import torch
 import numpy as np
 from torch import nn

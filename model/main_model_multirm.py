@@ -1,25 +1,49 @@
+
 """
-RNA_ClassQuery_Model for MultIRM - Multi-scale Class-Query Classification Model
+main_model_multirm.py - RGCNFormer 多尺度类查询模型 (MultIRM 51nt窗口) / RGCNFormer multi-scale class-query model (MultIRM 51nt window)
 
-This module implements main model for MultIRM 12-class multi-label classification
-with 4-class hierarchical grouping.
+为 MultIRM 数据集定制的 RGCNFormer 主模型。序列长度固定为 51nt，类别与组层级定义：
+A (Am/m1A/m6A/m6Am/AtoI)、C (Cm/m5C)、G (Gm/m7G)、U (Um/m5U/Psi)。
+使用层级 HierarchicalClassQueryHeadPooling (内置 group_to_class_indices，非外部导入)。
+A MultIRM-dataset-tailored RGCNFormer. Sequence length fixed at 51nt with the canonical
+4-group-to-12-class hierarchy (A/C/G/U). Uses an inlined HierarchicalClassQueryHeadPooling
+with embedded group_to_class_indices (no external GROUP_TO_CLASS_INDICES dependency).
 
-The 4-class grouping rule:
-- A (Adenine): m6A, m1A, m6Am, Am, AtoI
-- C (Cytosine): m5C, Cm
-- G (Guanine): m7G, Gm
-- U (Uracil): m5U, Psi (Ψ), Um
+功能模块 / Modules:
+- ParallelCNNBlock: 多尺度并行 1D CNN (1/3/5/7 核, 51nt 序列) / Multi-scale parallel 1D CNN (kernels 1/3/5/7, 51nt sequences)
+- GCNBlock: 残差图卷积块 (多层 GCNConv + LayerNorm) / Residual GCN block (multi-layer GCNConv + LayerNorm)
+- HierarchicalClassQueryHeadPooling: 内嵌的 4-组到 12-类层级查询头 (MultIRM 专属组映射) / Inlined 4-group-to-12-class hierarchical query head (MultIRM-specific group mapping)
+- RNA_ClassQuery_Model: 端到端 MultIRM 模型 / End-to-end MultIRM model
 
-The model combines:
-1. Parallel CNN for multi-scale local feature extraction
-2. GCN for graph-structured feature propagation
-3. Class-Query attention for per-class prediction
+输入 / Inputs:
+- x: (B, 51, 4) 或 (Total_Nodes, 4) one-hot 51nt 子序列 / (B, 51, 4) or (Total_Nodes, 4) one-hot 51nt subsequence
+- edge_index: (2, E) PyG 边索引 / (2, E) PyG edge indices
+- batch: (Total_Nodes,) 批次分配向量 / (Total_Nodes,) batch assignment vector
 
-Sub-modules:
-- ParallelCNNBlock: Multi-scale CNN feature extraction
-- GCNBlock: Graph Convolutional Network block
-- HierarchicalClassQueryHeadPooling: Hierarchical head with Group-to-Class derivation
+输出 / Outputs:
+- return_attention=False: (logits_12 [B,12], logits_4 [B,4]) / (logits_12 [B,12], logits_4 [B,4])
+- return_attention=True: (logits_12 [B,12], logits_4 [B,4], attn_weights_12 [B,12,51]) / (logits_12 [B,12], logits_4 [B,4], attn_weights_12 [B,12,51])
+
+数据流 / Data Flow:
+1. 51nt one-hot 子序列进入多尺度 CNN 提取 k-mer 局部特征 / 51nt one-hot enters multi-scale CNN for k-mer local features
+2. CNN 输出 reshape 为图节点，经 GCN 残差块进行图结构传播 / CNN output reshaped to graph nodes, propagated through GCN residual block
+3. 内嵌的层级头使用 MultIRM 专属 group_to_class_indices 通过组查询派生 12 类查询 / Inlined hierarchical head uses MultIRM-specific group_to_class_indices to derive 12 class queries
+4. 两个 MHA (12 类 + 4 组) 分别交叉注意力到密集节点特征，输出双层 logits / Two MHAs (12-class + 4-group) cross-attend to dense node features, output dual-level logits
+
+相关文件 / Related Files:
+- 调用 / Calls: torch, torch.nn, torch_geometric.data, torch_geometric.nn.GCNConv / torch, torch.nn, torch_geometric.data, torch_geometric.nn.GCNConv
+- 被调用 / Called by: train_human_multirm.py, train_multirm_dataset.py, test_multirm_4class.py, test_multirm_oversampling.py, inference_multirm_segmented.py / train_human_multirm.py, train_multirm_dataset.py, test_multirm_4class.py, test_multirm_oversampling.py, inference_multirm_segmented.py
+
+使用示例 / Usage Example:
+    from model.main_model_multirm import RNA_ClassQuery_Model
+    model = RNA_ClassQuery_Model(num_classes=12, use_hierarchical=True)
+    logits_12, logits_4 = model(x, edge_index, batch)  # 51nt
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
+
 
 import torch
 import torch.nn as nn

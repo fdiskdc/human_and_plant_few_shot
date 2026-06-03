@@ -1,3 +1,48 @@
+"""
+train_plant.py - 植物3类mRNA修饰多标签分类训练脚本 / Plant 3-class mRNA Modification Multi-Label Classification Training Script
+
+使用 RGCNFormer (RNA_ClassQuery_Model) 在植物数据集 (Y, m5C, m6A 三类) 上训练。
+Trains RGCNFormer (RNA_ClassQuery_Model) on the plant dataset (3 valid classes: Y, m5C, m6A).
+
+功能模块 / Modules:
+- main: 主训练函数 / Main training function
+- 植物专用评估 / Plant-specific evaluation: evaluate_plant_unbalance, evaluate_plant_balanceb
+- 平滑类别权重 / Smoothed class weighting
+- 完整指标记录 / Comprehensive metrics logging
+- TensorBoard + TQDM 监控 / TensorBoard + TQDM monitoring
+
+输入 / Inputs:
+- json/plant.json: JSON 训练配置 / JSON training config
+- plant3/seq.npy: 植物 RNA 序列 / Plant RNA sequences
+- plant3/12loc.npy: 12 类标签 (Y=5, m5C=8, m6A=9 有效) / 12-class labels (3 valid)
+- plant3/1001loc.npy: 位点级标签 / Site-level labels
+- 命令行参数 / CLI: --config, --gpu, --seed
+
+输出 / Outputs:
+- checkpoints/best_plant.pt: 最佳植物模型 / Best plant model
+- logs/plant_*/train_*.log: 训练日志 / Training logs
+- logs/plant_*/results.json: 评估结果 / Evaluation results
+- TensorBoard events: 可视化 / Visualization
+
+数据流 / Data Flow:
+1. 加载植物配置与数据 / Load plant config and data
+2. 划分训练/测试集 / Train/test split
+3. 初始化 RNA_ClassQuery_Model / Init model
+4. 训练 + 植物专用评估 / Training + plant-specific evaluation
+5. 保存最佳模型 / Save best model
+
+相关文件 / Related Files:
+- 调用 / Calls: model.main_model.RNA_ClassQuery_Model, dataset.plant.PlantDataset, utils.{common,metrics,logging}
+- 被调用 / Called by: shell scripts, manual CLI invocations
+
+使用示例 / Usage Example:
+    python train_plant.py --config json/plant.json --gpu 0
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
+"""
+
 import os
 import random
 import json

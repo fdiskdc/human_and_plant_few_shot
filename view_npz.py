@@ -1,3 +1,41 @@
+"""
+view_npz.py - 检查 npy/npz 缓存文件工具 / Inspect npy/npz Cache Files Utility
+
+检查 npy/cache/zero_batch_cache.npz 等缓存文件,验证 edge_indices、node features 等数据完整性。
+Inspects npy/npz cache files (e.g., zero_batch_cache.npz), validating edge_indices and node features integrity.
+
+功能模块 / Modules:
+- inspect_npz: 检查 npz 文件 / Inspect npz file
+- 节点索引验证 (0-1000) / Node index validation (0-1000)
+- edge_indices 分析 / edge_indices analysis
+- main: 主入口 / Main entry point
+
+输入 / Inputs:
+- npy/cache/zero_batch_cache.npz: NumPy 压缩格式 / NumPy compressed format
+- 路径配置: FILE_PATH, MAX_ALLOWED_INDEX / Path config
+
+输出 / Outputs:
+- 终端详细报告 / Detailed terminal report
+- 错误诊断 (节点索引超界) / Error diagnostics (out-of-bounds indices)
+
+数据流 / Data Flow:
+1. 加载 npz 文件 / Load npz file
+2. 验证 keys / Validate keys
+3. 检查 edge_indices 形状 / Check edge_indices shape
+4. 报告节点索引范围 / Report node index range
+
+相关文件 / Related Files:
+- 调用 / Calls: numpy
+- 被调用 / Called by: manual execution for cache inspection
+
+使用示例 / Usage Example:
+    python view_npz.py
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
+"""
+
 import numpy as np
 import os
 import sys

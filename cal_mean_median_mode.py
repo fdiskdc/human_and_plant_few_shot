@@ -1,15 +1,40 @@
 #!/usr/bin/env python3
 """
-统计每个class在每个RNA序列中的修饰位点数量的中位数、平均数和众数
-使用1001loc数据进行统计
+cal_mean_median_mode.py - 12类修饰位点计数统计 (mean/median/mode) / Modification Site Count Statistics
 
-示例解读：
-- 对于m6A: 统计所有有m6A修饰的序列，每个序列有多少个m6A位点
-  - 序列1: 3个m6A位点
-  - 序列2: 1个m6A位点
-  - 序列3: 2个m6A位点
-  - ...
-  然后计算这些数量的平均值、中位数和众数
+统计每类 RNA 修饰在每个序列中的位点数量中位数、平均数和众数,使用 1001loc 数据。
+对于 m6A: 统计所有有 m6A 修饰的序列,每个序列有多少个 m6A 位点,然后计算这些数量的平均值、中位数和众数。
+Statistics of mean, median, mode of modification site counts per class per sequence using 1001loc data.
+
+功能模块 / Modules:
+- 12 类位点数统计 / 12-class site count statistics
+- mean/median/mode 计算 / mean/median/mode computation
+- main: 主入口 / Main entry point
+
+输入 / Inputs:
+- human3/1001loc.npy: 1001 位点级标签 / 1001 site-level labels
+- LABEL_MAPPING from dataset.human
+
+输出 / Outputs:
+- 终端统计输出 / Terminal statistics output
+- att_fig/mean_median_mode_*.png: 可选图表 / Optional figures
+
+数据流 / Data Flow:
+1. 加载位点标签 / Load site labels
+2. 统计每序列每类位点数 / Count sites per class per sequence
+3. 计算 mean/median/mode / Compute mean/median/mode
+4. 输出结果 / Output results
+
+相关文件 / Related Files:
+- 调用 / Calls: numpy, pandas, collections.Counter
+- 被调用 / Called by: manual execution
+
+使用示例 / Usage Example:
+    python cal_mean_median_mode.py
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import numpy as np

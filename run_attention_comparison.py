@@ -1,17 +1,48 @@
-'''
-Author: Chao Deng && chaodeng987@outlook.com
-Date: 2026-05-10 09:49:13
-LastEditors: Chao Deng && chaodeng987@outlook.com
-LastEditTime: 2026-05-10 11:08:14
-FilePath: /rgcnformer_sum/run_attention_comparison.py
-Description: 
-那只是一场游戏一场梦
- 
-https://orcid.org/0009-0009-8520-1656
-DOI: 10.3390/app15158626
-DOI: 10.3390/rs17142354
-Copyright (c) 2026 by ${Chao Deng}, All Rights Reserved. 
-'''
+"""
+run_attention_comparison.py - 长序列注意力对比实验完整流水线 / Long-Sequence Attention Comparison Experiment Pipeline
+
+执行完整流水线:1) 选代表性序列 (top-N by m6A 修饰密度) 2) mRModN 全长 1001nt 推理 3) MultiRM 51nt 滑动窗口
+4) modx 101nt 滑动窗口 5) EvoRMD 41nt 滑动窗口 6) 生成对比图表。
+Executes full pipeline: 1) Select representative sequences 2) mRModN full inference 3) MultiRM/modx/EvoRMD sliding
+window 4) Generate comparison figures.
+
+功能模块 / Modules:
+- 选代表性序列 / Select representative sequences
+- 4 模型注意力推理 / 4-model attention inference
+- 对比图表生成 / Comparison figure generation
+- main: 主入口 / Main entry point
+
+输入 / Inputs:
+- json/human.json: 推理配置 / Inference config
+- 4 个模型 checkpoints / 4 model checkpoints
+- human3/1001loc.npy: m6A 修饰密度 / m6A density
+- 命令行参数 / CLI: --output_dir, --top_n
+
+输出 / Outputs:
+- figs_atten/xxx/seq_XXXX.pdf, seq_XXXX.png: 对比图 / Comparison figures
+- 4 模型 npz 注意力 / 4-model npz attention
+- 时间戳子目录 / Timestamped subdirectory
+
+数据流 / Data Flow:
+1. 选代表性序列 / Select representative sequences
+2. mRModN 全长推理 / mRModN full inference
+3. MultiRM/modx/EvoRMD 滑动窗口推理 / Sliding window inference
+4. 拼接注意力 / Stitch attention
+5. 生成对比图 / Generate comparison figures
+
+相关文件 / Related Files:
+- 调用 / Calls: select_representative_sequences, inference_*, visualize_attention_comparison
+- 被调用 / Called by: shell scripts, manual CLI
+
+使用示例 / Usage Example:
+    python run_attention_comparison.py
+    python run_attention_comparison.py --output_dir figs_atten/my_exp --top_n 50
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
+"""
+
 #!/usr/bin/env python3
 """
 Run All: Long-Sequence Attention Comparison Experiment

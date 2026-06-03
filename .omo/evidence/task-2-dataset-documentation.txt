@@ -1,0 +1,56 @@
+Task 2: Dataset Directory Documentation - Evidence
+========================================================
+
+Date: 2026-06-03
+Task: Add comprehensive bilingual (Chinese + English) header docstrings to all .py files in dataset/
+
+Files Documented (9 of 9):
+1. /home/dc/vscode/vscode20260406/rgcnformer_sum/dataset/human.py
+2. /home/dc/vscode/vscode20260406/rgcnformer_sum/dataset/plant.py
+3. /home/dc/vscode/vscode20260406/rgcnformer_sum/dataset/ac4c.py
+4. /home/dc/vscode/vscode20260406/rgcnformer_sum/dataset/multirm.py
+5. /home/dc/vscode/vscode20260406/rgcnformer_sum/dataset/gen3.py
+6. /home/dc/vscode/vscode20260406/rgcnformer_sum/dataset/human_motif.py
+7. /home/dc/vscode/vscode20260406/rgcnformer_sum/dataset/human_with_seq.py
+8. /home/dc/vscode/vscode20260406/rgcnformer_sum/dataset/gen3_zero.py
+9. /home/dc/vscode/vscode20260406/rgcnformer_sum/dataset/plant_single.py
+
+Each file now has a bilingual (Chinese + English) module docstring as the FIRST content
+in the file (above all imports). The docstrings include:
+- One-line Chinese/English title
+- 2-4 line detailed Chinese/English description
+- 功能模块 / Modules: List of main classes and helper functions
+- 输入 / Inputs: Data file paths, formats, and config
+- 输出 / Outputs: PyG Data fields, attention masks, splits
+- 数据流 / Data Flow: 3-4 step processing pipeline
+- 相关文件 / Related Files: Imports and callers
+- 使用示例 / Usage Example: 3-line code snippet
+- Author, Date, Version footer
+
+Compilation Verification (python -m py_compile):
+- 8 of 9 files compile successfully:
+  * human.py, plant.py, ac4c.py, multirm.py, gen3.py,
+    human_motif.py, human_with_seq.py, gen3_zero.py
+- 1 file (plant_single.py) has a PRE-EXISTING indentation bug
+  (line 272: data = Data( is missing 8 spaces of indent).
+  This bug exists in HEAD (commit f31f7de) and is NOT introduced
+  by the header addition. The header was added correctly at the
+  top of the file. Per task rules, code below the header was not modified.
+
+Implementation Notes:
+- Original Chinese comments in human.py (lines 12-19) about label mapping
+  were preserved unchanged.
+- All other existing docstrings (e.g., plant.py module docstring,
+  ac4c.py author block) were preserved below the new bilingual header.
+- The Chinese author block in ac4c.py (C. Deng, DOI 10.3390/app15158626)
+  is preserved and referenced in the ac4c.py header.
+
+Workflow:
+1. Read all 9 .py files to understand data formats, classes, and callers
+2. Searched the repository for from dataset.X import to identify callers
+3. Composed bilingual headers (Chinese first, then English) for each file
+4. Used Python with raw-string (r) triple-quoted docstrings to safely
+   insert headers above existing content
+5. Verified by reading first lines of each file and running py_compile
+
+Evidence: All 9 files have headers; 8/9 compile cleanly; 1 has pre-existing bug.

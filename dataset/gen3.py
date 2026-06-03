@@ -1,3 +1,56 @@
+"""
+gen3.py - 三代测序(3gen)RNA 12类修饰多标签分类数据集 / 3rd-gen Sequencing RNA 12-class Multi-Label Classification Dataset
+
+本模块加载三代测序 (3gen) 得到的 RNA 序列并执行 12 类细粒度修饰位点预测，结构与 human.py
+基本一致但数据来自三代测序 (PacBio/ONT) 数据集。复用 human.py 的标签体系 (12类) 与
+LinearFold 二级结构预测流程。支持注意力监督 (attn_mask_A/C/G/U) 与位点级标签 (y_site)。
+This module loads 3rd-generation sequencing (PacBio/ONT) RNA sequences for 12-class modification
+site prediction. Structurally similar to human.py, it reuses the label system and LinearFold
+secondary structure pipeline. Supports attention supervision and site-level labels.
+
+功能模块 / Modules:
+- Gen3Dataset: PyG Dataset类,加载npy/3gen目录下的seq/12loc/4loc/1001loc数据 / PyG Dataset class loading data from npy/3gen
+- run_linearfold: 从 human.py 复用 / Reused from human.py
+- build_edge_index_from_structure: 从 human.py 复用 / Reused from human.py
+- LABEL_MAPPING / INDEX_TO_NUCLEOTIDE / MOD_NAMES: 12类修饰标签体系 / 12-class modification label system
+- precompute_all_structures: 多进程预计算所有序列二级结构 / Multiprocess precomputation
+
+输入 / Inputs:
+- npy/3gen/seq.npy: NumPy字节数组, 形状 (N, 1001) |S1 - 3gen RNA序列 / 3rd-gen RNA sequences
+- npy/3gen/1001loc.npy: NumPy int8数组, 形状 (N, 1001) - 1001位点级标签 / Site-level labels
+- npy/3gen/12loc.npy: NumPy int8数组, 形状 (N, 12) - 12类多标签 / 12-class multi-labels
+- npy/3gen/4loc.npy: NumPy int8数组, 形状 (N, 4) - 4类核苷酸组标签 / 4-class nucleotide group labels
+- 配置文件 / Config: LINEARFOLD_PATH, cache_dir='cache/gen3' - 缓存配置 / Cache configuration
+
+输出 / Outputs:
+- PyG Data对象 / PyG Data objects: x=(1001,4) one-hot, edge_index=(2,E) 边索引, y=(1,12) 12类, y_4class=(1,4) 4类, y_site=(1001,) 位点级 / x: one-hot; edge_index: edges; y: 12-class; y_4class: 4-class; y_site: site-level
+- 注意力掩码 / Attention masks: attn_mask_A/C/G/U (1001,) - 4个核苷酸组归一化位点注意力目标 / Per-nucleotide normalized attention targets
+- N字符掩码 / N-mask: attn_mask_N (1001,) - 'N'字符位置 / 'N' character positions
+
+数据流 / Data Flow:
+1. 加载npy / Load npy: 使用mmap_mode='r'加载3gen目录四类数据 / Load all four 3gen npy files via mmap
+2. 字节流one-hot编码 / Byte-to-onehot: 使用 _BYTE_TO_ONEHOT_MAPPING 查表转换为 (1001,4) / Use lookup table for one-hot encoding
+3. LinearFold二级结构 / Secondary structure: 调用 LinearFold 预测二级结构, 构建 edge_index / Predict structure and build edge_index
+4. 提取注意力掩码 / Extract attention masks: 从 full_label 提取 attn_mask_A/C/G/U (归一化为概率分布) / Extract per-nucleotide masks (normalized to probability distribution)
+5. 构建PyG Data / Build PyG Data: 整合所有字段返回 PyG Data 对象 / Integrate all fields into PyG Data
+
+相关文件 / Related Files:
+- 调用 / Calls: torch.utils.data.Dataset, torch_geometric.data.Data, subprocess (LinearFold), numpy/pickle / Standard data utilities
+- 被调用 / Called by: test_gen3.py, utils/train_gen3.py, utils/fewshot_analysis_gen3.py, utils/test_gen3_analyse.py, utils/fewshot_export_helpers.py, utils/fewshot_analysis_spatial_motif.py, utils/audit_12loc_structure.py, utils/check_m6a_data_integrity.py, zero_shot_fewshot_analysis.py, zero_shot_fewshot_extract_only.py
+
+使用示例 / Usage Example:
+    from dataset.gen3 import Gen3Dataset
+    train_set = Gen3Dataset(mode='train', data_dir='npy/3gen')
+    from torch_geometric.loader import DataLoader
+    loader = DataLoader(train_set, batch_size=32, shuffle=True)
+    for batch in loader:
+        x, edge_index, y = batch.x, batch.edge_index, batch.y
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
+"""
+
 import numpy as np
 import torch
 from torch.utils.data import Dataset

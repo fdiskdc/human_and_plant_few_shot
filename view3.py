@@ -1,3 +1,41 @@
+"""
+view3.py - Morandi配色方案与12类修饰可视化工具 / Morandi Color Palette & 12-class Modification Visualization Utilities
+
+为 12 类 RNA 修饰定义 Morandi 莫兰迪配色方案 (12 种柔和色) 和可视化工具函数。
+被 view_human.py、view_human_total.py 等多个可视化脚本复用。
+Defines Morandi color palette (12 muted soft colors) and visualization utility functions for 12-class RNA modifications.
+Reused by view_human.py, view_human_total.py, and other visualization scripts.
+
+功能模块 / Modules:
+- MORANDI_COLORS: 12 种 Morandi 颜色字典 / 12 Morandi colors dict
+- MORANDI_PALETTE: 12 种 Morandi 颜色列表 / 12 Morandi colors list
+- 字体配置 (DejaVu Sans) / Font config
+- 通用绘图工具函数 / Common plotting utilities
+
+输入 / Inputs:
+- 12 类修饰数据 (从其他脚本传入) / 12-class modification data (passed from other scripts)
+
+输出 / Outputs:
+- 颜色方案供其他脚本导入 / Color scheme imported by other scripts
+- 图表样式配置 / Figure style config
+
+数据流 / Data Flow:
+1. 定义 Morandi 配色 / Define Morandi colors
+2. 设置 matplotlib 字体 / Set matplotlib fonts
+3. 导出常量供复用 / Export constants for reuse
+
+相关文件 / Related Files:
+- 调用 / Calls: numpy, matplotlib, seaborn
+- 被调用 / Called by: view_human.py, view_human_total.py, etc.
+
+使用示例 / Usage Example:
+    from view3 import MORANDI_COLORS, MORANDI_PALETTE
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
+"""
+
 import numpy as np
 import os
 import seaborn as sns

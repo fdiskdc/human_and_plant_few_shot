@@ -1,14 +1,41 @@
 """
-Collect Attention Outputs for Human Dataset using MultiRM Model
+collect_multirm_atten.py - 使用MultiRM模型收集人类数据集注意力 / Collect Attention Outputs for Human Dataset using MultiRM Model
 
-This script collects attention outputs (context_vector, attention_weights) for all samples
-in human dataset using the multirm model and saves them to an NPY file.
+使用 MultiRM 模型 (BiLSTM + BahdanauAttention) 对人类数据集中所有样本运行推理,收集 context_vector 和 attention_weights,保存为 NPY 文件。
+Runs MultiRM model (BiLSTM + BahdanauAttention) on all human dataset samples, collecting context_vector and attention_weights, saved as NPY.
 
-Output format (multirm_atten.npy):
-    - context_vector: Context vectors from attention mechanism [num_samples, num_task, hidden_dim]
-    - attention_weights: Attention weights for all classes [num_samples, num_task, seq_len]
-    - label12: 12-class ground truth labels (multilabel) [num_samples, 12]
-    - label4: 4-class ground truth labels (multilabel) [num_samples, 4]
+功能模块 / Modules:
+- MultiRM 注意力收集推理 / MultiRM attention collection inference
+- main: 主入口 / Main entry point
+
+输入 / Inputs:
+- checkpoints/best_multirm.pt: PyTorch state_dict / MultiRM model weights
+- json/multirm_inference.json: 推理配置 / Inference config
+- human3/seq.npy, human3/1001loc.npy, human3/12loc.npy: 人类数据 / Human data
+- 命令行参数 / CLI: --checkpoint, --config, --output
+
+输出 / Outputs:
+- npy/multirm_atten.npy: NumPy 数组 / NumPy array
+  * context_vector: 注意力上下文向量 [N, num_task, hidden_dim] / Attention context vectors
+  * attention_weights: 注意力权重 [N, num_task, seq_len] / Attention weights
+  * label12, label4: 多热标签 / Multi-hot labels
+
+数据流 / Data Flow:
+1. 加载 MultiRM 模型 / Load MultiRM model
+2. 推理 + 注意力收集 / Inference + attention collection
+3. 拼接结果 / Concatenate results
+4. 保存为 npy / Save as npy
+
+相关文件 / Related Files:
+- 调用 / Calls: dataset.human_with_seq.Mer100DatasetWithSeq, model.multirm_collect_atten
+- 被调用 / Called by: analysis pipelines, attention comparison
+
+使用示例 / Usage Example:
+    python collect_multirm_atten.py --checkpoint checkpoints/best_multirm.pt --output npy/multirm_atten.npy
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import os

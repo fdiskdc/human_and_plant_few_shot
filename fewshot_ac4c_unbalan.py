@@ -1,11 +1,44 @@
-
 """
-AC4C Unbalanced Dataset Training Script (PRUNED MODE)
+fewshot_ac4c_unbalan.py - ac4C 非平衡数据集训练脚本(剪枝模式) / AC4C Unbalanced Dataset Training Script (Pruned Mode)
 
-This script implements:
-1. AC4C unbalanced dataset training (Pruned to single class index 6)
-2. Model Pruning: Cuts the model to only compute AC4C queries.
-3. Custom Training/Test Loops: Handles the 1-dim (model) vs 12-dim (label) mismatch.
+ac4C 非平衡数据集训练入口:剪枝 RGCNFormer 主模型,仅计算 ac4C 单类查询 (class index 6)。
+处理模型 1 维输出与 12 维标签的不匹配,使用自定义训练/测试循环。
+AC4C unbalanced training entry: prunes RGCNFormer to compute only the AC4C class query (class index 6).
+Handles 1-dim model output vs 12-dim label mismatch with custom training/test loops.
+
+功能模块 / Modules:
+- 模型剪枝 / Model pruning (only ac4C query)
+- 自定义训练/测试循环 / Custom training/test loops
+- PrettyTable 结果输出 / PrettyTable result output
+- main: 主入口 / Main entry point
+
+输入 / Inputs:
+- json/ac4c_unbalan.json: 训练配置 / Training config
+- ac4c_unbalan/seq.npy, ac4c_unbalan/label.npy: ac4C 非平衡数据 / AC4C unbalanced data
+- 命令行参数 / CLI: --config, --gpu, --seed
+
+输出 / Outputs:
+- checkpoints/best_ac4c_unbalan.pt: 最佳 ac4C 非平衡模型 / Best ac4C unbalanced model
+- logs/ac4c_unbalan_*/results.json: 评估结果 / Evaluation results
+- PrettyTable 输出 / PrettyTable output
+
+数据流 / Data Flow:
+1. 加载配置 / Load config
+2. 加载 ac4C 非平衡数据 / Load ac4C unbalanced data
+3. 初始化剪枝模型 / Init pruned model
+4. 自定义训练循环 / Custom training loop
+5. 评估 + PrettyTable 输出 / Evaluate and PrettyTable output
+
+相关文件 / Related Files:
+- 调用 / Calls: model.main_model.RNA_ClassQuery_Model, dataset.ac4c.AC4CDataset, prettytable
+- 被调用 / Called by: shell scripts, manual CLI
+
+使用示例 / Usage Example:
+    python fewshot_ac4c_unbalan.py --config json/ac4c_unbalan.json --gpu 1
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import os

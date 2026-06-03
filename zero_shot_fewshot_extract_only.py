@@ -1,19 +1,47 @@
 """
-Zero-shot & Few-shot Data Export Pipeline
+zero_shot_fewshot_extract_only.py - 零样本与小样本数据导出流水线 / Zero-shot & Few-shot Data Export Pipeline
 
-This script is a data-only export pipeline that extracts features, computes metrics,
-generates UMAP coordinates, and produces synthetic interpolation points - all 
-exported to structured CSV/JSON files for R visualization.
+数据导出流水线 (无绘图):提取特征、计算指标、生成 UMAP 坐标、合成插值点 — 全部导出为 CSV/JSON 供 R 可视化。
+与 zero_shot_fewshot_analysis.py 的区别:不生成 matplotlib 图表,导出所有中间数据,使用一致的 CSV schema。
+Data-only export pipeline (no plotting): extracts features, computes metrics, generates UMAP, produces interpolation
+points — all exported as structured CSV/JSON for R visualization. No matplotlib figures, exports all intermediate data.
 
-Key differences from zero_shot_fewshot_analysis.py:
-- NO matplotlib figure generation
-- Exports ALL intermediate data to output directory
-- Generates consistent CSV schemas for R consumption
-- Uses existing analysis modules but bypasses their plotting functions
+功能模块 / Modules:
+- 特征提取 / Feature extraction
+- 指标计算 / Metrics computation
+- UMAP 降维 / UMAP dimensionality reduction
+- 合成插值点生成 / Synthetic interpolation point generation
+- CSV/JSON 导出 / CSV/JSON export
+- main: 主入口 / Main entry point
 
-Usage:
+输入 / Inputs:
+- json/plant_single.json: 配置 / Config
+- checkpoints/best_model.pt: 训练好的模型 / Trained model
+- human3/, plant3/, 3gen/ 数据 / human, plant, 3gen data
+- 命令行参数 / CLI: --config, --layer, --conda_env
+
+输出 / Outputs:
+- output/zero_fewshot_extract/figures/*.csv, *.json: 数据导出 / Data export
+- 一致的 schema 供 R 消费 / Consistent schema for R consumption
+- 不生成 PNG/PDF / No PNG/PDF figures
+
+数据流 / Data Flow:
+1. 加载配置与模型 / Load config and model
+2. 提取特征 (hooks) / Extract features (hooks)
+3. 计算指标 + UMAP / Compute metrics + UMAP
+4. 生成插值点 / Generate interpolation points
+5. 导出 CSV/JSON / Export CSV/JSON
+
+相关文件 / Related Files:
+- 调用 / Calls: utils.fewshot_analysis_*, model.main_model
+- 被调用 / Called by: R visualization scripts (plot_zero_fewshot_*.R)
+
+使用示例 / Usage Example:
     python zero_shot_fewshot_extract_only.py --config json/plant_single.json --layer attention_output
-    conda run -n learn python zero_shot_fewshot_extract_only.py --config json/plant_single.json
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import argparse

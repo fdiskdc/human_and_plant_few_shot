@@ -1,3 +1,44 @@
+"""
+test_gen3.py - 3gen数据集全量评估 / 3rd-Generation Dataset Full-Dataset Evaluation
+
+对 3gen (PacBio/ONT) 数据集进行全量评估,计算 12 类分类指标并输出报告。
+Full-dataset evaluation on 3gen (PacBio/ONT) sequencing dataset, computing 12-class classification metrics and report.
+
+功能模块 / Modules:
+- 3gen 推理 / 3gen inference
+- 12 类指标计算 / 12-class metrics computation
+- 详细报告输出 / Detailed report output
+- main: 主入口 / Main entry point
+
+输入 / Inputs:
+- json/gen3.json: 配置 / Config
+- checkpoints/best_model.pt: 预训练模型 / Pretrained model
+- 3gen/seq.npy, 3gen/12loc.npy: 3gen 数据 / 3gen data
+- 命令行参数 / CLI: --config, --checkpoint, --output
+
+输出 / Outputs:
+- logs/gen3_*/results.json: 评估结果 / Evaluation results
+- logs/gen3_*/report.txt: 详细报告 / Detailed report
+
+数据流 / Data Flow:
+1. 加载 3gen 数据 / Load 3gen data
+2. 加载模型 / Load model
+3. 全量推理 / Full inference
+4. 12 类指标 / 12-class metrics
+5. 保存报告 / Save report
+
+相关文件 / Related Files:
+- 调用 / Calls: dataset.gen3.Gen3Dataset, model.main_model, utils.metrics
+- 被调用 / Called by: manual execution
+
+使用示例 / Usage Example:
+    python test_gen3.py --config json/gen3.json --checkpoint checkpoints/best_model.pt
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
+"""
+
 import os
 import random
 import json

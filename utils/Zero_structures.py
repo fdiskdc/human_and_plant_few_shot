@@ -1,19 +1,40 @@
 #!/usr/bin/env python3
 """
-Zero Structures Precomputation Script
+utils/Zero_structures.py - Zero 数据集二级结构预计算 / Zero Dataset Structure Precomputation
 
-This script precomputes RNA secondary structures for the Zero dataset using LinearFold.
-The computed structures are cached to disk for faster loading during training.
+使用 LinearFold 预计算 Zero 数据集的 RNA 二级结构,缓存到磁盘以加速训练。
+Uses LinearFold to precompute RNA secondary structures for the Zero dataset, cached to disk for faster training.
 
-Usage:
-    python Zero_structures.py --batch_size 100 --num_workers 4
+功能模块 / Modules:
+- LinearFold 调用 / LinearFold invocation
+- 多进程预计算 / Multiprocessing precomputation
+- 缓存保存到 NPZ / Cache saved to NPZ
+- main: 主入口 / Main entry point
 
-Options:
-    --zero_dir: Directory containing zero data (default: npy/zero)
-    --cache_dir: Directory for cache files (default: npy/cache)
-    --batch_size: Batch size for LinearFold processing (default: 100)
-    --num_workers: Number of worker processes (default: CPU count)
-    --linearfold_path: Path to LinearFold executable
+输入 / Inputs:
+- zero/zero_seq.npy: Zero RNA 序列 / Zero RNA sequences
+- 命令行参数 / CLI: --batch_size, --num_workers
+
+输出 / Outputs:
+- npy/cache/zero_batch_cache.npz: 二级结构缓存 / Structure cache
+  * 包含 / Contains: structures (list), edge_indices (object array)
+
+数据流 / Data Flow:
+1. 加载 Zero 序列 / Load Zero sequences
+2. 多进程调用 LinearFold / Multiprocess LinearFold
+3. 构建 edge_indices / Build edge_indices
+4. 缓存到 NPZ / Cache to NPZ
+
+相关文件 / Related Files:
+- 调用 / Calls: numpy, LinearFold executable, multiprocessing
+- 被调用 / Called by: train_*.py with Zero data, dataset.plant_single
+
+使用示例 / Usage Example:
+    python -m utils.Zero_structures --batch_size 100 --num_workers 4
+
+作者 / Author: RGCNFormer Project
+日期 / Date: 2026-06-03
+版本 / Version: 1.0
 """
 
 import numpy as np

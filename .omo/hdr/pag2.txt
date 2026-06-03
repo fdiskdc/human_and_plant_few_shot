@@ -1,0 +1,35 @@
+# ==============================================================================
+# plot_ablation_grouped_v2.R - 消融 AUC + Params 双图版 (v2) / Ablation AUC + Params two-chart v2
+# ==============================================================================
+#
+# v2 版本：把 AUC 与 Params 分别画成两张独立的 ggplot 面板（共享 query_type 颜色），
+# 便于论文中并排排版；相比 v1 不再共用 Y 轴。
+# Version 2: draws AUC and Params as two independent ggplot panels that share the
+# query_type color mapping, easier to lay out side-by-side in papers. Drops the
+# shared Y axis used in v1.
+#
+# 功能模块 / Modules:
+# - p_auc: AUC × 100 柱状图 (Times New Roman) / AUC bar chart
+# - p_params: log10(Params) 柱状图 / log10 params bar chart
+# - showtext: 字体加载 / Font loading
+#
+# 输入 / Inputs:
+# - data/ablation_results.csv: 消融结果 / Ablation results
+#
+# 输出 / Outputs:
+# - output/ablation_grouped_v2_*.png / .pdf: 两张并排面板 / Two side-by-side panels
+#
+# 数据流 / Data Flow:
+# 1. 读 CSV / Load CSV
+# 2. factor 化 / Factorize
+# 3. 画 p_auc / p_params / Build p_auc / p_params
+# 4. ggsave / Save
+#
+# 相关文件 / Related Files:
+# - 调用 / Calls: ggplot2, dplyr, showtext
+# - 被调用 / Called by: 消融实验流水线 / Ablation experiment pipeline
+#
+# 使用示例 / Usage Example:
+#     Rscript ipynb/plot_ablation_grouped_v2.R
+#
+# ==============================================================================

@@ -1,3 +1,39 @@
+"""
+model/__init__.py - model 包初始化 / model 包初始化 (model package init)
+
+model 包初始化:model package init。
+model package init.
+
+功能模块 / Modules:
+- 无(包标记文件)/ None, package marker
+- (详见源代码 / see source code)
+
+输入 / Inputs:
+- 命令行参数(超参、数据路径等)/ CLI args (hyperparams, data paths, etc.)
+- 配置文件(json/yaml) / config files (json/yaml)
+- 上一阶段产物(.npy/.pt/.json)/ prior-stage outputs
+
+输出 / Outputs:
+- checkpoint(.pt) / 指标(.json) / 图(.png/.pdf) / 注意力文件
+- checkpoints (.pt) / metrics (.json) / figures (.png/.pdf) / attention files
+
+数据流 / Data Flow:
+1. 读数据 → 构建 DataLoader / Load data → build DataLoader
+2. 实例化模型 / Instantiate model
+3. 训练/推理/分析主循环 / train/inference/analysis main loop
+4. 保存产物 / save outputs
+
+相关文件 / Related Files:
+- 调用 / Calls: model/*.py
+- 被调用 / Called by: model/*.py 相关的训练/推理/分析脚本 / related training/inference/analysis scripts
+
+使用示例 / Usage Example:
+    python model/__init__.py --epochs 40 --batch-size 32
+
+作者 / Author: 项目组 / Project Team
+版本 / Version: 1.0
+"""
+
 '''
 Author: Chao Deng && chaodeng987@outlook.com
 Date: 2026-01-11 10:37:11

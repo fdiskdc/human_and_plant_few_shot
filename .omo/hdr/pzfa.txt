@@ -1,0 +1,39 @@
+# ==============================================================================
+# plot_zero_fewshot_analysis.R - 零样本/少样本结果主可视化 / Main R visualization for zero/few-shot (plant + gen3)
+# ==============================================================================
+#
+# 读取 Python 端导出的零样本与少样本结果 CSV，结合 plant 与 3-generation (gen3) 数据，
+# 生成多面板、出版物级别的 ggplot2 图表，使用高对比度配色（m6A/m5C/Y）与可栅格化
+# 的散点（ggrastr），适配 PNG/PDF 双输出。
+# Reads Python-exported zero-shot and few-shot result CSVs and produces multi-panel,
+# publication-quality ggplot2 figures covering both plant and 3-generation (gen3)
+# data. Uses a high-contrast palette (m6A/m5C/Y) and optional point rasterization
+# (ggrastr) for both PNG and PDF outputs.
+#
+# 功能模块 / Modules:
+# - rasterise_or_not: 智能栅格化 geom_point（ggrastr 可用时）/ Smart rasterization of geom_point
+# - HIGH_CONTRAST_MOD_COLORS / HIGH_CONTRAST_HUMAN_MOD_COLORS: 修饰配色 / Modification palettes
+# - 多 panel 绘图函数: 零样本/少样本曲线 + 散点 / Multi-panel plotters for zero/few-shot
+# - theme_paper: 自定义主题 / Custom theme
+#
+# 输入 / Inputs:
+# --input_dir: dir - Python 导出的 CSV/JSON 目录 / Python-exported CSV/JSON directory
+# --output_dir: dir - 图表输出目录 / Figure output directory
+#
+# 输出 / Outputs:
+# --output_dir/*.png 与 *.pdf: 出版物级图表 / Publication-quality figures
+#
+# 数据流 / Data Flow:
+# 1. 解析 --input_dir / --output_dir CLI 参数 / Parse CLI args
+# 2. 读 CSV 拼成长表（plant + gen3）/ Read CSVs and pivot to long form
+# 3. 按修饰/物种分面绘图 / Plot per modification / species facets
+# 4. 写 PNG+PDF / Write PNG+PDF
+#
+# 相关文件 / Related Files:
+# - 调用 / Calls: ggplot2, dplyr, tidyr, readr, scales, forcats, viridis, ggrastr
+# - 被调用 / Called by: Python zero_shot_fewshot_*.py 流水线生成 CSV 后手动调用 / Manually invoked
+#
+# 使用示例 / Usage Example:
+#     Rscript plot_zero_fewshot_analysis.R --input_dir output/zero_fewshot --output_dir output/figures
+#
+# ==============================================================================
