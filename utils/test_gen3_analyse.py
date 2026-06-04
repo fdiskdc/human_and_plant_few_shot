@@ -30,7 +30,7 @@ utils/test_gen3_analyse.py - 3gen 推理 + Top-K 定位分布图 / 3gen Inferenc
 5. 绘图 + 保存 / Plot + save
 
 相关文件 / Related Files:
-- 调用 / Calls: dataset.gen3.Gen3Dataset, model.main_model, utils.{common,metrics}
+- 调用 / Calls: dataset.gen3.Gen3Dataset, model.mrmodn, utils.{common,metrics}
 - 被调用 / Called by: manual execution
 
 使用示例 / Usage Example:
@@ -57,7 +57,7 @@ os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 from torch_geometric.loader import DataLoader
 warnings.filterwarnings('ignore')
 
-from model.main_model import RNA_ClassQuery_Model
+from model.mrmodn import RNA_ClassQuery_Model
 from dataset.gen3_zero import Gen3ZeroDataset, LABEL_MAPPING, MOD_NAMES
 from utils import (
     setup_logging,

@@ -1,44 +1,43 @@
 """
-utils/train_gen3.py - 3gen数据集训练流水线 / 3rd-Generation Dataset Training Pipeline
+train_human.py - 人类12类mRNA修饰多标签分类训练主脚本 / Human 12-class mRNA Modification Multi-Label Classification Training Script
 
-3gen (PacBio/ONT) 数据集主训练流水线:数据划分、平衡采样、Unbalance/BalanceB 评估、TensorBoard、小样本基准测试。
-3gen (PacBio/ONT) dataset main training pipeline: data split, balanced sampling, dual evaluation, TensorBoard, few-shot.
+主训练入口：加载 RGCNFormer (RNA_ClassQuery_Model) 在人类 12 类修饰 (Am, Atol, Cm, Gm, Tm, Y, ac4C, m1A, m5C, m6A, m6Am, m7G) 多标签数据集上训练。
+Main training entry: trains RGCNFormer (RNA_ClassQuery_Model) on the human 12-class modification multi-label dataset.
 
 功能模块 / Modules:
 - main: 主训练函数 / Main training function
-- 数据划分 (7:3) / Data split (7:3)
-- 平衡采样 / Balanced sampling
-- Unbalance / BalanceB 评估 / Dual evaluation
-- TensorBoard / TensorBoard
-- 小样本基准 / Few-shot benchmark
-- 命令行参数 / CLI args
+- 数据加载与划分 / Data loading and disjoint 7:3 train/test split
+- 平滑类别权重 / Smoothed class weighting for imbalanced data
+- Unbalance / BalanceB 评估模式 / Dual evaluation modes
+- 完整指标 / Comprehensive metrics: F1, Acc, Precision, Recall, AUC, AUPRC, MCC
+- TensorBoard 与 TQDM 监控 / TensorBoard and TQDM monitoring
 
 输入 / Inputs:
-- json/gen3.json: 训练配置 / Training config
-- 3gen/seq.npy, 3gen/12loc.npy: 3gen 数据 / 3gen data
-- checkpoints/best_model.pt: 预训练模型 (可选) / Optional pretrained model
-- 命令行参数 / CLI: --config, --gpu, --seed
+- json/human.json: JSON 训练配置 (batch_size, lr, epochs, model_type) / JSON training config
+- human3/seq.npy: NumPy 字节数组 (N, 1001) |S1 - 1001nt RNA 序列 / 1001nt RNA sequences
+- human3/1001loc.npy: NumPy int8 (N, 1001) - 1001 位点级修饰标签 (1-12) / Site-level labels
+- human3/12loc.npy: NumPy int8 (N, 12) - 12 类多热标签 / 12-class multi-hot labels
+- 命令行参数 / CLI: --config, --gpu, --seed, --batch_size, --lr, --epochs
 
 输出 / Outputs:
-- checkpoints/best_gen3.pt: 最佳模型 / Best model
-- logs/gen3_*/train_*.log: 训练日志 / Training logs
-- logs/gen3_*/results.json: 评估结果 / Evaluation results
-- TensorBoard events: 可视化 / Visualization
+- checkpoints/best_model.pt: PyTorch state_dict 最佳模型 / Best model state dict
+- logs/human_*/train_*.log: 训练日志 / Training logs
+- logs/human_*/results.json: 测试集评估指标 / Test set evaluation results
+- logs/human_*/events.*: TensorBoard 事件文件 / TensorBoard event files
 
 数据流 / Data Flow:
-1. 加载配置 / Load config
-2. 构建 3gen 数据集 / Build 3gen dataset
-3. 划分 / Split
-4. 训练循环 / Training loop
-5. 评估 + 小样本 / Evaluate + few-shot
-6. 保存 / Save
+1. 加载配置与数据 / Load config and dataset
+2. 7:3 不相交划分 / Disjoint 7:3 train/test split
+3. 初始化模型与优化器 / Init model and optimizer
+4. 训练循环 (epoch) / Training loop with progress bar
+5. 评估 + 保存 checkpoint / Evaluate and save best checkpoint
 
 相关文件 / Related Files:
-- 调用 / Calls: dataset.gen3.Gen3Dataset, model.mrmodn, utils.{common,metrics,logging}
-- 被调用 / Called by: shell scripts, manual CLI
+- 调用 / Calls: model.mrmodn.RNA_ClassQuery_Model, dataset.human.Mer100Dataset, utils.{common,metrics,logging}
+- 被调用 / Called by: shell scripts, manual CLI invocations
 
 使用示例 / Usage Example:
-    python -m utils.train_gen3 --config json/gen3.json --gpu 0
+    python train_human.py --config json/human.json --gpu 0
 
 作者 / Author: RGCNFormer Project
 日期 / Date: 2026-06-03
@@ -64,9 +63,9 @@ import warnings
 warnings.filterwarnings('ignore')
 
 from model.mrmodn import RNA_ClassQuery_Model
-from dataset.gen3 import Gen3Dataset
-# from dataset.plant import PlantDataset
-# from dataset.ac4c import AC4CDataset
+from dataset.human import Mer100Dataset
+from dataset.plant import PlantDataset
+from dataset.ac4c import AC4CDataset
 from utils import (
     setup_logging, setup_tensorboard, log_metrics_to_tensorboard,
     multi_label_disjoint_split, get_smoothed_pos_weights,
@@ -89,16 +88,59 @@ from utils import (
 # Main Training Loop
 # ============================================================================
 
-def main(config_path='json/3gen.json'):
-    """Main training function"""
-    # Load configuration from JSON
+def main(config_path='json/human.json'):
+    """
+    Main training function for RNA multi-label classification model.
+    
+    This function implements the complete training pipeline including:
+    - Data loading and preprocessing
+    - Multi-label disjoint data split
+    - Model initialization and configuration
+    - Training with dynamic class balancing
+    - Multi-mode evaluation (Unbalance, BalanceB, Group BalanceB, Optimal Threshold)
+    - Checkpoint saving and best model tracking
+    - Tensorboard logging and visualization
+    
+    Args:
+        config_path (str): Path to the JSON configuration file. Default is 'json/human.json'.
+                          The config file contains hyperparameters, paths, and training settings.
+    
+    Returns:
+        None: The function trains the model, saves checkpoints, and logs results to files.
+              Best model is saved based on macro F1 score on the test set.
+    """
+    
+    """
+    RNA多标签分类模型的主训练函数。
+    
+    该函数实现了完整的训练流程，包括：
+    - 数据加载和预处理
+    - 多标签不相交数据分割
+    - 模型初始化和配置
+    - 动态类别平衡的训练
+    - 多模式评估（Unbalance、BalanceB、Group BalanceB、Optimal Threshold）
+    - 检查点保存和最佳模型跟踪
+    - Tensorboard日志记录和可视化
+    
+    参数:
+        config_path (str): JSON配置文件的路径。默认为'json/human.json'。
+                          配置文件包含超参数、路径和训练设置。
+    
+    返回:
+        None: 该函数训练模型、保存检查点，并将结果记录到文件中。
+              基于测试集上的宏观F1分数保存最佳模型。
+    """
+    # Load configuration from JSON file
+    # 加载JSON配置文件
     global Config, config_dict
     Config, config_dict = load_config(config_path)
 
-    # Setup logging
+    # Setup logging to both file and console
+    # 设置日志系统，同时输出到文件和控制台
     logger = setup_logging(Config.log_dir, Config.experiment_name)
 
-    # Setup tensorboard
+    # Setup tensorboard for visualization
+    # 设置Tensorboard用于可视化
     tb_writer = setup_tensorboard(Config.log_dir, Config.experiment_name)
 
     # Log basic info
@@ -108,28 +150,32 @@ def main(config_path='json/3gen.json'):
     logger.info(f"Device: {Config.device}")
     logger.info(f"Random seed: {Config.random_seed}")
 
-    # Set random seeds
+    # Set random seeds for reproducibility across all libraries
+    # 为所有库设置随机种子以确保结果可复现
     torch.manual_seed(Config.random_seed)
     np.random.seed(Config.random_seed)
     random.seed(Config.random_seed)
 
-    # Load dataset
+    # Load RNA sequence dataset with human m6A modification data
+    # 加载RNA序列数据集，包含人类m6A修饰数据
     logger.info(f"\nLoading dataset from {Config.data.human_data_dir}...")
-    dataset = Gen3Dataset(
+    dataset = Mer100Dataset(
         mode='train', 
-        data_dir='npy/3gen', 
-        # cache_dir=Config.data.cache_dir,
-        # use_human3=True, 
-        # use_cache=True
+        data_dir=Config.data.human_data_dir, 
+        cache_dir=Config.data.cache_dir,
+        use_human3=True, 
+        use_cache=True
     )
     logger.info(f"Dataset loaded: {len(dataset)} samples")
 
-    # 预计算所有二级结构（如果批量缓存不存在）
+    # Precompute secondary structures if batch cache doesn't exist
+    # 如果批量缓存不存在，预计算所有二级结构
     cache_stats = dataset.get_cache_stats()
     if not cache_stats['batch_cache'].get('exists', False):
         logger.info("\n" + "="*60)
         logger.info("批量缓存不存在，开始预计算所有二级结构...")
         logger.info("="*60)
+        # Use multiprocessing for precomputation, num_workers=None means use all CPU cores automatically
         # 使用多进程预计算，num_workers=None 表示自动使用所有CPU核心
         dataset.precompute_all_structures(batch_size=100, num_workers=None, show_progress=True)
     else:
@@ -140,7 +186,10 @@ def main(config_path='json/3gen.json'):
         else:
             logger.info(f"  状态: 未加载到内存")
 
-    # Multi-label disjoint split
+    # Split dataset into train and test sets with disjoint labels
+    # Ensure no sample appears in both train and test sets
+    # 将数据集分割为训练集和测试集，确保标签不相交
+    # 确保没有样本同时出现在训练集和测试集中
     train_indices, test_indices = multi_label_disjoint_split(
         dataset,
         train_ratio=Config.train_ratio,
@@ -148,18 +197,25 @@ def main(config_path='json/3gen.json'):
         logger=logger
     )
 
-    # Calculate smoothed class weights (used for both BALANCED and FULL_COVERAGE modes)
+    # Calculate smoothed positive weights for imbalanced classes
+    # Used in loss function to handle class imbalance
+    # 计算平滑的正样本权重以处理类别不平衡
+    # 用于损失函数中以处理类别不平衡问题
     pos_weight_unbalanced = get_smoothed_pos_weights(
         dataset, train_indices, num_classes=Config.num_classes, logger=logger
     )
 
-    # Create dataloaders
+    # Create subsets for train and test datasets
+    # 为训练集和测试集创建子集
     train_subset = Subset(dataset, train_indices)
     test_subset = Subset(dataset, test_indices)
 
     # Use dynamic sampler for training to handle extreme class imbalance
     # Early epochs: balanced mode (rare class determines batches)
     # Late epochs: full coverage mode (all samples get sampled)
+    # 使用动态采样器处理极端的类别不平衡问题
+    # 早期训练轮次：平衡模式（稀有类别决定批次）
+    # 后期训练轮次：全覆盖模式（所有样本都会被采样）
     if Config.use_dynamic_sampler:
         train_batch_sampler = DynamicBalancedBatchSampler(
             dataset=dataset,
@@ -179,8 +235,12 @@ def main(config_path='json/3gen.json'):
             random_seed=Config.random_seed
         )
 
+    # Create data loaders for training and testing
     # Important: When using batch_sampler, set shuffle=False and don't specify batch_size
     # The batch_sampler handles both shuffling and batching
+    # 创建训练和测试的数据加载器
+    # 重要提示：使用batch_sampler时，设置shuffle=False且不指定batch_size
+    # batch_sampler同时处理洗牌和批处理
     train_loader = DataLoader(
         train_subset,
         batch_sampler=train_batch_sampler,  # Use our custom batch sampler
@@ -199,158 +259,8 @@ def main(config_path='json/3gen.json'):
     logger.info(f"  Train batch size: {Config.batch_size}, Train batches (balanced): {len(train_loader)}")
     logger.info(f"  Test batch size: {Config.batch_size}, Test batches: {len(test_loader)}")
 
-    # # Load plant dataset for evaluation
-    # logger.info(f"\nLoading plant dataset for evaluation...")
-    # plant_dataset = PlantDataset(
-    #     plant_dir=Config.data.plant_data_dir,
-    #     cache_dir=Config.data.cache_dir,
-    #     use_cache=True, 
-    #     preload_cache=True
-    # )
-
-    # # 预计算plant所有二级结构（如果批量缓存不存在）
-    # plant_cache_stats = plant_dataset.get_cache_stats()
-    # if not plant_cache_stats['batch_cache'].get('exists', False):
-    #     logger.info("\n" + "="*60)
-    #     logger.info("Plant批量缓存不存在，开始预计算所有二级结构...")
-    #     logger.info("="*60)
-    #     # 使用多进程预计算，num_workers=None 表示自动使用所有CPU核心
-    #     plant_dataset.precompute_all_structures(batch_size=100, num_workers=None, show_progress=True)
-    # else:
-    #     logger.info(f"\nPlant批量缓存已存在: {plant_cache_stats['batch_cache']['path']}")
-    #     logger.info(f"  文件大小: {plant_cache_stats['batch_cache']['size_mb']:.2f} MB")
-    #     if plant_cache_stats['batch_cache'].get('loaded_in_memory', False):
-    #         logger.info(f"  状态: 已加载到内存")
-    #     else:
-    #         logger.info(f"  状态: 未加载到内存")
-
-    # plant_test_loader = DataLoader(
-    #     plant_dataset,
-    #     batch_size=Config.batch_size,
-    #     shuffle=False,
-    #     num_workers=2,
-    #     pin_memory=True
-    # )
-    # logger.info(f"Plant dataset loaded: {len(plant_dataset)} samples")
-    # logger.info(f"  Plant test batches: {len(plant_test_loader)}")
-
-    # # ========================================================================
-    # # Load AC4C datasets for few-shot evaluation
-    # # ========================================================================
-    # # AC4C 数据集有独立的 train/test 文件夹，需要分别加载
-    # # train 数据集用于采样 Support Set，test 数据集用于评估
-
-    # # --- Balanced AC4C ---
-    # logger.info(f"\n{'='*60}")
-    # logger.info("Loading AC4C Balanced datasets...")
-    # logger.info(f"{'='*60}")
-
-    # # 训练集 (用于 Support Set 采样)
-    # logger.info(f"\nLoading AC4C balanced TRAIN dataset (for Support Set)...")
-    # ac4c_balanced_train = AC4CDataset(
-    #     mode='train',
-    #     data_dir='npy/ac4c_processed/balanced_ac4c',
-    #     cache_dir=Config.data.cache_dir,
-    #     use_cache=True,
-    #     preload_cache=True
-    # )
-
-    # ac4c_balanced_train_cache_stats = ac4c_balanced_train.get_cache_stats()
-    # if not ac4c_balanced_train_cache_stats['batch_cache'].get('exists', False):
-    #     logger.info("\n" + "="*60)
-    #     logger.info("AC4C balanced TRAIN 批量缓存不存在，开始预计算所有二级结构...")
-    #     logger.info("="*60)
-    #     ac4c_balanced_train.precompute_all_structures(batch_size=100, num_workers=None, show_progress=True)
-    # else:
-    #     logger.info(f"\nAC4C balanced TRAIN 批量缓存已存在: {ac4c_balanced_train_cache_stats['batch_cache']['path']}")
-    #     logger.info(f"  文件大小: {ac4c_balanced_train_cache_stats['batch_cache']['size_mb']:.2f} MB")
-    #     if ac4c_balanced_train_cache_stats['batch_cache'].get('loaded_in_memory', False):
-    #         logger.info(f"  状态: 已加载到内存")
-    #     else:
-    #         logger.info(f"  状态: 未加载到内存")
-    # logger.info(f"AC4C balanced TRAIN dataset loaded: {len(ac4c_balanced_train)} samples")
-
-    # # 测试集 (用于评估)
-    # logger.info(f"\nLoading AC4C balanced TEST dataset (for Evaluation)...")
-    # ac4c_balanced_test = AC4CDataset(
-    #     mode='test',
-    #     data_dir='npy/ac4c_processed/balanced_ac4c',
-    #     cache_dir=Config.data.cache_dir,
-    #     use_cache=True,
-    #     preload_cache=True
-    # )
-
-    # ac4c_balanced_test_cache_stats = ac4c_balanced_test.get_cache_stats()
-    # if not ac4c_balanced_test_cache_stats['batch_cache'].get('exists', False):
-    #     logger.info("\n" + "="*60)
-    #     logger.info("AC4C balanced TEST 批量缓存不存在，开始预计算所有二级结构...")
-    #     logger.info("="*60)
-    #     ac4c_balanced_test.precompute_all_structures(batch_size=100, num_workers=None, show_progress=True)
-    # else:
-    #     logger.info(f"\nAC4C balanced TEST 批量缓存已存在: {ac4c_balanced_test_cache_stats['batch_cache']['path']}")
-    #     logger.info(f"  文件大小: {ac4c_balanced_test_cache_stats['batch_cache']['size_mb']:.2f} MB")
-    #     if ac4c_balanced_test_cache_stats['batch_cache'].get('loaded_in_memory', False):
-    #         logger.info(f"  状态: 已加载到内存")
-    #     else:
-    #         logger.info(f"  状态: 未加载到内存")
-    # logger.info(f"AC4C balanced TEST dataset loaded: {len(ac4c_balanced_test)} samples")
-
-    # # --- Unbalanced AC4C ---
-    # logger.info(f"\n{'='*60}")
-    # logger.info("Loading AC4C Unbalanced datasets...")
-    # logger.info(f"{'='*60}")
-
-    # # 训练集 (用于 Support Set 采样)
-    # logger.info(f"\nLoading AC4C unbalanced TRAIN dataset (for Support Set)...")
-    # ac4c_unbalanced_train = AC4CDataset(
-    #     mode='train',
-    #     data_dir='npy/ac4c_processed/unbalanced_ac4c',
-    #     cache_dir=Config.data.cache_dir,
-    #     use_cache=True,
-    #     preload_cache=True
-    # )
-
-    # ac4c_unbalanced_train_cache_stats = ac4c_unbalanced_train.get_cache_stats()
-    # if not ac4c_unbalanced_train_cache_stats['batch_cache'].get('exists', False):
-    #     logger.info("\n" + "="*60)
-    #     logger.info("AC4C unbalanced TRAIN 批量缓存不存在，开始预计算所有二级结构...")
-    #     logger.info("="*60)
-    #     ac4c_unbalanced_train.precompute_all_structures(batch_size=100, num_workers=None, show_progress=True)
-    # else:
-    #     logger.info(f"\nAC4C unbalanced TRAIN 批量缓存已存在: {ac4c_unbalanced_train_cache_stats['batch_cache']['path']}")
-    #     logger.info(f"  文件大小: {ac4c_unbalanced_train_cache_stats['batch_cache']['size_mb']:.2f} MB")
-    #     if ac4c_unbalanced_train_cache_stats['batch_cache'].get('loaded_in_memory', False):
-    #         logger.info(f"  状态: 已加载到内存")
-    #     else:
-    #         logger.info(f"  状态: 未加载到内存")
-    # logger.info(f"AC4C unbalanced TRAIN dataset loaded: {len(ac4c_unbalanced_train)} samples")
-
-    # # 测试集 (用于评估)
-    # logger.info(f"\nLoading AC4C unbalanced TEST dataset (for Evaluation)...")
-    # ac4c_unbalanced_test = AC4CDataset(
-    #     mode='test',
-    #     data_dir='npy/ac4c_processed/unbalanced_ac4c',
-    #     cache_dir=Config.data.cache_dir,
-    #     use_cache=True,
-    #     preload_cache=True
-    # )
-
-    # ac4c_unbalanced_test_cache_stats = ac4c_unbalanced_test.get_cache_stats()
-    # if not ac4c_unbalanced_test_cache_stats['batch_cache'].get('exists', False):
-    #     logger.info("\n" + "="*60)
-    #     logger.info("AC4C unbalanced TEST 批量缓存不存在，开始预计算所有二级结构...")
-    #     logger.info("="*60)
-    #     ac4c_unbalanced_test.precompute_all_structures(batch_size=100, num_workers=None, show_progress=True)
-    # else:
-    #     logger.info(f"\nAC4C unbalanced TEST 批量缓存已存在: {ac4c_unbalanced_test_cache_stats['batch_cache']['path']}")
-    #     logger.info(f"  文件大小: {ac4c_unbalanced_test_cache_stats['batch_cache']['size_mb']:.2f} MB")
-    #     if ac4c_unbalanced_test_cache_stats['batch_cache'].get('loaded_in_memory', False):
-    #         logger.info(f"  状态: 已加载到内存")
-    #     else:
-    #         logger.info(f"  状态: 未加载到内存")
-    # logger.info(f"AC4C unbalanced TEST dataset loaded: {len(ac4c_unbalanced_test)} samples")
-
-    # Create model
+    # Initialize RNA classification model with CNN, GCN, and attention components
+    # 初始化RNA分类模型，包含CNN、GCN和注意力机制组件
     logger.info(f"\nCreating model...")
     model = RNA_ClassQuery_Model(
         cnn_hidden_dim=Config.cnn_hidden_dim,
@@ -368,19 +278,29 @@ def main(config_path='json/3gen.json'):
         use_layer_norm=Config.use_layer_norm
     ).to(Config.device)
 
-    # Count parameters
+    # Count and log model parameters
+    # 计算并记录模型参数数量
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     logger.info(f"Model created:")
     logger.info(f"  Total parameters: {total_params:,}")
     logger.info(f"  Trainable parameters: {trainable_params:,}")
 
-    # Loss function with dynamic positive weights
-    # Initially set to unbalanced weights, will be updated per epoch based on sampler mode
+    # Initialize loss function with class-balanced weights
+    # BCEWithLogitsLoss combines sigmoid and BCE loss for numerical stability
+    # pos_weight handles class imbalance by weighting positive examples
+    # 初始化带类别平衡权重的损失函数
+    # BCEWithLogitsLoss结合了sigmoid和BCE损失以提高数值稳定性
+    # pos_weight通过加权正样本处理类别不平衡
     pos_weight = pos_weight_unbalanced.to(Config.device)
     criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
-    # Optimizer and scheduler
+    # Initialize optimizer and learning rate scheduler
+    # AdamW: Adam with decoupled weight decay for better generalization
+    # CosineAnnealing: Anneals learning rate following a cosine curve
+    # 初始化优化器和学习率调度器
+    # AdamW：带有解耦权重衰减的Adam优化器，可提高泛化能力
+    # CosineAnnealing：按照余弦曲线衰减学习率
     optimizer = optim.AdamW(
         model.parameters(),
         lr=Config.learning_rate,
@@ -400,7 +320,8 @@ def main(config_path='json/3gen.json'):
     logger.info(f"  Epochs: {Config.num_epochs}")
     logger.info(f"  Batch size: {Config.batch_size}")
 
-    # Log hyperparameters to tensorboard
+    # Log hyperparameters to Tensorboard for tracking and comparison
+    # 将超参数记录到Tensorboard以便跟踪和比较
     tb_writer.add_hparams(
         {
             'learning_rate': Config.learning_rate,
@@ -413,7 +334,8 @@ def main(config_path='json/3gen.json'):
         {}
     )
 
-    # Training loop
+    # Initialize tracking variables for best model
+    # 初始化最佳模型的跟踪变量
     best_macro_f1 = 0.0
     best_epoch = 0
 
@@ -421,19 +343,26 @@ def main(config_path='json/3gen.json'):
     logger.info("Starting training...")
     logger.info(f"{'='*60}")
 
+    # Main training loop over all epochs
+    # 遍历所有训练轮次的主循环
     for epoch in range(1, Config.num_epochs + 1):
         logger.info(f"\n{'#'*60}")
         logger.info(f"Epoch {epoch}/{Config.num_epochs}")
         logger.info(f"{'#'*60}")
         logger.info(f"Learning rate: {optimizer.param_groups[0]['lr']:.6f}")
 
-        # Update sampler mode for dynamic sampler
+        # Update dynamic sampler mode based on current epoch
+        # Updates from BALANCED (early) to FULL_COVERAGE (late) automatically
+        # 根据当前训练轮次更新动态采样器模式
+        # 自动从BALANCED（早期）切换到FULL_COVERAGE（后期）
         if isinstance(train_batch_sampler, DynamicBalancedBatchSampler):
             train_batch_sampler.set_epoch(epoch)
             logger.info(f"Sampler mode: {train_batch_sampler.get_mode_info()}")
 
             # Update pos_weight based on sampler mode
             # Both BALANCED and FULL_COVERAGE modes use smoothed class weights
+            # 根据采样器模式更新pos_weight
+            # BALANCED和FULL_COVERAGE模式都使用平滑的类别权重
             new_pos_weight = pos_weight_unbalanced.to(Config.device)
             if train_batch_sampler.use_balanced_mode:
                 logger.info(f"Class weights: BALANCED mode (smoothed class weights)")
@@ -441,10 +370,11 @@ def main(config_path='json/3gen.json'):
                 logger.info(f"Class weights: FULL_COVERAGE mode (smoothed class weights)")
 
             # Update the criterion with new pos_weight
+            # 使用新的pos_weight更新损失函数
             criterion = nn.BCEWithLogitsLoss(pos_weight=new_pos_weight, reduction='mean')
 
-        # Train
-        # print(getattr(Config, 'use_attention_supervision', False))
+        # Execute one training epoch
+        # 训练一个完整的轮次
         train_loss = train_epoch(
             model, train_loader, criterion, optimizer, scheduler, Config.device, logger,
             use_hierarchical=Config.use_hierarchical,
@@ -453,17 +383,20 @@ def main(config_path='json/3gen.json'):
             attention_lambda=getattr(Config, 'attention_lambda', 1.0)
         )
 
-        # Log train loss to tensorboard
+        # Log training metrics to Tensorboard
+        # 将训练指标记录到Tensorboard
         tb_writer.add_scalar('train/loss', train_loss, epoch)
         tb_writer.add_scalar('train/lr', optimizer.param_groups[0]['lr'], epoch)
 
-        # Evaluate based on test_interval
+        # Check if evaluation should be performed this epoch
+        # 检查此轮次是否应该执行评估
         should_eval = (epoch % Config.test_interval == 0)
         metrics_unbalance = None
         current_macro_f1 = 0.0
 
         if should_eval:
-            # Evaluate
+            # Run evaluation on test set
+            # 在测试集上运行评估
             logger.info(f"\nEvaluating...")
             test_loss = test_epoch(
                 model, test_loader, criterion, Config.device, "test", logger,
@@ -471,7 +404,8 @@ def main(config_path='json/3gen.json'):
                 use_amp=Config.use_amp and torch.cuda.is_available()
             )
 
-            # Log test loss to tensorboard
+            # Log test loss to Tensorboard
+            # 将测试损失记录到Tensorboard
             tb_writer.add_scalar('test/loss', test_loss, epoch)
 
             # ========================================================================
@@ -479,20 +413,37 @@ def main(config_path='json/3gen.json'):
             # ========================================================================
             logger.info(f"\n{'='*60} Epoch {epoch} Testing {'='*60}")
 
-            # 1. Get evaluation metrics for human data
-            # OPTIMIZATION: Run inference once and get all predictions
+            # 1. Get predictions for all test samples
+            # OPTIMIZATION: Run inference once and cache all predictions for multiple metrics
+            # 1. 获取所有测试样本的预测结果
+            # 优化：运行一次推理并缓存所有预测结果用于多个指标计算
             logger.info(f"\n  Getting predictions for human data...")
             y_true, y_prob, y_4class, y_4prob = get_all_predictions(model, test_loader, Config.device, Config.use_hierarchical)
 
-            # 2. Compute basic classification metrics (keep original logic)
-            # Human metrics
+            # 2. Compute multiple evaluation metrics with different strategies
+            # - Unbalance: Standard threshold (0.5) evaluation
+            # - BalanceB: Balanced threshold evaluation
+            # - Group BalanceB: Group-aware balanced evaluation
+            # - Optimal: Optimal threshold search
+            # - 4class: 4-class classification metrics
+            # 2. 使用不同策略计算多个评估指标
+            # - Unbalance：标准阈值（0.5）评估
+            # - BalanceB：平衡阈值评估
+            # - Group BalanceB：组感知平衡评估
+            # - Optimal：最优阈值搜索
+            # - 4class：4类分类指标
             metrics_unbalance = evaluate_unbalance(y_true, y_prob, Config.device, y_4class, Config.random_seed, y_4prob)
             metrics_balanceb = evaluate_balanceb(y_true, y_prob, y_4class, Config.device, Config.random_seed, y_4prob)
             metrics_group_balanceb = evaluate_group_balanceb(y_true, y_prob, y_4class, Config.random_seed)
             metrics_opt = evaluate_with_optimal_threshold(model, test_loader, Config.device, Config.use_hierarchical)
             metrics_4class = evaluate_4class_with_optimal_threshold(model, test_loader, Config.device, Config.use_hierarchical)
 
-            # 3. Compute Top-K Attention Recall (Train.py unique logic)
+            # 3. Compute attention-based localization metrics if attention supervision is enabled
+            # - Top-K Recall: Macro-average recall of true sites in top-K predictions
+            # - Comprehensive Metrics: Global/micro-average localization performance
+            # 3. 如果启用了注意力监督，计算基于注意力的定位指标
+            # - Top-K Recall：真实位点在Top-K预测中的宏平均召回率
+            # - Comprehensive Metrics：全局/微平均定位性能
             topk_results = {}
             comprehensive_results = {}
             if Config.use_attention_supervision:
@@ -502,8 +453,10 @@ def main(config_path='json/3gen.json'):
                 )
                 if attn_weights is not None and y_site is not None:
                     # Original Macro-Average Top-K Recall
+                    # 原始的宏平均Top-K召回率
                     topk_results = calculate_topk_recall(attn_weights, y_site, k_list=[1, 3, 5, 7, 10, 20, 50])
                     # New Comprehensive Localization Metrics (Global/Micro-Average)
+                    # 新的综合定位指标（全局/微平均）
                     logger.info(f"  Computing comprehensive localization metrics...")
                     comprehensive_results = calculate_comprehensive_localization_metrics(
                         attn_weights, y_site, k_list=[1, 3, 5, 7, 10]
@@ -511,24 +464,24 @@ def main(config_path='json/3gen.json'):
                 else:
                     logger.info(f"  Attention weights or site labels not available, skipping Top-K evaluation.")
 
-            # 4. Evaluate on plant data (if available)
+            # 4. Plant data evaluation (placeholder for cross-species transfer learning)
+            # Not implemented in current version
+            # 4. 植物数据评估（用于跨物种迁移学习的占位符）
+            # 当前版本中未实现
             plant_metrics_unbalance = None
             plant_metrics_balanceb = None
             plant_metrics_4class = None
             plant_metrics_opt = None
-            # Uncomment below to enable plant evaluation
-            # logger.info(f"\n  Getting predictions for plant data...")
-            # y_true_plant, y_prob_plant, y_4class_plant, y_4prob_plant = get_all_predictions(model, plant_test_loader, Config.device, Config.use_hierarchical)
-            # plant_metrics_unbalance = evaluate_plant_unbalance(y_true_plant, y_prob_plant, Config.device, y_4class_plant, Config.random_seed, y_4prob_plant)
-            # plant_metrics_balanceb = evaluate_plant_balanceb(y_true_plant, y_prob_plant, y_4class_plant, Config.device, Config.random_seed, y_4prob_plant)
-            # plant_metrics_4class = plant_metrics_unbalance if plant_metrics_unbalance else plant_metrics_balanceb
-            # plant_metrics_opt = evaluate_with_optimal_threshold(model, plant_test_loader, Config.device, Config.use_hierarchical)
+
 
             # =========================================================
             # 5. Output Tables (Modified: Match train_plant_single2.py style)
             # =========================================================
 
-            # (A) Output all classification performance tables
+            # 5. Print formatted evaluation results
+            # (A) Classification performance table
+            # 5. 打印格式化的评估结果
+            # (A) 分类性能表
             print_evaluation_results(
                 metrics_unbalance=metrics_unbalance,
                 metrics_balanceb=metrics_balanceb,
@@ -543,74 +496,51 @@ def main(config_path='json/3gen.json'):
                 plant_metrics_opt=plant_metrics_opt
             )
 
-            # (B) Output Top-K performance table (Train.py specific)
+            # (B) Top-K attention localization performance table
+            # (B) Top-K注意力定位性能表
             if topk_results:
                 print_topk_table(topk_results, k_list=[1, 3, 5, 7, 10, 20, 50], logger=logger)
 
-            # (C) Output Comprehensive Localization Metrics table (New)
+            # (C) Comprehensive localization metrics table
+            # (C) 综合定位指标表
             if comprehensive_results:
                 print_comprehensive_table(comprehensive_results, k_list=[1, 3, 5, 7, 10], logger=logger)
 
-            # Log metrics to tensorboard
+            # Log test metrics to Tensorboard for visualization
+            # 将测试指标记录到Tensorboard以便可视化
             log_metrics_to_tensorboard(tb_writer, metrics_unbalance, 'test_unbalance', epoch)
             log_metrics_to_tensorboard(tb_writer, metrics_balanceb, 'test_balanceb', epoch)
 
-            # # Log plant metrics to tensorboard
-            # log_metrics_to_tensorboard(tb_writer, plant_metrics_unbalance, 'plant_unbalance', epoch, key_prefix='group_plant_')
-            # log_metrics_to_tensorboard(tb_writer, plant_metrics_balanceb, 'plant_balanceb', epoch, key_prefix='group_plant_')
-
-            # # Run Plant Few-Shot Benchmark
-            # run_few_shot_benchmark(
-            #     model=model,
-            #     plant_dataset=plant_dataset,
-            #     device=Config.device,
-            #     shots=[0, 1, 3, 5,25,50,100], 
-            #     epoch=epoch,
-            #     logger=logger,
-            #     tb_writer=tb_writer,
-            #     config=Config
-            # )
-
-            # # Run AC4C Few-Shot Benchmark (Balanced & Unbalanced)
-            # # 分别使用 train 数据集采样 Support Set，test 数据集进行评估
-            # # shots 支持：整数（每类采样k个）、浮点数（采样该类别50%）、'full'（采样100%）
-            # run_few_shot_benchmark_ac4c(
-            #     model=model,
-            #     ac4c_balanced_train=ac4c_balanced_train,
-            #     ac4c_balanced_test=ac4c_balanced_test,
-            #     ac4c_unbalanced_train=ac4c_unbalanced_train,
-            #     ac4c_unbalanced_test=ac4c_unbalanced_test,
-            #     device=Config.device,
-            #     shots=['full'],
-            #     epoch=epoch,
-            #     logger=logger,
-            #     tb_writer=tb_writer,
-            #     config=Config
-            # )
-
-            # Check for best model (based on Unbalance Macro-F1)
+            
+            # Track best model based on macro F1 score
+            # 基于宏F1分数跟踪最佳模型
             current_macro_f1 = metrics_unbalance['group_macro_f1']
             logger.info(f"Current Unbalance Macro-F1: {current_macro_f1:.4f}")
             logger.info(f"Best Unbalance Macro-F1: {best_macro_f1:.4f} (Epoch {best_epoch})")
 
-        # Save checkpoint every epoch (only if we have metrics)
+        # Save checkpoint for each epoch if enabled
+        # 如果启用，为每个训练轮次保存检查点
         if Config.save_every_epoch and metrics_unbalance is not None:
             epoch_checkpoint_path = os.path.join(Config.checkpoint_dir, f'epoch_{epoch:03d}.pt')
             save_checkpoint(model, optimizer, epoch, metrics_unbalance, epoch_checkpoint_path, logger, config_dict)
 
-        # Update and save best model (only if we evaluated)
+        # Update and save best model checkpoint if performance improved
+        # 如果性能提升，更新并保存最佳模型检查点
         if metrics_unbalance is not None and current_macro_f1 > best_macro_f1:
             best_macro_f1 = current_macro_f1
             best_epoch = epoch
 
             # Save best model checkpoint
+            # 保存最佳模型检查点
             checkpoint_path = os.path.join(Config.checkpoint_dir, 'best_model.pt')
             save_checkpoint(model, optimizer, epoch, metrics_unbalance, checkpoint_path, logger, config_dict)
 
-            # Log to tensorboard
+            # Log best F1 to Tensorboard
+            # 将最佳F1分数记录到Tensorboard
             tb_writer.add_scalar('test/best_macro_f1', best_macro_f1, epoch)
 
-    # Final summary
+    # Print training summary and close resources
+    # 打印训练摘要并关闭资源
     logger.info(f"\n{'='*60}")
     logger.info("Training Complete!")
     logger.info(f"{'='*60}")
@@ -618,7 +548,8 @@ def main(config_path='json/3gen.json'):
     logger.info(f"Best Unbalance Macro-F1: {best_macro_f1:.4f}")
     logger.info(f"Best model saved to: {os.path.join(Config.checkpoint_dir, 'best_model.pt')}")
 
-    # Close tensorboard writer
+    # Close Tensorboard writer
+    # 关闭Tensorboard写入器
     tb_writer.close()
 
 

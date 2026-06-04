@@ -1,0 +1,40 @@
+3x3_2.py:31:- 调用 / Calls: model.main_model, dataset.{human,plant,plant_single}
+3x3_2.py:63:from model.main_model import RNA_ClassQuery_Model
+3x3.py:34:- 调用 / Calls: model.main_model, dataset.{human,plant,plant_single}, scipy.stats
+3x3.py:65:from model.main_model import RNA_ClassQuery_Model
+collect_human.py:35:- 调用 / Calls: dataset.human_with_seq.Mer100DatasetWithSeq, model.main_model, torch.cuda.amp
+collect_human.py:61:from model.main_model import RNA_ClassQuery_Model
+fewshot_ac4c_balance.py:33:- 调用 / Calls: model.main_model.RNA_ClassQuery_Model, dataset.ac4c.AC4CDataset, prettytable
+fewshot_ac4c_balance.py:63:from model.main_model import RNA_ClassQuery_Model
+fewshot_ac4c_unbalan.py:33:- 调用 / Calls: model.main_model.RNA_ClassQuery_Model, dataset.ac4c.AC4CDataset, prettytable
+fewshot_ac4c_unbalan.py:63:from model.main_model import RNA_ClassQuery_Model
+fewshot_plant_3way_independent.py:34:- 调用 / Calls: model.main_model.RNA_ClassQuery_Model, dataset.plant.PlantDataset
+fewshot_plant_3way_independent.py:72:from model.main_model import RNA_ClassQuery_Model
+model/abla_model.py:38:- 调用 / Calls: torch, torch.nn, torch_geometric.data, torch_geometric.nn, utils.common.GROUP_TO_CLASS_INDICES, model.main_model.ParallelCNNBlock/GCNBlock / torch, torch.nn, torch_geometric.data, torch_geometric.nn, utils.common.GROUP_TO_CLASS_INDICES, model.main_model.ParallelCNNBlock/GCNBlock
+model/abla_model.py:58:from model.main_model import ParallelCNNBlock, GCNBlock
+model/mrmodn.py:40:    from model.main_model import RNA_ClassQuery_Model
+prepare_umap_data.py:34:- 调用 / Calls: dataset.human_with_seq.Mer100DatasetWithSeq, model.main_model, umap
+SpatialMotif_nobackground.py:30:- 调用 / Calls: dataset.human_motif.Mer100DatasetMotif, model.main_model, logomaker
+SpatialMotif_nobackground.py:73:from model.main_model import RNA_ClassQuery_Model
+SpatialMotif.py:34:- 调用 / Calls: dataset.human_motif.Mer100DatasetMotif, model.main_model, logomaker, sklearn
+SpatialMotif.py:77:from model.main_model import RNA_ClassQuery_Model
+test_gen3.py:31:- 调用 / Calls: dataset.gen3.Gen3Dataset, model.main_model, utils.metrics
+test_gen3.py:56:from model.main_model import RNA_ClassQuery_Model
+test_multirm_4class.py:28:- 调用 / Calls: dataset.multirm.MultirmDataset, model.main_model
+test_multirm_oversampling.py:29:- 调用 / Calls: dataset.multirm.MultirmDataset, model.main_model
+train_human.py:36:- 调用 / Calls: model.main_model.RNA_ClassQuery_Model, dataset.human.Mer100Dataset, utils.{common,metrics,logging}
+train_human.py:65:from model.main_model import RNA_ClassQuery_Model
+train_multirm_dataset.py:37:- 调用 / Calls: model.main_model.RNA_ClassQuery_Model, dataset.multirm.MultirmDataset, sklearn.metrics
+train_multirm_dataset.py:64:from model.main_model import RNA_ClassQuery_Model
+train_plant.py:35:- 调用 / Calls: model.main_model.RNA_ClassQuery_Model, dataset.plant.PlantDataset, utils.{common,metrics,logging}
+train_plant.py:66:from model.main_model import RNA_ClassQuery_Model
+utils/fewshot_analysis_features.py:46:from model.main_model import RNA_ClassQuery_Model
+utils/few_shot.py:33:- 调用 / Calls: model.main_model, dataset.{plant,ac4c,plant_single}
+utils/rna_visualization.py:32:- 调用 / Calls: model.main_model, matplotlib, plotly, networkx, forgi
+utils/rna_visualization.py:63:from model.main_model import RNA_ClassQuery_Model
+utils/test_gen3_analyse.py:33:- 调用 / Calls: dataset.gen3.Gen3Dataset, model.main_model, utils.{common,metrics}
+utils/test_gen3_analyse.py:60:from model.main_model import RNA_ClassQuery_Model
+utils/train_gen3.py:37:- 调用 / Calls: dataset.gen3.Gen3Dataset, model.main_model, utils.{common,metrics,logging}
+utils/train_gen3.py:66:from model.main_model import RNA_ClassQuery_Model
+zero_shot_fewshot_analysis.py:36:- 调用 / Calls: utils.fewshot_analysis_*, model.main_model, plot_zero_fewshot_analysis.R
+zero_shot_fewshot_extract_only.py:36:- 调用 / Calls: utils.fewshot_analysis_*, model.main_model

@@ -35,7 +35,7 @@ All variants expose a (logits_12, logits_4, attn) interface compatible with RNA_
 3. 选定的分类头处理节点特征，生成 12 类 logits、4 组 logits、12 类注意力权重 / Selected head processes node features, produces 12-class logits, 4-group logits, 12-class attention weights
 
 相关文件 / Related Files:
-- 调用 / Calls: torch, torch.nn, torch_geometric.data, torch_geometric.nn, utils.common.GROUP_TO_CLASS_INDICES, model.main_model.ParallelCNNBlock/GCNBlock / torch, torch.nn, torch_geometric.data, torch_geometric.nn, utils.common.GROUP_TO_CLASS_INDICES, model.main_model.ParallelCNNBlock/GCNBlock
+- 调用 / Calls: torch, torch.nn, torch_geometric.data, torch_geometric.nn, utils.common.GROUP_TO_CLASS_INDICES, model.mrmodn.ParallelCNNBlock/GCNBlock / torch, torch.nn, torch_geometric.data, torch_geometric.nn, utils.common.GROUP_TO_CLASS_INDICES, model.mrmodn.ParallelCNNBlock/GCNBlock
 - 被调用 / Called by: abla_mohe.py, cal_flops_mohe.py / abla_mohe.py, cal_flops_mohe.py
 
 使用示例 / Usage Example:
@@ -55,7 +55,7 @@ from torch_geometric.data import Data, Batch
 from typing import Optional, Tuple
 
 from utils.common import GROUP_TO_CLASS_INDICES
-from model.main_model import ParallelCNNBlock, GCNBlock
+from model.mrmodn import ParallelCNNBlock, GCNBlock
 
 
 def _make_query_proj(query_dim, hidden_dim):

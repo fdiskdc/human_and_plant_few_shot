@@ -29,7 +29,7 @@ Single RNA sequence model prediction visualization: model loading, multi-thresho
 4. 多种可视化 / Multiple visualizations
 
 相关文件 / Related Files:
-- 调用 / Calls: model.main_model, matplotlib, plotly, networkx, forgi
+- 调用 / Calls: model.mrmodn, matplotlib, plotly, networkx, forgi
 - 被调用 / Called by: utils/rna_visualization.ipynb
 
 使用示例 / Usage Example:
@@ -60,7 +60,7 @@ except ImportError:
     print("Warning: forgi not available. Install with: pip install forgi")
 
 # 导入项目相关模块
-from model.main_model import RNA_ClassQuery_Model
+from model.mrmodn import RNA_ClassQuery_Model
 from dataset.human import Mer100Dataset, one_hot_to_sequence
 
 # 设置 Matplotlib 样式

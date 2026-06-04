@@ -3,13 +3,13 @@
 
 # 忽略所有.log文件
 *.log
-/att_fig
+/visualization/att_fig
 # 忽略.vscode文件夹
 .vscode/
-/motif_logo_clustered
+/visualization/motif_logo_clustered
 # 忽略所有.pyc文件
 *.pyc
-/motif_logo
+/visualization/motif_logo
 # 忽略__pycache__文件夹
 __pycache__/
 .git/
@@ -22,8 +22,8 @@ figs_atten/
 gen3process/
 # 忽略所有名为node_modules的文件夹（无论在哪个目录下）
 **/node_modules
-/ipynb
-/motif_logo_clustered_noback
+/visualization/ipynb
+/visualization/motif_logo_clustered_noback
 /output
 # Web frontend logs and build artifacts
 /web/node_modules

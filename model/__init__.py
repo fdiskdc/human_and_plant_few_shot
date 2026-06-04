@@ -58,7 +58,7 @@ Main Model:
     RNA_ClassQuery_Model: Base model with CNN + GCN + Class-Query attention
     RNA_ClassQuery_Model_Large: Larger version with more capacity
 
-Sub-modules (from main_model.py):
+Sub-modules (from mrmodn.py):
     ParallelCNNBlock: Multi-scale parallel CNN feature extraction
     GCNBlock: Graph Convolutional Network block with residual connections
     ClassQueryHead: Cross-attention based classification head
@@ -72,7 +72,7 @@ Example Usage:
     >>> predictions, probs = model.predict(x, edge_index, batch)
 """
 
-from .main_model import (
+from .mrmodn import (
     RNA_ClassQuery_Model,
     # RNA_ClassQuery_Model_Large,
     ParallelCNNBlock,

@@ -1,0 +1,2 @@
+model/mrmodn_multirm.py:38:    from model.main_model_multirm import RNA_ClassQuery_Model
+test_multirm_4class.py:42:from model.main_model_multirm import RNA_ClassQuery_Model

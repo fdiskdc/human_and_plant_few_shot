@@ -1,0 +1,25 @@
+=== New mrmodn files (must EXIST) ===
+  ✓ model/mrmodn.py: EXISTS (28176 bytes)
+  ✓ model/mrmodn_collect_atten.py: EXISTS (18986 bytes)
+  ✓ model/mrmodn_multirm.py: EXISTS (20434 bytes)
+
+=== Old main_model files (must be GONE) ===
+  ✓ model/main_model.py: GONE
+  ✓ model/main_model_collect_atten.py: GONE
+  ✓ model/main_model_multirm.py: GONE
+
+=== model/__init__.py imports ===
+  from .mrmodn import ['RNA_ClassQuery_Model', 'ParallelCNNBlock', 'GCNBlock', 'ClassQueryHead', 'ClassQueryHeadPooling', 'HierarchicalClassQueryHeadPooling']
+
+=== Project-wide main_model search ===
+  Found 17 reference(s)
+    ./tests/test_naming_convention.py:46:def test_root_no_legacy_main_model_file(project_root: Path):
+    ./tests/test_naming_convention.py:47:    """根目录不应有以 main_model 开头的旧文件 / No legacy main_model file in root."""
+    ./tests/test_naming_convention.py:49:    assert not any("main_model" in n for n in root_py), \
+    ./tests/test_naming_convention.py:50:        f"Found legacy main_model files: {[n for n in root_py if 'main_model' in n]}"
+    ./tests/test_naming_convention.py:98:def test_model_dir_no_legacy_main_model(model_dir: Path):
+    ./tests/test_naming_convention.py:99:    """model/ 不应有 main_model*.py / No main_model*.py in model/."""
+    ./tests/test_naming_convention.py:100:    files = [p.name for p in model_dir.glob("main_model*.py")]
+    ./tests/test_naming_convention.py:101:    assert files == [], f"Legacy main_model* files in model/: {files}"
+    ./tests/test_model_import.py:50:    "model.mrmodn",                 # 重命名自 main_model
+    ./tests/test_model_import.py:51:    "model.mrmodn_collect_atten",   # 重命名自 main_model_collect_atten

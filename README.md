@@ -22,106 +22,99 @@ This project is the **core of the entire research system**, containing:
 
 | 模块 / Module | 作用 / Purpose |
 |---|---|
-| **模型定义** / Model definition | RGCNFormer 主网络(RGCN + Transformer)、多任务变体(ModX、MultiRM、EvoRMD)/ RGCNFormer backbone + variants |
+| **模型定义** / Model definition | mRModN (RGCNFormer) 主网络 + 多任务变体 (ModX、MultiRM、EvoRMD) / mRModN backbone + variants |
 | **数据集加载** / Dataset loading | Human / Plant / ac4C / MultiRM / gen3 数据集 / Datasets |
-| **训练流程** / Training pipeline | 5 个训练脚本(单修饰、多修饰、零样本等)/ 5 training scripts |
-| **推理流程** / Inference pipeline | 4 个推理脚本(分段、批量)/ 4 inference scripts |
-| **数据收集** / Data collection | 4 个 attention 收集脚本 / 4 attention collection scripts |
-| **少样本分析** / Few-shot analysis | 零样本/少样本场景分析 / Zero-shot / few-shot analysis |
-| **可视化** / Visualization | 注意力对比、序列选择、空间 motif / Attention comparison, sequence selection, spatial motifs |
-| **消融实验** / Ablation studies | 3×3 矩阵、FLOPs 计算、mohe 消融 / 3×3 matrix, FLOPs, mohe ablation |
-| **R 可视化** / R visualization | 零样本/少样本分析图表 / Zero-shot / few-shot plots |
-| **Jupyter Notebooks** | 34 个分析 notebook / 34 analysis notebooks |
+| **训练流程** / Training pipeline | 6 个训练脚本 (单修饰、多修饰、零样本等) / 6 training scripts |
+| **推理流程** / Inference pipeline | 4 个推理脚本 (分段、全长) / 4 inference scripts (segmented, full) |
+| **数据收集** / Data collection | 4 个 attention/特征收集脚本 / 4 attention collection scripts |
+| **少样本/零样本分析** / Few-shot/Zero-shot | 平衡/非平衡 ac4C、Plant 3-way、Human 零样本 |
+| **可视化** / Visualization | `visualization/` — 按数据集/模型二级组织 / organized by dataset/model |
+| **消融实验** / Ablation studies | `ablation/` — 3×3 矩阵、MoHE、FLOPs 计算 |
+| **R 可视化** / R visualization | `analysis/` — 零样本/少样本分析图表 / Zero-shot/few-shot plots |
+| **测试** / Tests | `tests/` — pytest 框架, model/dataset 导入回归 + 命名规范审计 |
 
 ## 目录结构 / Directory Layout
 
 ```
 rgcnformer_sum/
-├── model/                          # 模型定义(10 个 .py)
-│   ├── main_model.py               # RGCNFormer 主网络(ParallelCNNBlock + GCNBlock + ClassQueryHead)
+├── model/                          # 模型定义 (10 个 .py) / Model definitions
+│   ├── mrmodn.py                   # mRModN (RGCNFormer) 主网络 — 重命名自 main_model.py
+│   ├── mrmodn_collect_atten.py     # 注意力收集变体 — 重命名自 main_model_collect_atten.py
+│   ├── mrmodn_multirm.py           # MultIRM 51nt 变体 — 重命名自 main_model_multirm.py
 │   ├── multirm.py                  # 多任务多修饰变体
 │   ├── modx.py                     # 修饰类型消融变体
 │   ├── evormd_human.py             # EvoRMD 集成
 │   ├── abla_model.py               # 消融实验模型
-│   ├── main_model_multirm.py       # 多 RM 主模型
-│   ├── main_model_collect_atten.py # 主模型(收集注意力)
 │   ├── modx_collect_atten.py       # ModX 注意力收集
 │   └── multirm_collect_atten.py    # MultiRM 注意力收集
 │
-├── dataset/                        # 数据集加载(9 个 .py)
-│   ├── human.py                    # Human(标准 12 修饰)
-│   ├── plant.py                    # Plant(植物)
+├── dataset/                        # 数据集加载 (9 个 .py) / Dataset loaders
+│   ├── human.py                    # Human (标准 12 修饰)
+│   ├── plant.py                    # Plant
 │   ├── ac4c.py                     # ac4C 专用
 │   ├── multirm.py                  # 多 RM
-│   ├── gen3.py                     # 第 3 代数据集
-│   ├── human_motif.py              # 带 motif 的 Human
-│   ├── human_with_seq.py           # 带序列特征的 Human
-│   ├── gen3_zero.py                # 零样本 gen3
-│   └── plant_single.py             # 单修饰 Plant
+│   ├── gen3.py / gen3_zero.py      # 第 3 代数据集
+│   ├── human_motif.py / human_with_seq.py
+│   └── plant_single.py
 │
-├── utils/                          # 工具与少样本分析(18 个 .py)
-│   ├── common.py                   # 公共常量、评估函数
-│   ├── metrics.py                  # 指标计算
-│   ├── logging.py                  # 日志
-│   ├── train_gen3.py               # gen3 训练
-│   ├── test_gen3_analyse.py        # gen3 测试分析
-│   ├── few_shot.py                 # 少样本核心
-│   ├── fewshot_analysis_*.py       # 6 个少样本分析脚本
-│   ├── rna_visualization.py        # RNA 可视化
-│   ├── audit_12loc_structure.py    # 12 定位结构审计
-│   ├── check_m6a_data_integrity.py # m6A 数据完整性检查
-│   └── Zero_structures.py          # 零样本结构
+├── utils/                          # 工具与少样本分析 / Utilities
+│   ├── common.py / metrics.py / logging.py
+│   ├── sliding_window_utils.py     # 滑窗工具 (从根目录迁入)
+│   ├── few_shot.py / fewshot_analysis_*.py
+│   ├── train_gen3.py / test_gen3_analyse.py
+│   └── rna_visualization.py
 │
-├── 顶层脚本 / Top-level scripts:
-│   ├── train_*.py                  # 6 个训练脚本(human / plant / multirm / evormd / modx / multirm_dataset)
-│   ├── inference_*.py              # 4 个推理脚本(分段 + 全量)
-│   ├── collect_*.py                # 4 个数据/注意力收集脚本
-│   ├── fewshot_*.py                # 3 个少样本分析脚本
-│   ├── 3x3.py / 3x3_2.py           # 3×3 矩阵消融
-│   ├── abla_mohe.py                # MoHE 消融
-│   ├── cal_flops_mohe.py           # FLOPs 计算
-│   ├── cal_mean_median_mode.py     # 统计计算
-│   ├── view_*.py                   # 4 个可视化脚本
-│   ├── visualize_*.py / run_*.py / select_*.py  # 注意力对比
-│   ├── test_*.py                   # 3 个测试脚本
-│   ├── SpatialMotif*.py            # 空间 motif 提取
-│   ├── prepare_umap_*.py           # UMAP 数据准备
-│   ├── sliding_window_utils.py     # 滑窗工具
-│   ├── plot_zero_fewshot_*.R       # 2 个 R 可视化脚本
-│   └── zero_shot_*.py              # 零样本分析
+├── 根目录脚本 (19 个) / Root scripts (19) — 命名: <task>_<dataset>_<model>[_<suffix>].py
+│   ├── train_human_mrmodn.py       # ← train_human.py
+│   ├── train_plant_mrmodn.py       # ← train_plant.py
+│   ├── train_multirm_mrmodn.py     # ← train_multirm_dataset.py
+│   ├── train_human_evormd.py / train_human_modx.py / train_human_multirm.py
+│   ├── inference_human_mrmodn_full.py        # ← inference_mrmodn_full.py
+│   ├── inference_human_evormd_segmented.py   # ← inference_evormd_segmented.py
+│   ├── inference_human_modx_segmented.py     # ← inference_modx_segmented.py
+│   ├── inference_multirm_multirm_segmented.py # ← inference_multirm_segmented.py
+│   ├── collect_human_mrmodn.py / collect_atten_human_mrmodn.py
+│   ├── collect_atten_human_modx.py / collect_atten_multirm_multirm.py
+│   ├── fewshot_ac4c_mrmodn_balance.py / fewshot_ac4c_mrmodn_unbalan.py
+│   ├── fewshot_plant_mrmodn_3way.py
+│   └── zeroshot_human_mrmodn_analysis.py / zeroshot_human_mrmodn_extract.py
 │
-├── atten_comp/                     # 注意力对比子模块(3 个 .py)
-├── gen3process/                    # gen3 数据预处理(9 个 .py)
-├── multirmprocess/                 # 多 RM 数据预处理(10 个 .py)
+├── ablation/                       # 消融实验 (5 个) / Ablation experiments
+│   ├── ablation_3x3_human_mrmodn.py / ablation_3x3_v2_human_mrmodn.py
+│   ├── ablation_mohe_human_mrmodn.py
+│   ├── cal_flops_human_mrmodn.py / cal_stats_human_mrmodn.py
+│   └── README.md
 │
-├── ipynb/                          # 34 个分析 notebook
-│   ├── check_data.ipynb
-│   ├── cls_compare*.ipynb          # 分类对比
-│   ├── loc_compare*.ipynb          # 定位对比
-│   ├── rgcnformer_*.ipynb          # 主模型分析
-│   ├── umap*.ipynb                 # UMAP 嵌入
-│   ├── violin.ipynb                # 小提琴图
-│   └── ... (34 total)
+├── visualization/                  # 可视化 — 按数据集/模型二级组织
+│   ├── human/                      # mrmodn/, modx/, evormd/, multirm/
+│   ├── plant/  multirm/  ac4c/  gen3/
+│   ├── tools/                      # view_npz.py, prepare_umap_*.py
+│   ├── notebooks/                  # Jupyter notebooks
+│   ├── fig/ / att_fig/ / motif_logo/  # 静态图片 (gitignored)
+│   └── README.md
 │
-├── model/EvoRMD/                   # EvoRMD 子模块(7 个 .py)
-│   └── Script/
-│       ├── dataset.py
-│       ├── utils.py
-│       ├── main.py
-│       ├── preprocess_data.py
-│       ├── embedding.py
-│       ├── downsampling.py
-│       ├── train_val_test.py
-│       └── model.py
+├── analysis/                       # R 脚本和分析报告 / R scripts and reports
+│   ├── plot_zero_fewshot_analysis.R
+│   ├── plot_zero_fewshot_export.R
+│   └── Rplots.pdf
+│
+├── tests/                          # pytest 测试套件 / pytest test suite
+│   ├── conftest.py / __init__.py
+│   ├── test_infrastructure.py      # 框架自检
+│   ├── test_model_import.py        # model.* 导入回归
+│   ├── test_dataset_import.py      # dataset.* 导入回归
+│   ├── test_config.py              # json/ 配置验证
+│   ├── test_naming_convention.py   # 命名规范审计
+│   ├── test_gen3.py / test_multirm_4class.py / test_multirm_oversampling.py
+│
+├── pytest.ini                      # pytest 配置 (Wave 5 新增)
 │
 ├── output/                         # 训练输出
 ├── logs/                           # 训练日志
-├── npy/                            # 数据软链接(/home/dc/vscode/npyForTrain)
-├── docs/ / fig/ / figs_atten/ / motif_logo*/  # 文档与图表
-├── dataset/                        # 数据集子目录
-├── cache/                          # 缓存
+├── npy/                            # 数据软链接 (/home/dc/vscode/npyForTrain) — 不可移动 / DO NOT MOVE
 ├── json/                           # 中间 JSON
-└── .omo/plans/codebase-documentation.md  # 本项目的代码级文档计划
+├── logs_abla/                      # 消融日志
+└── .omo/                           # 项目计划与证据 / project plans and evidence
 ```
 
 ## 启动方式 / Getting Started
@@ -132,7 +125,7 @@ rgcnformer_sum/
 - **PyTorch 1.10+** + **PyTorch Geometric**(用于图卷积)/ PyTorch + PyG
 - **numpy / pandas / scikit-learn / matplotlib**
 - **R 4.0+**(用于 R 可视化脚本)/ R 4.0+ (for R viz scripts)
-- **JupyterLab / Notebook**(用于 ipynb/)/ Jupyter for notebooks
+- **JupyterLab / Notebook** (用于 `visualization/notebooks/`) / Jupyter for notebooks
 - 训练用 GPU(推荐 NVIDIA V100/A100,显存 ≥ 16GB)/ Training GPU recommended
 
 ### 安装 / Installation
@@ -156,14 +149,19 @@ ls -la npy
 ### 训练示例 / Training Example
 
 ```bash
-# 训练 Human 数据集上的 RGCNFormer
-python train_human.py --epochs 40 --batch-size 32
+# 训练 Human 数据集上的 mRModN (RGCNFormer)
+python train_human_mrmodn.py --epochs 40 --batch-size 32
+
+# 训练 Plant 数据集
+python train_plant_mrmodn.py
 
 # 训练多 RM 数据集
 python train_human_multirm.py
+python train_multirm_mrmodn.py
 
-# 训练 ModX(消融)
+# 训练 ModX / EvoRMD 变体
 python train_human_modx.py
+python train_human_evormd.py
 ```
 
 训练产物保存到 `output/`,日志保存到 `logs/`。/ Outputs to `output/`, logs to `logs/`.
@@ -171,34 +169,58 @@ python train_human_modx.py
 ### 推理示例 / Inference Example
 
 ```bash
-# 对新序列推理(分段)
-python inference_modx_segmented.py --input sequences.fasta
+# Human + mRModN 全长 1001nt 推理
+python inference_human_mrmodn_full.py
 
-# 多 RM 推理
-python inference_mrmodn_full.py
+# 滑窗推理 (segmented)
+python inference_human_modx_segmented.py --input sequences.fasta
+python inference_human_evormd_segmented.py
+python inference_multirm_multirm_segmented.py
 ```
 
 ### 可视化 / Visualization
 
 ```bash
-# 注意力对比
-python atten_comp/run_attention_comparison_v2.py
+# 注意力对比 (从 atten_comp/ 迁移到 visualization/)
+python visualization/human/mrmodn/run_attention_comparison_v2.py
+python visualization/human/mrmodn/attention_comparison.py
 
-# R 脚本:零样本/少样本图表
-Rscript plot_zero_fewshot_analysis.R
+# 空间 motif
+python visualization/human/mrmodn/spatial_motif.py
+
+# UMAP 工具
+python visualization/tools/prepare_umap_data.py
+
+# R 脚本: 零样本/少样本图表 (从根目录迁移到 analysis/)
+Rscript analysis/plot_zero_fewshot_analysis.R
+```
+
+### 测试 / Testing
+
+```bash
+# 运行完整测试套件 (pytest)
+pytest tests/ -v
+
+# 仅运行命名规范审计
+pytest tests/test_naming_convention.py -v
+
+# 仅运行模型导入回归
+pytest tests/test_model_import.py -v
 ```
 
 ### Jupyter Notebooks
 
 ```bash
-jupyter lab ipynb/
-# 打开 rgcnformer_cls_res.ipynb 等进行交互式分析
+jupyter lab visualization/notebooks/
+# 打开 view_gen3.ipynb 等进行交互式分析
 ```
 
 ## 关键文件说明 / Key Files
 
 ### 模型 / Models
-- `model/main_model.py` - RGCNFormer 主网络:ParallelCNNBlock(多尺度卷积)+ GCNBlock(图卷积)+ ClassQueryHead(类查询注意力)
+- `model/mrmodn.py` - mRModN (RGCNFormer) 主网络: ParallelCNNBlock (多尺度卷积) + GCNBlock (图卷积) + ClassQueryHead (类查询注意力) — 重命名自 `main_model.py`
+- `model/mrmodn_collect_atten.py` - 收集注意力变体 — 重命名自 `main_model_collect_atten.py`
+- `model/mrmodn_multirm.py` - MultIRM 51nt 变体 — 重命名自 `main_model_multirm.py`
 - `model/multirm.py` - 多任务多修饰变体
 - `model/modx.py` - 修饰类型消融变体
 - `model/evormd_human.py` - EvoRMD 集成(进化特征)/ Evolutionary feature integration
@@ -211,24 +233,28 @@ jupyter lab ipynb/
 - `dataset/gen3.py` - 第 3 代数据集
 
 ### 训练 / Training
-- `train_human.py` - 主训练脚本(Human)/ Main training (Human)
-- `train_plant.py` - Plant 训练
-- `train_human_multirm.py` - 多 RM 训练
+- `train_human_mrmodn.py` - 主训练脚本(Human)/ Main training (Human)
+- `train_plant_mrmodn.py` - Plant 训练
+- `train_multirm_mrmodn.py` - 多 RM 训练
+- `train_human_multirm.py` / `train_human_modx.py` / `train_human_evormd.py` - 变体模型训练
 
 ### 推理 / Inference
-- `inference_modx_segmented.py` - ModX 分段推理
-- `inference_mrmodn_full.py` - 多 RM 全量推理
-- `inference_multirm_segmented.py` - 多 RM 分段
+- `inference_human_mrmodn_full.py` - Human + mRModN 全长 1001nt 推理
+- `inference_human_modx_segmented.py` - ModX 分段推理
+- `inference_human_evormd_segmented.py` - EvoRMD 分段推理
+- `inference_multirm_multirm_segmented.py` - 多 RM 分段
 
 ### 少样本分析 / Few-shot Analysis
-- `fewshot_ac4c_balance.py` / `fewshot_ac4c_unbalan.py` - ac4C 平衡/非平衡
-- `fewshot_plant_3way_independent.py` - Plant 三向独立
-- `zero_shot_fewshot_analysis.py` - 零样本+少样本综合
+- `fewshot_ac4c_mrmodn_balance.py` / `fewshot_ac4c_mrmodn_unbalan.py` - ac4C 平衡/非平衡
+- `fewshot_plant_mrmodn_3way.py` - Plant 三向独立
+- `zeroshot_human_mrmodn_analysis.py` - 零样本+少样本综合
+- `zeroshot_human_mrmodn_extract.py` - 零样本特征抽取
 
 ### 工具 / Utils
 - `utils/common.py` - 公共常量(NUCLEOTIDE_MAP、k-mer)、评估函数
 - `utils/metrics.py` - ACC / F1 / MCC 等指标
 - `utils/few_shot.py` - 少样本核心算法
+- `utils/sliding_window_utils.py` - 滑窗工具 (从根目录迁入)
 
 ## 与其他项目的关系 / Relation to Other Projects
 
@@ -254,7 +280,10 @@ Cluster_WebAndWx_backend  ←── HTTP API 入口
 
 ## 注意事项 / Notes
 
-- 数据通过软链接 `npy/` 共享,删除软链接会导致训练失败 / Data via `npy/` symlink; breaking it will fail training
+- 数据通过软链接 `npy/` 共享, 删除软链接会导致训练失败 / Data via `npy/` symlink; breaking it will fail training
 - 训练前确保 `dataset/*.py` 与 `npy/` 中的数据对应 / Ensure `dataset/*.py` matches data in `npy/`
 - GPU 显存不足时可减小 `batch_size` / Reduce `batch_size` if GPU OOM
-- 34 个 ipynb 文件中部分可能引用旧的路径/模型,运行前请检查 / Some ipynb may reference old paths/models; check before running
+- 重构后所有 `model.main_model*` 导入已统一替换为 `model.mrmodn*`; 旧路径不再可用 /
+  After refactor, all `model.main_model*` imports are now `model.mrmodn*`; old paths no longer work
+- 命名规范见 `tests/test_naming_convention.py`: `<task>_<dataset>_<model>[_<suffix>].py` /
+  Naming convention enforced in `tests/test_naming_convention.py`

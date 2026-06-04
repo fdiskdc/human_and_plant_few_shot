@@ -30,7 +30,7 @@ Provides few-shot benchmarking for Plant (Y/m5C/m6A) and AC4C datasets: dynamic 
 5. 保存结果 / Save results
 
 相关文件 / Related Files:
-- 调用 / Calls: model.main_model, dataset.{plant,ac4c,plant_single}
+- 调用 / Calls: model.mrmodn, dataset.{plant,ac4c,plant_single}
 - 被调用 / Called by: train_*.py, fewshot_*.py
 
 使用示例 / Usage Example:

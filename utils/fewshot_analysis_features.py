@@ -43,7 +43,7 @@ from torch.utils.data import Subset
 from torch_geometric.loader import DataLoader as PyGDataLoader
 from tqdm import tqdm
 
-from model.main_model import RNA_ClassQuery_Model
+from model.mrmodn import RNA_ClassQuery_Model
 
 
 class FeatureExtractor:

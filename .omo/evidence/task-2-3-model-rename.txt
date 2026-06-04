@@ -1,0 +1,19 @@
+=== model/ after rename ===
+abla_model.py
+evormd_human.py
+__init__.py
+main_model_multirm.py
+modx_collect_atten.py
+modx.py
+mrmodn_collect_atten.py
+mrmodn.py
+multirm_collect_atten.py
+multirm.py
+
+=== Verify originals removed ===
+main_model.py REMOVED
+main_model_collect_atten.py REMOVED
+
+=== Verify new files exist ===
+mrmodn.py EXISTS (714 lines)
+mrmodn_collect_atten.py EXISTS (479 lines)

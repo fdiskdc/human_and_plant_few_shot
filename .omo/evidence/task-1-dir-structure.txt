@@ -1,0 +1,39 @@
+=== Directory verification ===
+visualization/human/evormd
+visualization/human/mrmodn
+visualization/plant/mrmodn
+ablation/
+analysis/
+tests/
+tests/__init__.py:
+tests/__init__.py
+
+=== Full visualization/ tree ===
+visualization/
+visualization/ac4c
+visualization/ac4c/evormd
+visualization/ac4c/modx
+visualization/ac4c/mrmodn
+visualization/gen3
+visualization/gen3/evormd
+visualization/gen3/modx
+visualization/gen3/mrmodn
+visualization/human
+visualization/human/evormd
+visualization/human/modx
+visualization/human/mrmodn
+visualization/human/multirm
+visualization/multirm
+visualization/multirm/evormd
+visualization/multirm/modx
+visualization/multirm/mrmodn
+visualization/multirm/multirm
+visualization/notebooks
+visualization/plant
+visualization/plant/evormd
+visualization/plant/modx
+visualization/plant/mrmodn
+visualization/plant/multirm
+visualization/tools
+
+Total visualization dirs: 26

@@ -1,0 +1,8 @@
+=== Project Syntax Check ===
+Total .py files: 83
+PASS: 82 (98.8%)
+FAIL: 1
+
+=== FAILURES ===
+  ✗ dataset/plant_single.py
+    unexpected indent (<unknown>, line 272)

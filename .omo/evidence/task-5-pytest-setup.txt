@@ -1,0 +1,19 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.0.3, pluggy-1.6.0 -- /usr/bin/python3
+cachedir: .pytest_cache
+rootdir: /home/dc/vscode/vscode20260603/human_and_plant_few_shot
+configfile: pytest.ini
+collecting ... collected 10 items
+
+tests/test_infrastructure.py::test_pytest_works PASSED                   [ 10%]
+tests/test_infrastructure.py::test_python_version PASSED                 [ 20%]
+tests/test_infrastructure.py::test_project_root_exists PASSED            [ 30%]
+tests/test_infrastructure.py::test_model_dir_exists PASSED               [ 40%]
+tests/test_infrastructure.py::test_dataset_dir_exists PASSED             [ 50%]
+tests/test_infrastructure.py::test_utils_dir_exists PASSED               [ 60%]
+tests/test_infrastructure.py::test_visualization_dir_exists PASSED       [ 70%]
+tests/test_infrastructure.py::test_ablation_dir_exists PASSED            [ 80%]
+tests/test_infrastructure.py::test_tests_dir_exists PASSED               [ 90%]
+tests/test_infrastructure.py::test_analysis_dir_exists PASSED            [100%]
+
+============================== 10 passed in 0.02s ==============================
