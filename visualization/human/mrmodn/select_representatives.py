@@ -58,6 +58,27 @@ MOD_NAMES = [
 
 
 def main(top_n=100, low_n=100, output_dir='npy'):
+    """
+    按 m6A 修饰密度挑选代表序列 / Pick representative sequences by m6A density.
+
+    读取 human 序列/标签, 计算 m6A 修饰比例, 取 top / low 各 N 条作为可视化
+    注意力曲线的代表样本, 索引和元信息写盘。
+    Loads human sequence/label arrays, computes the m6A ratio, picks the top
+    and low N sequences as attention-curve representatives, and writes the
+    index/meta files to disk.
+
+    Args / 参数:
+        top_n (int, optional): [中文] 高密度序列数 / [English] top-density count.
+            Defaults to 100.
+        low_n (int, optional): [中文] 低密度序列数 / [English] low-density count.
+            Defaults to 100.
+        output_dir (str, optional): [中文] 输出目录 / [English] output dir.
+            Defaults to 'npy'.
+
+    Called by / 被调用:
+        - __main__ 块: [中文] 命令行直接调用 / [English] invoked from CLI.
+    """
+
     title = 'Selecting Representative Sequences by m6A Density'
     print(f"{'='*60}")
     print(title)

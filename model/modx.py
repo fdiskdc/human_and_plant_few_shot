@@ -49,12 +49,39 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class BahdanauAttention(nn.Module):
+    """
+    Bahdanau 加性注意力 / Bahdanau additive attention.
+
+    单头加性注意力：score = v^T · tanh(W · (hidden + encoder_outputs))。
+    Single-head additive attention.
+
+    Attributes / 属性:
+        W (nn.Linear): [中文] hidden+encoder 投影 / [English] hidden+encoder projection.
+        v (nn.Linear): [中文] 标量得分投影 / [English] scalar score projection.
+    """
+
     def __init__(self, hidden_dim):
+        """
+        初始化 BahdanauAttention / Initialize BahdanauAttention.
+
+        Args / 参数:
+            hidden_dim (int): [中文] 隐藏维度 / [English] hidden dim.
+        """
         super(BahdanauAttention, self).__init__()
         self.W = nn.Linear(hidden_dim, hidden_dim)
         self.v = nn.Linear(hidden_dim, 1)
 
     def forward(self, hidden, encoder_outputs):
+        """
+        计算上下文向量和注意力权重 / Compute context vector and attention weights.
+
+        Args / 参数:
+            hidden (torch.Tensor): [中文] query `(B, hidden_dim)` / [English] query hidden state.
+            encoder_outputs (torch.Tensor): [中文] key/value `(B, L, hidden_dim)` / [English] encoder outputs.
+
+        Returns / 返回:
+            Tuple[torch.Tensor, torch.Tensor]: [中文] `(context_vector, attention_weights)` / [English] context and weights.
+        """
         # hidden shape: (batch_size, hidden_dim)
         # encoder_outputs shape: (batch_size, seq_len, hidden_dim)
         hidden = hidden.unsqueeze(1)
@@ -75,7 +102,36 @@ class BahdanauAttention(nn.Module):
         return context_vector, attention_weights
 
 class RNAClassifierWithWord2Vec(nn.Module):
+    """
+    modX 基线模型：BiLSTM + Bahdanau 注意力 + FC / modX baseline: BiLSTM + Bahdanau attention + FC.
+
+    将 4 维 one-hot 序列线性投影到 embedding 空间，经 BiLSTM 编码后使用 Bahdanau 注意力
+    汇聚为单一上下文向量，最后由 FC 输出 12 类 logits。
+    Maps 4-dim one-hot to embedding space, encodes with BiLSTM, aggregates via Bahdanau
+    attention, and outputs 12-class logits.
+
+    Attributes / 属性:
+        input_dim (int): [中文] one-hot 维度 (固定 4) / [English] one-hot dim (fixed 4).
+        embedding_dim (int): [中文] 嵌入维度 / [English] embedding dim.
+        hidden_dim (int): [中文] LSTM 隐藏维度 / [English] LSTM hidden dim.
+        num_layers (int): [中文] LSTM 层数 / [English] number of LSTM layers.
+        output_dim (int): [中文] 类别数 (默认 12) / [English] output dim (default 12).
+        seq_len (int): [中文] 序列长度 (固定 1001) / [English] sequence length (fixed 1001).
+    """
+
     def __init__(self, input_dim=4, embedding_dim=64, hidden_dim=128, num_layers=2, output_dim=12, dropout=0.5):
+        """
+        初始化 RNAClassifierWithWord2Vec / Initialize RNAClassifierWithWord2Vec.
+
+        Args / 参数:
+            input_dim (int): [中文] one-hot 维度 / [English] one-hot dim. Defaults to 4.
+            embedding_dim (int): [中文] 嵌入维度 / [English] embedding dim. Defaults to 64.
+            hidden_dim (int): [中文] LSTM 隐藏维度 / [English] LSTM hidden dim. Defaults to 128.
+            num_layers (int): [中文] LSTM 层数 / [English] number of LSTM layers. Defaults to 2.
+            output_dim (int): [中文] 类别数 / [English] number of classes. Defaults to 12.
+            dropout (float): [中文] dropout 比率 / [English] dropout rate. Defaults to 0.5.
+        """
+        super(RNAClassifierWithWord2Vec, self).__init__()
         super(RNAClassifierWithWord2Vec, self).__init__()
 
         self.input_dim = input_dim

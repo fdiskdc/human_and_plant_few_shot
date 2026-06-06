@@ -112,7 +112,22 @@ NUC_TO_INDEX = {'A': 0, 'C': 1, 'G': 2, 'U': 3}
 # ============================================================================
 
 class ModelWrapper(nn.Module):
+    """
+    为 Integrated Gradients 定制的模型包装器 (无背景版) /
+    Model wrapper for Integrated Gradients (no-background variant).
+    """
+
     def __init__(self, model: RNA_ClassQuery_Model, target_class_idx: int, edge_index, batch):
+        """
+        初始化包装器 / Initialize the wrapper.
+
+        Args / 参数:
+            model (RNA_ClassQuery_Model): [中文] 原始 GNN 模型 / [English] original GNN model.
+            target_class_idx (int): [中文] 目标类索引 / [English] target class index.
+            edge_index (LongTensor): [中文] 静态图边索引 / [English] static graph edge index.
+            batch (LongTensor): [中文] 静态批索引 / [English] static batch index.
+        """
+
         super().__init__()
         self.model = model
         self.target_class_idx = target_class_idx
@@ -121,6 +136,17 @@ class ModelWrapper(nn.Module):
         self.model.eval()
 
     def forward(self, x_flat):
+        """
+        前向传播, 只返回目标类 logit / Forward pass returning only the target-class logit.
+
+        Args / 参数:
+            x_flat (Tensor): [中文] 展平后的节点特征, 形状 (N*4,) /
+                [English] flattened node features, shape (N*4,).
+
+        Returns / 返回:
+            Tensor: [中文] 目标类 logit / [English] target-class logit.
+        """
+
         x = x_flat.view(-1, 4)
         if hasattr(self.model, 'use_hierarchical') and self.model.use_hierarchical:
             output = self.model(x, self.edge_index, self.batch, return_attention=True)
@@ -202,9 +228,24 @@ def extract_embeddings(
     activation = {}
 
     def get_hook(name):
+        """
+        返回一个 closure hook 记录 module 输出 / Return a closure that records the module's output.
+
+        Args / 参数:
+            name (str): [中文] 输出键名 / [English] key in the activation dict.
+
+        Returns / 返回:
+            Callable: [中文] PyTorch forward hook / [English] PyTorch forward hook.
+        """
+
         def hook(module, input, output):
             # MultiheadAttention returns a tuple: (attn_output, attn_weights)
             # We only need the attn_output for clustering
+            """
+            实际 hook: 缓存 `output[0]` (tuple 时) 或 `output`, 并 detach /
+            The actual hook: caches `output[0]` (for tuples) or `output`, then detaches.
+            """
+
             if isinstance(output, tuple):
                 activation[name] = output[0].detach()  # Take the first element (attn_out)
             else:
@@ -777,6 +818,16 @@ def int_or_none(v):
 
 
 def main():
+    """
+    空间 motif (无背景) 可视化主入口 / Spatial-motif (no-background) main entry.
+
+    与 `spatial_motif.py` 类似, 但 Integrated Gradients 不使用 baseline 背景输入。
+    Similar to `spatial_motif.py`, but Integrated Gradients omits a baseline input.
+
+    Called by / 被调用:
+        - __main__ 块: [中文] 命令行直接调用 / [English] invoked from CLI.
+    """
+
     parser = argparse.ArgumentParser(
         description='Spatial Motif Analysis with Latent Space Clustering (Hard Zeroing, No Background)',
         formatter_class=argparse.RawDescriptionHelpFormatter,

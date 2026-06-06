@@ -63,7 +63,21 @@ from utils.common import GROUP_TO_CLASS_INDICES
 
 class ParallelCNNBlock(nn.Module):
     """
-    Multi-scale CNN feature extraction block
+    多尺度并行一维卷积块 (M2D 模块核心) / Multi-scale parallel 1D CNN block (M2D module core).
+
+    使用 4 个不同核大小的并行 1D 卷积捕获 RNA 序列的 k-mer 局部模式 (k=1,3,5,7)。
+    拼接后通过 LayerNorm → ReLU → Dropout 产生节点级特征向量。
+    Uses 4 parallel 1D convolutions with different kernel sizes (k=1,3,5,7) to capture
+    k-mer local patterns. Concatenated output is normalized and activated to produce
+    node-level feature vectors.
+
+    Attributes / 属性:
+        in_channels (int): [中文] 输入通道数 (固定 4) / [English] input channels (fixed at 4 for ACGU).
+        hidden_dim (int): [中文] 隐藏维度 (4 个分支各贡献 1/4) / [English] hidden dim (4 branches contribute 1/4 each).
+        kernel_sizes (Tuple[int, ...]): [中文] 卷积核大小元组 / [English] tuple of kernel sizes.
+        seq_len (int): [中文] 序列长度 (固定 1001) / [English] sequence length (fixed at 1001).
+        conv_branches (nn.ModuleList): [中文] 4 个并行 1D 卷积 / [English] 4 parallel 1D convs.
+        norm (nn.Module): [中文] LayerNorm 或 BatchNorm1d / [English] LayerNorm or BatchNorm1d.
     """
 
     def __init__(
@@ -75,6 +89,17 @@ class ParallelCNNBlock(nn.Module):
         dropout: float = 0.1,
         seq_len: int = 1001
     ):
+        """
+        初始化 ParallelCNNBlock / Initialize the ParallelCNNBlock.
+
+        Args / 参数:
+            in_channels (int): [中文] 输入通道数 / [English] input channels. Defaults to 4.
+            hidden_dim (int): [中文] 隐藏维度 (必须能被 kernel_sizes 长度整除) / [English] hidden dim.
+            kernel_sizes (Tuple[int, ...]): [中文] 卷积核元组 / [English] kernel sizes tuple. Defaults to (1,3,5,7).
+            use_layer_norm (bool): [中文] 是否使用 LayerNorm / [English] use LayerNorm. Defaults to True.
+            dropout (float): [中文] dropout 比率 / [English] dropout rate. Defaults to 0.1.
+            seq_len (int): [中文] 序列长度 / [English] sequence length. Defaults to 1001.
+        """
         super().__init__()
 
         self.in_channels = in_channels
@@ -105,6 +130,24 @@ class ParallelCNNBlock(nn.Module):
         self.activation = nn.ReLU()
 
     def forward(self, x: torch.Tensor, batch: Optional[torch.Tensor] = None) -> torch.Tensor:
+        """
+        前向传播：多尺度卷积 → 归一化 → 激活 / Forward pass: multi-scale conv → norm → activation.
+
+        支持两种输入格式：
+        - `(B, L, 4)` 密集批处理 (B 个样本，每条长度 L)
+        - `(Total_Nodes, 4)` PyG 格式 (需要 `batch` 索引)
+
+        Supports two input formats:
+        - `(B, L, 4)` dense batch
+        - `(Total_Nodes, 4)` PyG format (requires `batch` index)
+
+        Args / 参数:
+            x (torch.Tensor): [中文] 输入 one-hot / [English] input one-hot tensor.
+            batch (Optional[torch.Tensor]): [中文] PyG 批索引 / [English] PyG batch index.
+
+        Returns / 返回:
+            torch.Tensor: [中文] 节点级特征 `(Total_Nodes, hidden_dim)` / [English] node features.
+        """
         if x.dim() == 3 and x.size(1) == self.seq_len and x.size(2) == 4:
             x = x.transpose(1, 2)
         elif x.dim() == 2 and x.size(1) == 4:
@@ -138,7 +181,21 @@ class ParallelCNNBlock(nn.Module):
 
 class GCNBlock(nn.Module):
     """
-    Graph Convolutional Network block
+    多层残差图卷积块 / Multi-layer residual GCN block.
+
+    使用 `num_layers` 层 `GCNConv` 做图结构特征传播，每层后接 LayerNorm + ReLU + Dropout，
+    并通过残差连接缓解过平滑问题。3 层是经验最优配置。
+    Uses `num_layers` GCNConv layers with LayerNorm + ReLU + Dropout, plus residual
+    connections to mitigate over-smoothing. 3 layers is empirically optimal.
+
+    Attributes / 属性:
+        in_channels (int): [中文] 输入特征维度 / [English] input feature dim.
+        hidden_dim (int): [中文] GCN 隐藏维度 / [English] GCN hidden dim.
+        out_channels (int): [中文] 输出维度 / [English] output dim.
+        num_layers (int): [中文] GCN 层数 / [English] number of GCN layers.
+        use_residual (bool): [中文] 是否使用残差 / [English] use residual connections.
+        gcn_layers (nn.ModuleList): [中文] GCN 卷积层列表 / [English] GCN conv layer list.
+        norms (nn.ModuleList): [中文] LayerNorm 列表 / [English] LayerNorm list.
     """
 
     def __init__(
@@ -150,6 +207,17 @@ class GCNBlock(nn.Module):
         dropout: float = 0.3,
         use_residual: bool = True
     ):
+        """
+        初始化 GCNBlock / Initialize GCNBlock.
+
+        Args / 参数:
+            in_channels (int): [中文] 输入特征维度 / [English] input feature dim.
+            hidden_dim (int): [中文] 隐藏维度 / [English] hidden dim. Defaults to 128.
+            out_channels (int): [中文] 输出维度 / [English] output dim. Defaults to 128.
+            num_layers (int): [中文] GCN 层数 / [English] number of GCN layers. Defaults to 3.
+            dropout (float): [中文] dropout 比率 / [English] dropout rate. Defaults to 0.3.
+            use_residual (bool): [中文] 残差开关 / [English] enable residual. Defaults to True.
+        """
         super().__init__()
 
         self.in_channels = in_channels
@@ -179,6 +247,16 @@ class GCNBlock(nn.Module):
         self.activation = nn.ReLU()
 
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
+        """
+        前向传播：多层 GCN + 残差 / Forward pass: multi-layer GCN + residuals.
+
+        Args / 参数:
+            x (torch.Tensor): [中文] 节点特征 `(Total_Nodes, in_channels)` / [English] node features.
+            edge_index (torch.Tensor): [中文] PyG 边索引 `(2, E)` / [English] PyG edge indices.
+
+        Returns / 返回:
+            torch.Tensor: [中文] 输出节点特征 `(Total_Nodes, out_channels)` / [English] output features.
+        """
         if self.input_proj is not None:
             x = self.input_proj(x)
 
@@ -203,7 +281,19 @@ class GCNBlock(nn.Module):
 
 class ClassQueryHead(nn.Module):
     """
-    Class-Query classification head using Cross-Attention
+    基于类查询的交叉注意力分类头 / Class-Query Cross-Attention classification head.
+
+    维护 `num_classes` 个可学习的 `class_queries`，通过 `TransformerDecoder` (或纯 `MultiheadAttention`)
+    与 GCN 节点特征做交叉注意力，输出 12 类 logits。可通过 `prune_heads()` 剪枝到子类集。
+    Maintains `num_classes` learnable `class_queries` and uses `TransformerDecoder` (or pure
+    `MultiheadAttention`) to perform cross-attention with GCN node features, producing 12-class
+    logits. Can be pruned via `prune_heads()`.
+
+    Attributes / 属性:
+        class_queries (nn.Parameter): [中文] 可学习类查询 `(num_classes, hidden_dim)` / [English] class queries.
+        cross_attention (nn.Module): [中文] TransformerDecoder 或 MHA / [English] cross-attention module.
+        output_proj (nn.Sequential): [中文] 输出投影头 / [English] output projection.
+        use_decoder (bool): [中文] 是否使用 TransformerDecoder / [English] whether to use TransformerDecoder.
     """
 
     def __init__(
@@ -215,6 +305,17 @@ class ClassQueryHead(nn.Module):
         use_decoder: bool = True,
         seq_len: int = 1001
     ):
+        """
+        初始化 ClassQueryHead / Initialize ClassQueryHead.
+
+        Args / 参数:
+            hidden_dim (int): [中文] 隐藏维度 / [English] hidden dim. Defaults to 128.
+            num_classes (int): [中文] 类别数 / [English] number of classes. Defaults to 12.
+            num_heads (int): [中文] 注意力头数 / [English] number of MHA heads. Defaults to 4.
+            dropout (float): [中文] dropout 比率 / [English] dropout rate. Defaults to 0.1.
+            use_decoder (bool): [中文] 是否使用 TransformerDecoder / [English] use TransformerDecoder. Defaults to True.
+            seq_len (int): [中文] 序列长度 / [English] sequence length. Defaults to 1001.
+        """
         super().__init__()
 
         self.hidden_dim = hidden_dim
@@ -256,7 +357,13 @@ class ClassQueryHead(nn.Module):
     
     def prune_heads(self, valid_class_indices):
         """
-        Physically prune the class queries to only include valid indices.
+        物理剪枝类查询 / Physically prune the class queries to keep only valid indices.
+
+        用于少样本迁移场景：从 12 类剪枝到子类集。
+        Used in few-shot transfer to reduce from 12 classes to a subset.
+
+        Args / 参数:
+            valid_class_indices (List[int]): [中文] 要保留的类索引列表 / [English] list of class indices to keep.
         """
         with torch.no_grad():
             new_queries = self.class_queries.data[valid_class_indices].clone()
@@ -269,6 +376,16 @@ class ClassQueryHead(nn.Module):
         node_features: torch.Tensor,
         batch: torch.Tensor
     ) -> torch.Tensor:
+        """
+        前向传播：类查询 ↔ 节点特征交叉注意力 / Forward: class queries ↔ node features cross-attention.
+
+        Args / 参数:
+            node_features (torch.Tensor): [中文] GCN 节点特征 `(Total_Nodes, hidden_dim)` / [English] GCN node features.
+            batch (torch.Tensor): [中文] PyG 批索引 `(Total_Nodes,)` / [English] PyG batch index.
+
+        Returns / 返回:
+            torch.Tensor: [中文] 12 类 logits `(B, 12)` / [English] 12-class logits.
+        """
         batch_size = batch.max().item() + 1
         device = node_features.device
 
@@ -305,7 +422,16 @@ class ClassQueryHead(nn.Module):
 
 class ClassQueryHeadPooling(nn.Module):
     """
-    Simplified Class-Query head using attention pooling
+    简化版类查询池化头（返回注意力权重） / Simplified Class-Query head with attention pooling (returns weights).
+
+    使用缩放点积注意力计算类查询与节点特征的关联，输出 logits 同时返回注意力权重供可视化。
+    Uses scaled dot-product attention to compute class-to-node associations. Returns both logits
+    and attention weights for downstream visualization.
+
+    Attributes / 属性:
+        class_queries (nn.Parameter): [中文] 类查询 `(num_classes, hidden_dim)` / [English] class queries.
+        attention_scale (float): [中文] 缩放因子 sqrt(hidden_dim) / [English] attention scaling factor.
+        output_proj (nn.Sequential): [中文] 输出投影 / [English] output projection.
     """
 
     def __init__(
@@ -314,6 +440,14 @@ class ClassQueryHeadPooling(nn.Module):
         num_classes: int = 12,
         dropout: float = 0.1
     ):
+        """
+        初始化 ClassQueryHeadPooling / Initialize ClassQueryHeadPooling.
+
+        Args / 参数:
+            hidden_dim (int): [中文] 隐藏维度 / [English] hidden dim. Defaults to 128.
+            num_classes (int): [中文] 类别数 / [English] number of classes. Defaults to 12.
+            dropout (float): [中文] dropout 比率 / [English] dropout rate. Defaults to 0.1.
+        """
         super().__init__()
 
         self.hidden_dim = hidden_dim
@@ -330,6 +464,12 @@ class ClassQueryHeadPooling(nn.Module):
         )
     
     def prune_heads(self, valid_class_indices):
+        """
+        物理剪枝类查询 / Physically prune class queries.
+
+        Args / 参数:
+            valid_class_indices (List[int]): [中文] 要保留的类索引 / [English] class indices to keep.
+        """
         with torch.no_grad():
             new_queries = self.class_queries.data[valid_class_indices].clone()
             self.class_queries = nn.Parameter(new_queries)
@@ -341,15 +481,14 @@ class ClassQueryHeadPooling(nn.Module):
         batch: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        Forward pass with attention weight return for supervision.
+        前向传播（返回注意力权重） / Forward pass returning attention weights for supervision.
 
-        Args:
-            node_features: Node features from GCN
-            batch: Batch assignment vector
+        Args / 参数:
+            node_features (torch.Tensor): [中文] GCN 节点特征 / [English] GCN node features.
+            batch (torch.Tensor): [中文] PyG 批索引 / [English] PyG batch index.
 
-        Returns:
-            logits: Classification logits [Batch_Size, Num_Classes]
-            attn_weights: Attention weights [Batch_Size, Num_Classes, Seq_Len=1001]
+        Returns / 返回:
+            Tuple[torch.Tensor, torch.Tensor]: [中文] `(logits (B,12), attn_weights (B,12,L))` / [English] logits and attention weights.
         """
         batch_size = batch.max().item() + 1
         device = node_features.device
@@ -381,10 +520,35 @@ class ClassQueryHeadPooling(nn.Module):
 
 
 class HierarchicalClassQueryHeadPooling(nn.Module):
+    """
+    层级类查询头（4 组 → 12 类）/ Hierarchical class-query head (4 groups → 12 classes).
+
+    MoHE 模块的核心实现：维护 4 个可学习组查询 (A/C/G/U)，通过组级投影器派生 12 个子类查询，
+    再用 MultiheadAttention 做交叉注意力。同时输出 12 类和 4 组 logits，4 组作为辅助监督信号。
+    Core implementation of MoHE: maintains 4 learnable group queries (A/C/G/U), derives 12
+    subclass queries via group-level projectors, then performs cross-attention with MHA.
+    Outputs both 12-class and 4-group logits; the 4-group is used as auxiliary supervision.
+
+    Attributes / 属性:
+        num_groups (int): [中文] 组数 (固定 4) / [English] number of groups (fixed 4).
+        group_queries (nn.Parameter): [中文] 组查询 `(4, hidden_dim)` / [English] group queries.
+        group_projectors (nn.ModuleList): [中文] 组→子类的投影器 / [English] group-to-subclass projectors.
+        mha_12 (nn.MultiheadAttention): [中文] 12 类注意力 / [English] 12-class MHA.
+        mha_4 (nn.MultiheadAttention): [中文] 4 组注意力 / [English] 4-group MHA.
+    """
+
     def __init__(self, hidden_dim, num_classes, group_to_class_indices, dropout=0.1, use_layer_norm=True, num_heads=8, seq_len=1001):
         """
-        Hierarchical Head with Attention Pooling and Query Derivation.
-        Uses PyTorch MultiheadAttention for efficient parallel computation.
+        初始化 HierarchicalClassQueryHeadPooling / Initialize HierarchicalClassQueryHeadPooling.
+
+        Args / 参数:
+            hidden_dim (int): [中文] 隐藏维度 / [English] hidden dim.
+            num_classes (int): [中文] 类别数 / [English] number of classes. Defaults to 12.
+            group_to_class_indices (Dict[str, List[int]]): [中文] 组到子类索引映射 / [English] group-to-class mapping.
+            dropout (float): [中文] dropout 比率 / [English] dropout rate. Defaults to 0.1.
+            use_layer_norm (bool): [中文] 输出投影是否用 LayerNorm / [English] use LayerNorm in output proj. Defaults to True.
+            num_heads (int): [中文] MHA 头数 / [English] number of MHA heads. Defaults to 8.
+            seq_len (int): [中文] 序列长度 / [English] sequence length. Defaults to 1001.
         """
         super().__init__()
         self.hidden_dim = hidden_dim
@@ -456,11 +620,11 @@ class HierarchicalClassQueryHeadPooling(nn.Module):
 
     def prune_heads(self, valid_class_indices, valid_group_indices):
         """
-        Prune the head to only compute specific classes and groups via index masking.
-        
-        Args:
-            valid_class_indices: List of valid class indices to keep
-            valid_group_indices: List of valid group indices to keep
+        通过索引掩码剪枝到指定的类和组 / Prune to only compute specific classes and groups via index masking.
+
+        Args / 参数:
+            valid_class_indices (List[int]): [中文] 要保留的类索引 / [English] class indices to keep.
+            valid_group_indices (List[int]): [中文] 要保留的组索引 / [English] group indices to keep.
         """
         self.register_buffer('valid_class_indices', torch.tensor(valid_class_indices, dtype=torch.long))
         self.register_buffer('valid_group_indices', torch.tensor(valid_group_indices, dtype=torch.long))
@@ -468,7 +632,10 @@ class HierarchicalClassQueryHeadPooling(nn.Module):
 
     def _derive_class_queries(self):
         """
-        Derive Class Queries from Group Queries using projectors.
+        从组查询派生 12 个子类查询 / Derive 12 class queries from group queries using projectors.
+
+        Returns / 返回:
+            torch.Tensor: [中文] 类查询 `(num_classes, hidden_dim)` / [English] class queries tensor.
         """
         all_sub_queries = []
         all_global_indices = []
@@ -500,13 +667,17 @@ class HierarchicalClassQueryHeadPooling(nn.Module):
 
     def forward(self, node_features: torch.Tensor, batch: torch.Tensor):
         """
-        Args:
-            node_features: [Total_Nodes, Dim]
-            batch: [Total_Nodes]
-        Returns:
-            logits_12: [Batch, 12] or [Batch, Num_Valid_Classes] if pruned
-            logits_4: [Batch, 4] or [Batch, Num_Valid_Groups] if pruned
-            attn_weights_12: [Batch, 12, Seq_Len] or [Batch, Num_Valid_Classes, Seq_Len] if pruned
+        前向传播：层级类查询交叉注意力 / Forward: hierarchical class-query cross-attention.
+
+        Args / 参数:
+            node_features (torch.Tensor): [中文] GCN 节点特征 `(Total_Nodes, dim)` / [English] GCN node features.
+            batch (torch.Tensor): [中文] PyG 批索引 / [English] PyG batch index.
+
+        Returns / 返回:
+            Tuple: [中文] `(logits_12, logits_4, attn_weights_12)` / [English] three tensors.
+                - logits_12: `(B, 12)` 12 类 logits
+                - logits_4: `(B, 4)` 4 组 logits
+                - attn_weights_12: `(B, 12, L)` 12 类注意力
         """
         batch_size = batch.max().item() + 1
         device = node_features.device
@@ -564,7 +735,18 @@ class HierarchicalClassQueryHeadPooling(nn.Module):
 
 class RNA_ClassQuery_Model(nn.Module):
     """
-    RNA Classification Model using Multi-scale CNN + GCN + Class-Query Attention
+    mRModN 端到端模型（多尺度 CNN + GCN + 类查询分类头）/ mRModN end-to-end model.
+
+    整合 ParallelCNNBlock (M2D) + GCNBlock + ClassQueryHead，可选使用层级头 (MoHE) 或
+    简化池化头。序列长度默认 1001nt (Human full-length)。
+    Integrates ParallelCNNBlock (M2D) + GCNBlock + ClassQueryHead, optionally with
+    hierarchical head (MoHE) or simplified pooling head. Default sequence length 1001nt.
+
+    Attributes / 属性:
+        cnn_block (ParallelCNNBlock): [中文] M2D 多尺度 CNN / [English] M2D multi-scale CNN.
+        gcn_block (GCNBlock): [中文] GCN 图传播 / [English] GCN graph propagation.
+        class_query_head (nn.Module): [中文] 选定的分类头 / [English] selected classification head.
+        use_hierarchical (bool): [中文] 是否使用层级头 / [English] use hierarchical head.
     """
 
     def __init__(
@@ -636,7 +818,11 @@ class RNA_ClassQuery_Model(nn.Module):
 
     def prune_heads(self, valid_class_indices, valid_group_indices=None):
         """
-        Public interface to prune the classification head for specific tasks.
+        公开接口：剪枝分类头到指定的类/组 / Public interface to prune the classification head.
+
+        Args / 参数:
+            valid_class_indices (List[int]): [中文] 要保留的类索引 / [English] class indices to keep.
+            valid_group_indices (Optional[List[int]]): [中文] 层级头需要的组索引 / [English] group indices (required for hierarchical).
         """
         if self.use_hierarchical:
             if valid_group_indices is None:
@@ -655,19 +841,16 @@ class RNA_ClassQuery_Model(nn.Module):
         return_attention: bool = False
     ) -> tuple:
         """
-        Forward pass with optional attention weight return.
+        前向传播（端到端 CNN+GCN+Head） / End-to-end forward pass.
 
-        Args:
-            x: Input features
-            edge_index: Graph edge indices
-            batch: Batch assignment vector
-            return_attention: If True, return attention weights (only works with use_simple_pooling=True)
+        Args / 参数:
+            x (torch.Tensor): [中文] 输入序列 / [English] input sequence.
+            edge_index (torch.Tensor): [中文] PyG 边索引 / [English] PyG edge indices.
+            batch (Optional[torch.Tensor]): [中文] PyG 批索引 / [English] PyG batch index.
+            return_attention (bool): [中文] 是否返回注意力权重 / [English] whether to return attention weights.
 
-        Returns:
-            If use_hierarchical and return_attention: (logits_12class, logits_4class, attn_weights_12)
-            If use_hierarchical and not return_attention: (logits_12class, logits_4class)
-            Elif use_simple_pooling and return_attention: (logits, attn_weights)
-            Else: logits
+        Returns / 返回:
+            tuple: [中文] 视头部模式返回不同元组 / [English] depends on head mode.
         """
         if isinstance(x, Data) or isinstance(x, Batch):
             batch_obj = x

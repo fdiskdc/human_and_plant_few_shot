@@ -46,6 +46,20 @@ FILE_PATH = 'npy/cache/zero_batch_cache.npz'
 MAX_ALLOWED_INDEX = 1000 
 
 def inspect_npz(path):
+    """
+    打印 `.npz` 文件的内容概览 / Print a summary of a `.npz` file's contents.
+
+    列出文件内每个数组的形状 / dtype / 统计信息, 便于快速核验 UMAP 准备数据。
+    Lists each array's shape / dtype / stats for quick inspection of UMAP
+    preparation data.
+
+    Args / 参数:
+        path (str): [中文] `.npz` 文件路径 / [English] path to the `.npz` file.
+
+    Called by / 被调用:
+        - __main__ 块: [中文] 命令行直接调用 / [English] invoked from CLI.
+    """
+
     print(f"{'='*60}")
     print(f"正在检查文件: {path}")
     print(f"{'='*60}")

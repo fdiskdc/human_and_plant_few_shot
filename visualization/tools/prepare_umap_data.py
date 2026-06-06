@@ -146,6 +146,18 @@ def compute_density_contours(umap_embeddings, labels, groups=['A', 'C', 'G', 'U'
 
 
 def main():
+    """
+    准备 UMAP 可视化数据 / Prepare UMAP visualization data.
+
+    流程: 加载 human 配置与模型 -> 加载数据 -> 提取特征 -> 写 `.npz`
+    (特征 + 标签 + 元信息) 供 UMAP 脚本消费。
+    Pipeline: load human config & model -> load data -> extract features ->
+    write `.npz` (features + labels + meta) for downstream UMAP scripts.
+
+    Called by / 被调用:
+        - __main__ 块: [中文] 命令行直接调用 / [English] invoked from CLI.
+    """
+
     parser = argparse.ArgumentParser(description='Prepare UMAP data for Human dataset')
     parser.add_argument('--config', type=str, default='json/human.json',
                         help='Path to model config file')

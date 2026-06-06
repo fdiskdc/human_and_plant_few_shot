@@ -353,6 +353,22 @@ QUERY_TYPE_DESC = {
 
 
 def main(config_path='json/abla_human.json'):
+    """
+    16 种消融配置的 FLOPs 计算主入口 / FLOPs computation main entry for 16 ablations.
+
+    流程: 加载配置 -> 遍历 16 种 (`pooling`, `heads`, `attn`) 组合, 逐个计算
+    FLOPs -> 汇总为 CSV 表格。
+    Pipeline: load config -> iterate 16 (pooling, heads, attn) combinations ->
+    compute FLOPs each -> emit a summary CSV.
+
+    Args / 参数:
+        config_path (str, optional): [中文] 配置文件路径 / [English] config file path.
+            Defaults to 'json/abla_human.json'.
+
+    Called by / 被调用:
+        - __main__ 块: [中文] 命令行直接调用 / [English] invoked from CLI.
+    """
+
     print("=" * 70)
     print("  FLOPs Calculation for 16 Ablation Configurations")
     print("=" * 70)

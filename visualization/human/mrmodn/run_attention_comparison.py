@@ -70,6 +70,22 @@ PYTHON = sys.executable
 
 
 def build_scripts(top_n, output_dir):
+    """
+    生成注意力对比 pipeline 的脚本序列 / Build the script list for the attention-comparison pipeline.
+
+    顺序: 选代表性序列 -> mRModN 全长推理 -> MultiRM / modx / EvoRMD 滑窗推理 -> 可视化。
+    Sequence: select representatives -> mRModN full inference -> MultiRM /
+    modx / EvoRMD sliding-window inference -> visualize.
+
+    Args / 参数:
+        top_n (int): [中文] 选 top 序列数 / [English] number of top sequences to pick.
+        output_dir (str): [中文] 可视化输出目录 / [English] visualization output dir.
+
+    Returns / 返回:
+        List[Tuple[str, List[str]]]: [中文] `(脚本名, 参数列表)` 元组列表 /
+            [English] list of `(script, args)` tuples.
+    """
+
     return [
         ("select_representative_sequences.py", ["--top_n", str(top_n)]),
         ("inference_mrmodn_full.py",            []),
@@ -81,6 +97,22 @@ def build_scripts(top_n, output_dir):
 
 
 def main(output_dir='fig/attention_comparison', top_n=100):
+    """
+    注意力对比实验主入口 / Attention-comparison experiment main entry.
+
+    流程: 构造脚本序列 -> 依次串行执行 -> 每个脚本失败立即终止。
+    Pipeline: build script list -> run them sequentially -> abort on first failure.
+
+    Args / 参数:
+        output_dir (str, optional): [中文] 可视化输出目录 / [English] output dir.
+            Defaults to 'fig/attention_comparison'.
+        top_n (int, optional): [中文] 选 top 序列数 / [English] top-N sequences.
+            Defaults to 100.
+
+    Called by / 被调用:
+        - __main__ 块: [中文] 命令行直接调用 / [English] invoked from CLI.
+    """
+
     scripts = build_scripts(top_n, output_dir)
     total_start = time.time()
 

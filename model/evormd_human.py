@@ -55,12 +55,26 @@ import torch.nn.functional as F
 
 class Conv1dEmbedder(nn.Module):
     """
-    Two-layer Conv1d to project 4-dim one-hot RNA sequences into d_fm-dim embeddings.
+    双层 Conv1d 嵌入器（替换 RNA-FM backbone） / Two-layer Conv1d embedder replacing RNA-FM.
 
-    Replaces RNA-FM backbone from the original EvoRMD pipeline.
+    将 4 维 one-hot 投影到 d_fm 维 token embedding。
+    Projects 4-dim one-hot RNA sequences into d_fm-dim token-level embeddings.
+
+    Attributes / 属性:
+        conv1, conv2 (nn.Conv1d): [中文] 两层 1D 卷积 / [English] two 1D conv layers.
+        ln (nn.LayerNorm): [中文] 最后一层归一化 / [English] final layer norm.
     """
 
     def __init__(self, in_channels=4, d_fm=640, kernel_size=7, dropout=0.1):
+        """
+        初始化 Conv1dEmbedder / Initialize Conv1dEmbedder.
+
+        Args / 参数:
+            in_channels (int): [中文] 输入通道 / [English] input channels. Defaults to 4.
+            d_fm (int): [中文] 嵌入维度 / [English] embedding dim. Defaults to 640.
+            kernel_size (int): [中文] 卷积核 / [English] kernel size. Defaults to 7.
+            dropout (float): [中文] dropout 比率 / [English] dropout rate. Defaults to 0.1.
+        """
         super().__init__()
         padding = kernel_size // 2  # keep sequence length unchanged
         self.conv1 = nn.Conv1d(in_channels, d_fm, kernel_size=kernel_size, padding=padding)
@@ -71,10 +85,13 @@ class Conv1dEmbedder(nn.Module):
 
     def forward(self, x):
         """
-        Args:
-            x: (B, L, 4) one-hot encoded RNA sequence
-        Returns:
-            (B, L, d_fm) token-level embeddings
+        前向传播：4 维 one-hot → d_fm 维 token 嵌入 / Forward: 4-dim one-hot → d_fm-dim embeddings.
+
+        Args / 参数:
+            x (torch.Tensor): [中文] `(B, L, 4)` one-hot 序列 / [English] one-hot sequence.
+
+        Returns / 返回:
+            torch.Tensor: [中文] `(B, L, d_fm)` 嵌入 / [English] token embeddings.
         """
         # Conv1d expects (B, C, L)
         x = x.transpose(1, 2)  # (B, 4, L)
@@ -89,19 +106,32 @@ class Conv1dEmbedder(nn.Module):
 
 class TrainableAttention(nn.Module):
     """
-    Learnable attention module over token embeddings (from EvoRMD).
+    序列级可学习注意力 / Learnable sequence-level attention (from EvoRMD).
 
-    Input:
-      token_embeddings: (batch_size, seq_length, embedding_dim)
-    Output:
-      attention_weights: (batch_size, seq_length)
+    Attributes / 属性:
+        attention (nn.Linear): [中文] 标量得分投影 / [English] scalar score projection.
     """
 
     def __init__(self, embedding_dim):
+        """
+        初始化 TrainableAttention / Initialize TrainableAttention.
+
+        Args / 参数:
+            embedding_dim (int): [中文] 嵌入维度 / [English] embedding dim.
+        """
         super().__init__()
         self.attention = nn.Linear(embedding_dim, 1)
 
     def forward(self, token_embeddings):
+        """
+        前向传播：序列级 softmax 注意力 / Forward: sequence-level softmax attention.
+
+        Args / 参数:
+            token_embeddings (torch.Tensor): [中文] `(B, L, D)` / [English] token embeddings.
+
+        Returns / 返回:
+            torch.Tensor: [中文] `(B, L)` 注意力权重 / [English] attention weights.
+        """
         # token_embeddings: (B, L, D)
         attention_scores = self.attention(token_embeddings).squeeze(-1)  # (B, L)
         attention_weights = F.softmax(attention_scores, dim=-1)          # (B, L)
@@ -110,12 +140,12 @@ class TrainableAttention(nn.Module):
 
 class MulticlassClassifier(nn.Module):
     """
-    Multi-class classifier on top of the fused embedding (from EvoRMD).
+    融合嵌入的多类分类器（来自 EvoRMD） / Multi-class classifier on top of fused embedding.
 
-    mlp_depth:
-      - 1: single linear classification head
-      - 2: two-layer MLP (Linear → ReLU → Linear)
-      - 3: three-layer MLP (Linear → ReLU → Linear → ReLU → Linear)
+    mlp_depth 控制 MLP 层数（1/2/3） / Controls MLP depth (1/2/3 layers).
+
+    Attributes / 属性:
+        mlp_depth (int): [中文] MLP 深度 / [English] MLP depth.
     """
 
     def __init__(self, embedding_dim, num_classes, mlp_depth=2):
@@ -137,6 +167,15 @@ class MulticlassClassifier(nn.Module):
             raise ValueError(f"Unsupported MLP depth: {mlp_depth}")
 
     def forward(self, x):
+        """
+        前向传播：MLP 分类 / Forward: MLP classification.
+
+        Args / 参数:
+            x (torch.Tensor): [中文] 输入嵌入 / [English] input embedding.
+
+        Returns / 返回:
+            torch.Tensor: [中文] 分类 logits / [English] classification logits.
+        """
         if self.mlp_depth == 1:
             return self.fc(x)
         elif self.mlp_depth == 2:
@@ -150,10 +189,18 @@ class MulticlassClassifier(nn.Module):
 
 class EvoRMDForHuman(nn.Module):
     """
-    EvoRMD-style model for human multi-label RNA classification.
+    EvoRMD 风格的人类多标签 RNA 分类模型 / EvoRMD-style model for human RNA classification.
 
+    用 Conv1dEmbedder 替换原 RNA-FM backbone，保留 TrainableAttention + MulticlassClassifier。
+    接口与 model_v3 兼容，可直接复用现有训练/测试工具。
     Replaces RNA-FM with Conv1dEmbedder, keeps TrainableAttention + MulticlassClassifier.
-    Same forward() interface as model_v3 for compatibility with existing train/test utilities.
+    Same `forward()` interface as `model_v3` for compatibility with existing utilities.
+
+    Attributes / 属性:
+        embedder (Conv1dEmbedder): [中文] Conv1d 嵌入器 / [English] Conv1d embedder.
+        attention (TrainableAttention): [中文] 序列级注意力 / [English] sequence attention.
+        classifier (MulticlassClassifier): [中文] MLP 分类头 / [English] MLP classifier.
+        use_hierarchical (bool): [中文] 是否使用层级头 / [English] use hierarchical head.
     """
 
     def __init__(
@@ -165,6 +212,17 @@ class EvoRMDForHuman(nn.Module):
         conv_dropout=0.1,
         use_hierarchical=False,
     ):
+        """
+        初始化 EvoRMDForHuman / Initialize EvoRMDForHuman.
+
+        Args / 参数:
+            num_task (int): [中文] 任务数 / [English] number of tasks. Defaults to 12.
+            d_fm (int): [中文] 嵌入维度 / [English] embedding dim. Defaults to 640.
+            mlp_depth (int): [中文] MLP 深度 / [English] MLP depth. Defaults to 2.
+            conv_kernel_size (int): [中文] 卷积核 / [English] conv kernel size. Defaults to 7.
+            conv_dropout (float): [中文] dropout / [English] dropout. Defaults to 0.1.
+            use_hierarchical (bool): [中文] 层级头开关 / [English] use hierarchical head. Defaults to False.
+        """
         super().__init__()
         self.num_task = num_task
         self.d_fm = d_fm
@@ -189,21 +247,18 @@ class EvoRMDForHuman(nn.Module):
 
     def forward(self, x, edge_index=None, batch=None, return_attention=False):
         """
-        Forward pass compatible with train.py / test.py utilities.
+        前向传播（与 train.py / test.py 兼容） / Forward pass compatible with train/test utilities.
 
-        Args:
-            x: Input tensor
-               - Shape: (Total_Nodes, 4) for PyG format
-               - Shape: (Batch, 1001, 4) for tensor format
-            edge_index: Edge indices (unused, kept for interface compatibility)
-            batch: Batch assignment vector (used for reshaping PyG → batch)
-            return_attention: Whether to return attention weights
+        Args / 参数:
+            x (torch.Tensor): [中文] 输入张量 / [English] input tensor.
+                - PyG: `(Total_Nodes, 4)`
+                - tensor: `(Batch, 1001, 4)`
+            edge_index: [中文] 边索引 (未使用) / [English] unused, kept for interface.
+            batch (Optional[torch.Tensor]): [中文] 批索引 / [English] batch index.
+            return_attention (bool): [中文] 是否返回注意力 / [English] whether to return attention.
 
-        Returns:
-            If return_attention=False:
-                logits (B, num_task)  OR  (logits_12, logits_4) if hierarchical
-            If return_attention=True:
-                (logits, attn_weights)  OR  (logits_12, logits_4, attn_weights) if hierarchical
+        Returns / 返回:
+            tuple or torch.Tensor: [中文] 视模式返回 logits 或元组 / [English] depends on mode.
         """
         # ---- Handle different input formats ----
         if x.dim() == 2:
@@ -251,7 +306,17 @@ class EvoRMDForHuman(nn.Module):
             return logits
 
     def _derive_4class(self, logits_12, batch_size, device):
-        """Derive 4-class logits from 12-class logits by max-pooling over nucleotide groups."""
+        """
+        从 12 类 logits 派生 4 组 logits（按核苷酸分组 max-pool） / Derive 4-class logits from 12-class by max-pooling over groups.
+
+        Args / 参数:
+            logits_12 (torch.Tensor): [中文] 12 类 logits / [English] 12-class logits.
+            batch_size (int): [中文] 批大小 / [English] batch size.
+            device: [中文] torch device / [English] torch device.
+
+        Returns / 返回:
+            torch.Tensor: [中文] 4 组 logits `(B, 4)` / [English] 4-group logits.
+        """
         logits_4 = torch.zeros(batch_size, 4, device=device)
         for i, indices in enumerate(self.group_indices):
             logits_4[:, i] = logits_12[:, indices].max(dim=1)[0]

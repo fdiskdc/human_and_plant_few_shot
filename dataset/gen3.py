@@ -402,22 +402,26 @@ def build_sequential_edge_index(sequence):
 
 class Gen3Dataset(Dataset):
     """
-    用于加载3代测序数据的RNA序列数据集，执行12类细粒度分类预测任务
-    支持注意力监督和排序正则化
+    第 3 代测序 RNA 修饰数据集 / 3rd-generation sequencing RNA modification dataset.
 
-    使用内存映射加载，支持多线程DataLoader
+    12 类细粒度分类，支持注意力监督和排序正则化，内存映射加载。
+    12-class fine-grained classification with attention supervision, ranking regularization, and memory-mapped loading.
+
+    Attributes / 属性:
+        mode (str): [中文] 'train'/'test' / [English] split mode.
+        data_dir (str): [中文] 数据目录 / [English] data directory.
     """
 
     def __init__(self, mode='train', data_dir='../npy/3gen', cache_dir=None, use_cache=True, preload_cache=True):
         """
-        初始化数据集（支持内存映射和多线程）
+        初始化 Gen3Dataset / Initialize Gen3Dataset.
 
-        Args:
-            mode (str): 'train' 或 'test'，指定加载训练集还是测试集
-            data_dir (str): 数据文件目录路径（默认为 '../npy/3gen'）
-            cache_dir (str): 缓存目录路径（默认None，使用默认路径）
-            use_cache (bool): 是否启用二级结构缓存（默认True）
-            preload_cache (bool): 是否在初始化时加载所有边索引到内存（默认True）
+        Args / 参数:
+            mode (str): [中文] split 模式 / [English] split mode. Defaults to 'train'.
+            data_dir (str): [中文] 数据目录 / [English] data directory. Defaults to '../npy/3gen'.
+            cache_dir (Optional[str]): [中文] 缓存目录 / [English] cache directory.
+            use_cache (bool): [中文] 启用缓存 / [English] enable cache. Defaults to True.
+            preload_cache (bool): [中文] 预加载 / [English] preload. Defaults to True.
         """
         self.mode = mode
         self.data_dir = data_dir
@@ -456,23 +460,28 @@ class Gen3Dataset(Dataset):
             self._load_batch_cache()
     
     def __len__(self):
-        """返回数据集大小"""
+        """
+        返回数据集大小 / Return dataset size.
+
+        Returns / 返回:
+            int: [中文] 样本数 / [English] number of samples.
+        """
         return len(self.sequences)
-    
+
     def __getitem__(self, idx):
         """
-        获取单个数据样本，返回包含多层级标签的PyG Data对象
+        获取单个数据样本 / Get a single data sample.
 
-        Args:
-            idx (int): 样本索引
+        Args / 参数:
+            idx (int): [中文] 样本索引 / [English] sample index.
 
-        Returns:
-            Data: PyG Data对象，包含：
-                - x: 节点特征 (1001, 4)
-                - edge_index: 边索引 (2, E)
-                - y: 12类多标签向量 (1, 12)
-                - y_4class: 4类核苷酸组标签 (1, 4)
-                - y_site: 1001长度位点标签 (1001,)
+        Returns / 返回:
+            Data: [中文] PyG Data 对象 / [English] PyG Data object with:
+                - x `(1001, 4)` 节点特征
+                - edge_index `(2, E)`
+                - y `(1, 12)` 12 类标签
+                - y_4class `(1, 4)` 4 组标签
+                - y_site `(1001,)` 位点标签
         """
         # 获取序列和标签（使用copy()确保多线程安全）
         sequence_bytes = self.sequences[idx].copy()

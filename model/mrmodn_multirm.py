@@ -59,7 +59,11 @@ from typing import Optional, Tuple
 
 class ParallelCNNBlock(nn.Module):
     """
-    Multi-scale CNN feature extraction block
+    多尺度并行一维卷积块 (51nt MultIRM 变体) / Multi-scale CNN for 51nt MultIRM.
+
+    Attributes / 属性:
+        seq_len (int): [中文] 序列长度 (51) / [English] sequence length (51).
+        conv_branches (nn.ModuleList): [中文] 4 个并行 1D 卷积 / [English] 4 parallel 1D convs.
     """
 
     def __init__(
@@ -71,6 +75,17 @@ class ParallelCNNBlock(nn.Module):
         dropout: float = 0.1,
         seq_len: int = 51  # MultIRM sequence length
     ):
+        """
+        初始化 ParallelCNNBlock (MultIRM 51nt 变体) / Initialize ParallelCNNBlock (MultIRM 51nt variant).
+
+        Args / 参数:
+            in_channels (int): [中文] 输入通道 / [English] input channels. Defaults to 4.
+            hidden_dim (int): [中文] 隐藏维度 / [English] hidden dim. Defaults to 64.
+            kernel_sizes (Tuple[int, ...]): [中文] 卷积核 / [English] kernel sizes. Defaults to (1,3,5,7).
+            use_layer_norm (bool): [中文] 用 LayerNorm / [English] use LayerNorm. Defaults to True.
+            dropout (float): [中文] dropout / [English] dropout. Defaults to 0.1.
+            seq_len (int): [中文] 序列长度 (默认 51) / [English] sequence length. Defaults to 51.
+        """
         super().__init__()
 
         self.in_channels = in_channels
@@ -101,6 +116,16 @@ class ParallelCNNBlock(nn.Module):
         self.activation = nn.ReLU()
 
     def forward(self, x: torch.Tensor, batch: Optional[torch.Tensor] = None) -> torch.Tensor:
+        """
+        前向传播：多尺度卷积 / Forward: multi-scale CNN.
+
+        Args / 参数:
+            x (torch.Tensor): [中文] 输入 / [English] input.
+            batch (Optional[torch.Tensor]): [中文] PyG 批索引 / [English] PyG batch index.
+
+        Returns / 返回:
+            torch.Tensor: [中文] 节点特征 / [English] node features.
+        """
         if x.dim() == 3 and x.size(1) == self.seq_len and x.size(2) == 4:
             x = x.transpose(1, 2)
         elif x.dim() == 2 and x.size(1) == 4:
@@ -131,7 +156,11 @@ class ParallelCNNBlock(nn.Module):
 
 class GCNBlock(nn.Module):
     """
-    Graph Convolutional Network block
+    多层残差图卷积块 / Multi-layer residual GCN block.
+
+    Attributes / 属性:
+        gcn_layers (nn.ModuleList): [中文] GCN 卷积层 / [English] GCN conv layers.
+        use_residual (bool): [中文] 是否残差 / [English] use residual.
     """
 
     def __init__(
@@ -143,6 +172,17 @@ class GCNBlock(nn.Module):
         dropout: float = 0.3,
         use_residual: bool = True
     ):
+        """
+        初始化 GCNBlock / Initialize GCNBlock.
+
+        Args / 参数:
+            in_channels (int): [中文] 输入维度 / [English] input dim.
+            hidden_dim (int): [中文] 隐藏维度 / [English] hidden dim. Defaults to 128.
+            out_channels (int): [中文] 输出维度 / [English] output dim. Defaults to 128.
+            num_layers (int): [中文] 层数 / [English] layers. Defaults to 3.
+            dropout (float): [中文] dropout / [English] dropout. Defaults to 0.3.
+            use_residual (bool): [中文] 残差 / [English] use residual. Defaults to True.
+        """
         super().__init__()
 
         self.in_channels = in_channels
@@ -172,6 +212,16 @@ class GCNBlock(nn.Module):
         self.activation = nn.ReLU()
 
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
+        """
+        前向传播：GCN + 残差 / Forward: GCN + residual.
+
+        Args / 参数:
+            x (torch.Tensor): [中文] 节点特征 / [English] node features.
+            edge_index (torch.Tensor): [中文] 边索引 / [English] edge indices.
+
+        Returns / 返回:
+            torch.Tensor: [中文] 输出节点特征 / [English] output node features.
+        """
         if self.input_proj is not None:
             x = self.input_proj(x)
 
@@ -195,16 +245,31 @@ class GCNBlock(nn.Module):
 
 
 class HierarchicalClassQueryHeadPooling(nn.Module):
+    """
+    MultIRM 层级类查询头（4 组 → 12 类） / MultIRM hierarchical class-query head.
+
+    51nt 窗口上的层级查询+注意力分类头。4-类分组规则：
+    - A: Am(0), m1A(4), m6A(7), m6Am(8), AtoI(11)
+    - C: Cm(1), m5C(5)
+    - G: Gm(2), m7G(9)
+    - U: Um(3), m5U(6), Psi(10)
+
+    Attributes / 属性:
+        seq_len (int): [中文] 序列长度 (51) / [English] sequence length (51).
+        group_to_class_indices (Dict): [中文] 组→子类映射 / [English] group-to-class mapping.
+        mha_12, mha_4 (nn.MultiheadAttention): [中文] 12 类 / 4 组 MHA / [English] 12-class / 4-group MHA.
+    """
+
     def __init__(self, hidden_dim, num_classes=12, dropout=0.1, use_layer_norm=True, num_heads=8):
         """
-        Hierarchical Head with Attention Pooling and Query Derivation for MultIRM.
-        Uses PyTorch MultiheadAttention for efficient parallel computation.
-        
-        4-class grouping rule:
-        - A (Adenine): Am(0), m1A(4), m6A(7), m6Am(8), AtoI(11)
-        - C (Cytosine): Cm(1), m5C(5)
-        - G (Guanine): Gm(2), m7G(9)
-        - U (Uracil): Um(3), m5U(6), Psi(10)
+        初始化 MultIRM 层级头 / Initialize MultIRM hierarchical head.
+
+        Args / 参数:
+            hidden_dim (int): [中文] 隐藏维度 / [English] hidden dim.
+            num_classes (int): [中文] 类别数 / [English] number of classes. Defaults to 12.
+            dropout (float): [中文] dropout / [English] dropout. Defaults to 0.1.
+            use_layer_norm (bool): [中文] 用 LayerNorm / [English] use LayerNorm. Defaults to True.
+            num_heads (int): [中文] MHA 头数 / [English] MHA heads. Defaults to 8.
         """
         super().__init__()
         self.hidden_dim = hidden_dim

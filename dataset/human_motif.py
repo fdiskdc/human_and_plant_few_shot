@@ -190,14 +190,29 @@ def _worker_process_batch(args):
 
 class Mer100DatasetMotif(Dataset):
     """
-    Dataset class specifically for Motif Visualization.
-    Crucially: It loads ALL available data (combining train+test or using full arrays),
-    ignoring any split logic.
+    专门用于 Motif 可视化的数据集 / Dataset class specifically for Motif Visualization.
+
+    加载全部可用数据（合并 train+test 或使用完整数组），忽略 split 逻辑。
+    Loads ALL available data, ignoring any split logic.
+
+    Attributes / 属性:
+        mode (str): [中文] 固定 'all' / [English] fixed at 'all'.
+        use_cache (bool): [中文] 启用缓存 / [English] enable cache.
     """
 
     def __init__(self, data_dir='../npy', cache_dir=None, use_human3=True, use_cache=True, preload_cache=True):
+        """
+        初始化 Mer100DatasetMotif / Initialize Mer100DatasetMotif.
+
+        Args / 参数:
+            data_dir (str): [中文] 数据目录 / [English] data directory. Defaults to '../npy'.
+            cache_dir (Optional[str]): [中文] 缓存目录 / [English] cache directory.
+            use_human3 (bool): [中文] 使用 human3 / [English] use human3. Defaults to True.
+            use_cache (bool): [中文] 启用缓存 / [English] enable cache. Defaults to True.
+            preload_cache (bool): [中文] 预加载 / [English] preload. Defaults to True.
+        """
         # Forced mode to 'all' to indicate full dataset usage in cache filenames
-        self.mode = 'all' 
+        self.mode = 'all'
         self.data_dir = data_dir
         self.use_cache = use_cache
         self._batch_cache = None

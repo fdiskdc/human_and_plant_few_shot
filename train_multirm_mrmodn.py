@@ -1243,6 +1243,30 @@ def main(config_path='json/treexInMultirm.json'):
 
     # Function to load and precompute a dataset
     def load_and_precompute_dataset(mode_name, mode):
+        """
+        加载 MultiRM 数据集, 必要时预计算二级结构 / Load MultiRM dataset, precomputing structures on demand.
+
+        若磁盘缓存 `multirm_{mode}_structures_cache.h5` 存在, 直接使用预加载缓存;
+        否则调用 `precompute_all_structures` 触发结构预计算并落盘。
+        If the on-disk cache `multirm_{mode}_structures_cache.h5` exists, the
+        in-memory preload cache is used; otherwise `precompute_all_structures`
+        is triggered to compute and persist the structures.
+
+        Args / 参数:
+            mode_name (str): [中文] 数据集人类可读名称, 用于日志 /
+                [English] human-readable dataset name used in logs.
+            mode (str): [中文] `MultirmDataset` 模式 'train'/'test'/'valid' /
+                [English] `MultirmDataset` mode: 'train'/'test'/'valid'.
+
+        Returns / 返回:
+            MultirmDataset: [中文] 已加载 (并预计算) 的数据集实例 /
+                [English] loaded (and precomputed) dataset instance.
+
+        Called by / 被调用:
+            - main(): [中文] 三次调用, 加载 train/test/valid 三个划分 /
+                [English] called three times to load train/test/valid splits.
+        """
+
         logger.info(f"\n{'='*60}")
         logger.info(f"Loading {mode_name} dataset (mode={mode})...")
         logger.info(f"{'='*60}")

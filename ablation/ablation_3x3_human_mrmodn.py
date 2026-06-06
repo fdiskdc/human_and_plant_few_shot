@@ -106,11 +106,33 @@ COMMON_ATTENTION_MASK_KEYS = ["attn_mask_A", "attn_mask_C", "attn_mask_G", "attn
 
 
 def setup_output_dir():
+    """
+    创建并打印输出目录 / Create and print the output directory.
+
+    使用 `OUTPUT_DIR` 常量作为根目录, 通过 `os.makedirs(..., exist_ok=True)` 确保存在。
+    Uses the `OUTPUT_DIR` constant as root, creating it via `os.makedirs(..., exist_ok=True)`.
+    """
+
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     print(f"Output directory: {OUTPUT_DIR}")
 
 
 def load_human_data(Config):
+    """
+    加载 human Mer100 数据集, 必要时预计算二级结构 / Load the human Mer100 dataset.
+
+    若 batch_cache 不存在, 调用 `precompute_all_structures` 进行二级结构预计算。
+    Triggers `precompute_all_structures` if the batch cache is missing.
+
+    Args / 参数:
+        Config: [中文] 全局配置对象, 含 `data.human_data_dir` / `data.cache_dir` /
+            [English] global config with `data.human_data_dir` / `data.cache_dir`.
+
+    Returns / 返回:
+        Mer100Dataset: [中文] 已加载 (并预计算) 的 human 数据集 /
+            [English] loaded (and precomputed) human dataset.
+    """
+
     print(f"\nLoading human dataset from {Config.data.human_data_dir}...")
     dataset = Mer100Dataset(
         mode="train",
@@ -134,6 +156,18 @@ def load_human_data(Config):
 
 
 def load_plant_full_dataset(Config):
+    """
+    加载 plant+zero 全量数据集 / Load the full plant+zero dataset.
+
+    Args / 参数:
+        Config: [中文] 全局配置对象, 含 `data.plant_data_dir` 等 /
+            [English] global config including `data.plant_data_dir`.
+
+    Returns / 返回:
+        PlantSingleDataset: [中文] 已加载 (含预加载缓存) 的 plant+zero 数据集 /
+            [English] loaded plant+zero dataset with preloaded cache.
+    """
+
     print(f"\nLoading full plant+zero dataset...")
     full_dataset = PlantSingleDataset(
         plant_dir=Config.data.plant_data_dir,
@@ -228,13 +262,45 @@ class DataFieldNormalizer(torch.utils.data.Dataset):
     """Wrap a dataset so every PyG Data sample exposes the same field set."""
 
     def __init__(self, dataset, default_is_plant=False):
+        """
+        初始化字段归一化包装器 / Initialize the field-normalizing wrapper.
+
+        Args / 参数:
+            dataset (Dataset): [中文] 任意 PyG 数据集 / [English] any PyG dataset.
+            default_is_plant (bool, optional): [中文] 当样本缺 `is_plant` 字段时的默认值 /
+                [English] default value of `is_plant` when missing. Defaults to False.
+        """
+
         self.dataset = dataset
         self.default_is_plant = default_is_plant
 
     def __len__(self):
+        """
+        返回样本数 / Return the sample count.
+
+        Returns / 返回:
+            int: [中文] 包装后的样本数 / [English] number of samples.
+        """
+
         return len(self.dataset)
 
     def __getitem__(self, idx):
+        """
+        取出样本, 补齐 `is_plant` / `real_idx` 及通用 attention mask 字段 /
+        Fetch a sample, padding `is_plant`, `real_idx`, and common attention masks.
+
+        若原样本没有 `is_plant` / `real_idx` 则用 `default_is_plant` 和 `idx` 补齐;
+        `COMMON_ATTENTION_MASK_KEYS` (5 种碱基) 缺则补全为全 0 mask。
+        Falls back to `default_is_plant` and `idx` for `is_plant`/`real_idx`;
+        any missing key in `COMMON_ATTENTION_MASK_KEYS` is set to an all-zero mask.
+
+        Args / 参数:
+            idx (int): [中文] 样本下标 / [English] sample index.
+
+        Returns / 返回:
+            Data: [中文] 字段已补齐的 PyG Data 对象 / [English] PyG Data with fields padded.
+        """
+
         data = self.dataset[idx]
 
         if not hasattr(data, "is_plant"):
@@ -289,6 +355,21 @@ def build_shared_zero_splits(plant_full_dataset, train_count, test_count, seed=R
     rng = np.random.default_rng(seed)
 
     def sample_pool(pool, sample_count, split_name):
+        """
+        从零样本池中按 `sample_count` 抽样 / Sample `sample_count` items from the zero pool.
+
+        若池不足则放回抽样并 `warnings.warn`。
+        Falls back to sampling with replacement (with warning) when the pool is too small.
+
+        Args / 参数:
+            pool (Sequence[int]): [中文] 候选下标序列 / [English] candidate index sequence.
+            sample_count (int): [中文] 期望抽样数 / [English] desired sample count.
+            split_name (str): [中文] 用于警告信息的划分名 / [English] split label for warnings.
+
+        Returns / 返回:
+            List[int]: [中文] 抽样得到的下标列表 / [English] list of sampled indices.
+        """
+
         pool = np.asarray(pool)
         if sample_count <= len(pool):
             sampled = rng.permutation(pool)[:sample_count]
@@ -554,8 +635,19 @@ def evaluate_binary_task(model, test_loader, target_class, device, use_hierarchi
 # -----------------------------------------------------------------------------
 
 class BinaryTask:
-    """Container for a single binary classification task."""
+    """单二分类任务容器, 聚合 task_info / data loaders / model / 评估结果 / Container aggregating task metadata, loaders, model, and evaluation results for a single binary task."""
     def __init__(self, task_info, human_loaders, plant_loaders):
+        """
+        初始化 BinaryTask / Initialize the binary task.
+
+        Args / 参数:
+            task_info (dict): [中文] 任务元信息, 含 class_name / class_index / group 等 /
+                [English] task metadata with class_name, class_index, group, etc.
+            human_loaders (dict): [中文] human train/test DataLoader 字典 /
+                [English] dict of human train/test DataLoaders.
+            plant_loaders (dict): [中文] plant train/test DataLoader 字典 /
+                [English] dict of plant train/test DataLoaders.
+        """
         from typing import Optional
         self.class_index = task_info['index']
         self.class_name = task_info['name']
@@ -707,6 +799,19 @@ def train_binary_task(task: BinaryTask, Config):
 # -----------------------------------------------------------------------------
 
 def main():
+    """
+    3x3 human×plant 消融实验主入口 / 3x3 human×plant ablation main entry.
+
+    流程: 加载配置 -> 加载 human/plant 数据 -> 为 3 个目标类构建二元任务 ->
+    顺序训练并记录每类 human/plant AUC -> 调用 `generate_3x3_plots` 出图 -> 写 CSV。
+    Pipeline: load config -> load human/plant data -> build binary tasks for
+    3 target classes -> sequentially train & record per-class AUC -> plot
+    via `generate_3x3_plots` -> write CSV.
+
+    Called by / 被调用:
+        - __main__ 块: [中文] 命令行直接调用 / [English] invoked from CLI.
+    """
+
     setup_output_dir()
 
     global Config, config_dict
@@ -870,6 +975,22 @@ def main():
 
 
 def generate_3x3_plots(all_records):
+    """
+    生成 3x3 训练曲线图 / Generate 3x3 training-curve plots.
+
+    从 `all_records` 中按 task_name 聚合, 绘制 human/plant 训练过程的 loss/AUC 曲线,
+    并以 3 行 1 列 (或类似) 布局保存到 `OUTPUT_DIR`。
+    Aggregates `all_records` by task_name, plots loss/AUC curves for both
+    human and plant, and saves the 3x3 (or similar) layout into `OUTPUT_DIR`.
+
+    Args / 参数:
+        all_records (List[dict]): [中文] 训练时记录的 step/epoch/metrics 列表 /
+            [English] list of training records with step/epoch/metrics.
+
+    Called by / 被调用:
+        - main(): [中文] 训练结束后调用以出图 / [English] called by main() after training.
+    """
+
     try:
         import matplotlib
 

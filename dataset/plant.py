@@ -92,20 +92,25 @@ from human import (
 
 class PlantDataset(Dataset):
     """
-    用于加载Plant RNA序列数据集，执行12类多标签分类预测任务
+    Plant 12 类多标签 RNA 修饰数据集 / Plant 12-class multi-label RNA modification dataset.
 
-    与 Mer100Dataset 格式完全一致，使用内存映射加载
+    与 Mer100Dataset 格式完全一致，使用内存映射加载。
+    Same format as Mer100Dataset; uses memory-mapped loading.
+
+    Attributes / 属性:
+        plant_dir (str): [中文] 数据目录 / [English] data directory.
+        use_cache (bool): [中文] 启用缓存 / [English] enable cache.
     """
 
     def __init__(self, plant_dir='plant', cache_dir=None, use_cache=True, preload_cache=True):
         """
-        初始化Plant数据集
+        初始化 PlantDataset / Initialize PlantDataset.
 
-        Args:
-            plant_dir (str): plant数据目录路径
-            cache_dir (str): 缓存目录路径（默认None，使用默认路径）
-            use_cache (bool): 是否启用二级结构缓存（默认True）
-            preload_cache (bool): 是否在初始化时加载所有边索引到内存（默认True）
+        Args / 参数:
+            plant_dir (str): [中文] 数据目录 / [English] data directory. Defaults to 'plant'.
+            cache_dir (Optional[str]): [中文] 缓存目录 / [English] cache directory.
+            use_cache (bool): [中文] 启用缓存 / [English] enable cache. Defaults to True.
+            preload_cache (bool): [中文] 预加载 / [English] preload. Defaults to True.
         """
         self.plant_dir = plant_dir
         self.use_cache = use_cache
@@ -195,18 +200,19 @@ class PlantDataset(Dataset):
 
     def _get_batch_cache_path(self):
         """
-        获取批量缓存文件路径
+        获取批量缓存文件路径 / Get batch cache file path.
 
-        Returns:
-            str: 批量缓存文件完整路径
+        Returns / 返回:
+            str: [中文] 完整路径 / [English] full path.
         """
         return os.path.join(self.CACHE_DIR, f"plant_{BATCH_CACHE_FILE}")
 
     def _load_batch_cache(self):
         """
-        从批量缓存文件加载所有边索引到内存
+        从批量缓存文件加载所有边索引 / Load all edge indices from batch cache.
 
-        如果缓存文件存在，直接加载；如果不存在，则不进行任何操作
+        如果缓存文件存在则加载；不存在则不进行任何操作。
+        If the cache file exists, load it; otherwise do nothing.
         """
         cache_path = self._get_batch_cache_path()
 
@@ -227,15 +233,15 @@ class PlantDataset(Dataset):
 
     def precompute_all_structures(self, batch_size=100, num_workers=None, show_progress=True):
         """
-        预计算所有序列的二级结构并保存到批量缓存文件（支持多进程）
+        预计算所有序列的二级结构并保存到缓存 / Pre-compute all secondary structures to cache (multi-process).
 
-        Args:
-            batch_size (int): 每次调用LinearFold的序列数量
-            num_workers (int): 工作进程数，None表示使用CPU核心数
-            show_progress (bool): 是否显示进度条
+        Args / 参数:
+            batch_size (int): [中文] 批大小 / [English] batch size. Defaults to 100.
+            num_workers (Optional[int]): [中文] 工作进程数 / [English] num workers. None 表示 CPU 核心数.
+            show_progress (bool): [中文] 显示进度条 / [English] show progress.
 
-        Returns:
-            dict: 统计信息
+        Returns / 返回:
+            dict: [中文] 统计信息 / [English] stats.
         """
         from tqdm import tqdm
         from multiprocessing import Pool, cpu_count

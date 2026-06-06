@@ -132,6 +132,16 @@ def log_metrics_to_tensorboard(writer: SummaryWriter, metrics: Dict, phase: str,
     """
     # Helper function to get metric key with optional prefix
     def get_key(base_key):
+        """
+        拼接带前缀的指标键 / Compose metric key with optional prefix.
+
+        Args / 参数:
+            base_key (str): [中文] 基础键名 / [English] base key name.
+
+        Returns / 返回:
+            str: [中文] `key_prefix + base_key` / [English] `key_prefix + base_key`.
+        """
+
         if key_prefix:
             return f'{key_prefix}{base_key}'
         else:
@@ -139,6 +149,18 @@ def log_metrics_to_tensorboard(writer: SummaryWriter, metrics: Dict, phase: str,
     
     # Helper function to safely get metric value
     def get_metric(base_key: str, default=0.0):
+        """
+        从 metrics 字典中安全取值 / Safely fetch a metric from the dict.
+
+        Args / 参数:
+            base_key (str): [中文] 基础键名 / [English] base key.
+            default (Any, optional): [中文] 缺省值 / [English] default value. Defaults to 0.0.
+
+        Returns / 返回:
+            Any: [中文] 命中则返回对应值, 否则 `default` /
+                [English] the value if the key exists, else `default`.
+        """
+
         key = get_key(base_key)
         if key in metrics:
             return metrics[key]
@@ -223,11 +245,27 @@ def create_evaluation_table(metrics: Dict, table_type: str = "12class",
         # The key format in metrics.py is: {prefix}{class/group}_{opt}_{metric}
         # e.g., group_class_0_opt_tp, group_4class_0_opt_tp
         # So we need to insert "_opt" before the metric name
-        
+
         # For class metrics like "class_0_tp" -> "class_0_opt_tp"
         # For 4class metrics like "4class_0_tp" -> "4class_0_opt_tp"
-        
+
         # Try with _opt first (format: class_{c}_opt_{metric})
+        """
+        从 metrics 中按 `{prefix}class_{c}_opt_{metric}` / `{prefix}4class_{c}_opt_{metric}`
+        形式取值, 失败则回退到无 `_opt` 形式, 最终回退到 `default` /
+        Fetch a metric via `{prefix}class_{c}_opt_{metric}` /
+        `{prefix}4class_{c}_opt_{metric}`, falling back to the non-`_opt` form
+        and finally to `default`.
+
+        Args / 参数:
+            base_key (str): [中文] 基础键名 (如 "class_0_tp" 或 "4class_0_accuracy") /
+                [English] base key (e.g. "class_0_tp" or "4class_0_accuracy").
+            default (Any, optional): [中文] 缺省值 / [English] default value. Defaults to 0.0.
+
+        Returns / 返回:
+            Any: [中文] 命中值或 `default` / [English] matched value or `default`.
+        """
+
         if "class_" in base_key:
             parts = base_key.split("_")
             # parts will be ["class", "0", "tp"] or ["class", "0", "accuracy"]

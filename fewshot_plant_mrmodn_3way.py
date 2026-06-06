@@ -110,6 +110,18 @@ class BinaryFocalLoss(nn.Module):
     """
 
     def __init__(self, gamma=2.0, pos_weight=None, reduction='mean'):
+        """
+        初始化二元 Focal Loss / Initialize the binary focal loss.
+
+        Args / 参数:
+            gamma (float, optional): [中文] 聚焦系数, 越大越关注难例 / [English] focusing
+                parameter, larger -> more focus on hard examples. Defaults to 2.0.
+            pos_weight (Tensor, optional): [中文] 正类权重 / [English] weight for the
+                positive class. Defaults to None.
+            reduction (str, optional): [中文] 归约方式 'mean'/'sum'/'none' /
+                [English] reduction mode. Defaults to 'mean'.
+        """
+
         super(BinaryFocalLoss, self).__init__()
         self.gamma = gamma
         self.pos_weight = pos_weight
@@ -1101,6 +1113,25 @@ def print_binary_results(all_results_history, logger):
 # ============================================================================
 
 def main(config_path='json/plant_single.json', checkpoint_path=None):
+    """
+    plant 3-way 独立分类训练主入口 / plant 3-way independent classification main entry.
+
+    将 3 类修饰视为 3 个独立二分类, 训练时各自计算 BCE/Focal 损失, 评估时
+    输出每类的 F1、macro/micro F1 与 Few-Shot 基准。
+    Treats the 3 plant modifications as 3 independent binary tasks, computing
+    BCE/Focal loss per class and reporting per-class F1, macro/micro F1, and
+    Few-Shot benchmark at evaluation.
+
+    Args / 参数:
+        config_path (str, optional): [中文] 训练配置路径 / [English] training config path.
+            Defaults to 'json/plant_single.json'.
+        checkpoint_path (str, optional): [中文] 预训练权重路径, 用于热启动 /
+            [English] pretrained checkpoint path for warm start. Defaults to None.
+
+    Called by / 被调用:
+        - __main__ 块: [中文] argparse 解析后调用 / [English] called from CLI after argparse.
+    """
+
     global Config, config_dict
     Config, config_dict = load_config(config_path)
 
@@ -1401,6 +1432,21 @@ def main(config_path='json/plant_single.json', checkpoint_path=None):
     results_path = os.path.join(Config.checkpoint_dir, 'plant_3way_independent_results.json')
 
     def convert_to_serializable(obj):
+        """
+        递归将对象转为 JSON 可序列化类型 / Recursively convert to JSON-serializable types.
+
+        支持 numpy 标量 (float / int / bool)、ndarray、dict、list 等。
+        容器类型会递归处理, 标量类型按其 numpy/python 类型分支转换。
+        Supports numpy scalars (float / int / bool), ndarray, dict, list.
+        Container types are recursed into; scalar types are cast per branch.
+
+        Args / 参数:
+            obj (Any): [中文] 任意 Python 对象 / [English] arbitrary Python object.
+
+        Returns / 返回:
+            Any: [中文] JSON 兼容对象 / [English] JSON-compatible object.
+        """
+
         if isinstance(obj, (np.float32, np.float64, float)):
             return float(obj)
         elif isinstance(obj, (np.int64, np.int32, np.int16, np.int8, int)):

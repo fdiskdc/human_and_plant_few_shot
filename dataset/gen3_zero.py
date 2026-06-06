@@ -349,28 +349,28 @@ def build_sequential_edge_index(sequence):
 
 class Gen3ZeroDataset(Dataset):
     """
-    混合 3gen (正样本) 和 zero (负样本) 的数据集。
-    
+    混合 Gen3 (正样本) + zero (负样本) 数据集 / Hybrid Gen3 (pos) + zero (neg) dataset.
+
     逻辑：
-    1. 从 3gen 文件夹提取 12loc.npy 不全为零的样本作为正样本。
-    2. 从 zero 文件夹提取与正样本等量的样本作为负样本。
-    3. zero文件夹映射关系：
-       - zero_label12 -> 12loc
-       - zero_label4 -> 4loc
-       - zero_label1001 -> 1001loc
-       - zero_seq -> seq
+    1. 从 3gen 提取 12loc.npy 不全为零的样本作为正样本。
+    2. 从 zero 提取等量样本作为负样本。
+    3. zero 文件夹映射：zero_label12 → 12loc, zero_label4 → 4loc, etc.
+
+    Attributes / 属性:
+        mode (str): [中文] split 模式 / [English] split mode.
+        data_dir (str): [中文] 数据根目录 / [English] data root directory.
     """
 
     def __init__(self, mode='train', data_dir='../npy', cache_dir=None, use_cache=True, preload_cache=True):
         """
-        初始化混合数据集
+        初始化 Gen3ZeroDataset / Initialize Gen3ZeroDataset.
 
-        Args:
-            mode (str): 'train' 或 'test'
-            data_dir (str): 数据根目录 (包含 3gen 和 zero 子文件夹)
-            cache_dir (str): 缓存目录路径
-            use_cache (bool): 是否启用二级结构缓存
-            preload_cache (bool): 是否预加载缓存
+        Args / 参数:
+            mode (str): [中文] 'train'/'test' / [English] split mode. Defaults to 'train'.
+            data_dir (str): [中文] 数据根目录 / [English] data root directory. Defaults to '../npy'.
+            cache_dir (Optional[str]): [中文] 缓存目录 / [English] cache directory.
+            use_cache (bool): [中文] 启用缓存 / [English] enable cache. Defaults to True.
+            preload_cache (bool): [中文] 预加载 / [English] preload. Defaults to True.
         """
         self.mode = mode
         self.data_dir = data_dir

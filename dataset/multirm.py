@@ -126,19 +126,18 @@ ONE_HOT_EMB = torch.cat([eye, zero_row], dim=0)
 
 def run_linearfold(sequences, timeout_seconds=1800):
     """
-    使用LinearFold预测RNA序列的二级结构
+    使用 LinearFold 预测 RNA 二级结构 / Predict RNA secondary structures with LinearFold.
 
-    Args:
-        sequences (list): RNA序列字符串列表
-        timeout_seconds (int): 超时时间（秒）
+    Args / 参数:
+        sequences (list): [中文] RNA 序列列表 / [English] list of RNA sequences.
+        timeout_seconds (int): [中文] 超时 / [English] timeout. Defaults to 1800.
 
-    Returns:
-        list: 二级结构字符串列表
+    Returns / 返回:
+        list: [中文] 二级结构列表 / [English] list of structures.
 
-    Raises:
-        RuntimeError: 如果LinearFold执行失败
-        FileNotFoundError: 如果LinearFold可执行文件不存在
-        subprocess.TimeoutExpired: 如果执行超时
+    Raises / 异常:
+        RuntimeError: [中文] LinearFold 失败 / [English] LinearFold failed.
+        FileNotFoundError: [中文] 可执行文件不存在 / [English] missing executable.
     """
     if not sequences:
         return []
@@ -199,14 +198,14 @@ def run_linearfold(sequences, timeout_seconds=1800):
 
 def build_edge_index_from_structure(sequence, structure):
     """
-    根据RNA二级结构构建边索引
+    根据 RNA 二级结构构建边索引 / Build edge index from RNA secondary structure.
 
-    Args:
-        sequence (str): RNA序列
-        structure (str): 二级结构（点括号表示法）
+    Args / 参数:
+        sequence (str): [中文] RNA 序列 / [English] RNA sequence.
+        structure (str): [中文] 二级结构 (点括号) / [English] dot-bracket structure.
 
-    Returns:
-        torch.Tensor: 边索引，形状为[2, E]
+    Returns / 返回:
+        torch.Tensor: [中文] 边索引 `(2, E)` / [English] edge index tensor.
     """
     if not structure:
         return build_sequential_edge_index(sequence)
@@ -239,13 +238,13 @@ def build_edge_index_from_structure(sequence, structure):
 
 def build_sequential_edge_index(sequence):
     """
-    仅构建顺序边 (i, i+1)
+    仅构建顺序边 `(i, i+1)` / Build only sequential edges.
 
-    Args:
-        sequence (str): RNA序列
+    Args / 参数:
+        sequence (str): [中文] RNA 序列 / [English] RNA sequence.
 
-    Returns:
-        torch.Tensor: 边索引，形状为[2, E]
+    Returns / 返回:
+        torch.Tensor: [中文] 边索引 `(2, E)` / [English] edge index tensor.
     """
     edge_list = []
     for i in range(len(sequence) - 1):
@@ -259,21 +258,21 @@ def build_sequential_edge_index(sequence):
 
 class MultirmDataset(Dataset):
     """
-    优化版 Multirm 数据集加载器
-    核心优化：
-    1. 内存驻留 Tensors：在 __init__ 阶段预计算所有数据为 Tensor 格式
-    2. 预计算索引映射：针对 Oversampling 策略，提前生成映射表
-    3. __getitem__ 纯查表：零计算开销，极速数据加载
+    优化版 MultIRM 数据集加载器 / Optimized MultIRM dataset loader.
 
-    Args:
-        data_dir (str): 数据目录路径
-        numsample (int): 每个类抽取的正样本和负样本数量
-        mode (str): 'train', 'test', 或 'valid'
-        cache_dir (str): 缓存目录路径
-        use_cache (bool): 是否启用二级结构缓存
-        preload_cache (bool): 是否在初始化时加载所有边索引到内存
-        seed (int): 随机种子
-        use_4class (bool): 是否使用4类模式
+    核心优化 / Core optimizations:
+    1. 内存驻留 Tensor (init 阶段预计算)
+    2. 预计算索引映射 (Oversampling 策略)
+    3. __getitem__ 纯查表 (零计算开销)
+
+    Key optimizations:
+    1. In-memory tensors (pre-computed at __init__)
+    2. Pre-computed index maps (for oversampling)
+    3. Pure table lookup in __getitem__
+
+    Attributes / 属性:
+        mode (str): [中文] 'train'/'test'/'valid' / [English] split mode.
+        use_4class (bool): [中文] 是否 4 类模式 / [English] use 4-class mode.
     """
 
     def __init__(
@@ -287,6 +286,19 @@ class MultirmDataset(Dataset):
         seed: int = 42,
         use_4class: bool = True
     ):
+        """
+        初始化 MultirmDataset / Initialize MultirmDataset.
+
+        Args / 参数:
+            data_dir (Optional[str]): [中文] 数据目录 / [English] data directory.
+            numsample (int): [中文] 每类正/负样本数 / [English] pos/neg samples per class. Defaults to 50.
+            mode (str): [中文] split 模式 / [English] split mode. Defaults to 'train'.
+            cache_dir (Optional[str]): [中文] 缓存目录 / [English] cache directory.
+            use_cache (bool): [中文] 启用缓存 / [English] enable cache. Defaults to True.
+            preload_cache (bool): [中文] 预加载 / [English] preload. Defaults to True.
+            seed (int): [中文] 随机种子 / [English] random seed. Defaults to 42.
+            use_4class (bool): [中文] 4 类模式 / [English] 4-class mode. Defaults to True.
+        """
         self.mode = mode
         self.use_4class = use_4class
         self.use_cache = use_cache
@@ -382,7 +394,12 @@ class MultirmDataset(Dataset):
         print(f"{'='*60}\n")
     
     def _load_raw_data(self):
-        """加载原始 .npy 文件"""
+        """
+        加载原始 .npy 文件 / Load raw .npy files.
+
+        Returns / 返回:
+            list: [中文] 原始样本列表 / [English] list of raw samples.
+        """
         samples = []
         file_prefix = self.mode
         

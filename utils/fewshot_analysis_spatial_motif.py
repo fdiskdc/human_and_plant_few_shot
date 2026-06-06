@@ -72,8 +72,19 @@ except ImportError:
 
 
 class ModelWrapper(nn.Module):
-    """Model wrapper for Integrated Gradients attribution."""
+    """为 Integrated Gradients 定制的模型包装器 / Wrapper tailored for Integrated Gradients attribution."""
     def __init__(self, model, target_class_idx, edge_index, batch):
+        """
+        初始化包装器 / Initialize the wrapper.
+
+        Args / 参数:
+            model (nn.Module): [中文] 原始 GNN 模型 / [English] original GNN model.
+            target_class_idx (int): [中文] 待归因的目标类索引 / [English] target class index
+                to attribute.
+            edge_index (LongTensor): [中文] 静态图边索引 / [English] static graph edge index.
+            batch (LongTensor): [中文] 静态批索引 / [English] static batch index.
+        """
+
         super().__init__()
         self.model = model
         self.target_class_idx = target_class_idx
@@ -82,6 +93,24 @@ class ModelWrapper(nn.Module):
         self.model.eval()
 
     def forward(self, x_flat):
+        """
+        前向传播, 只输出目标类标量 / Forward pass returning only the target-class logit.
+
+        Captum 等归因工具要求输入展平为 `(N, F)` 并返回标量, 这里把
+        `x_flat` reshape 回 `(N, 4)`, 复用固定 `edge_index` / `batch`, 取出
+        `target_class_idx` 对应 logit。
+        Captum-style attribution requires `(N, F)` flat inputs and scalar
+        outputs, so we reshape `x_flat` back to `(N, 4)`, reuse the cached
+        `edge_index` / `batch`, and return the logit at `target_class_idx`.
+
+        Args / 参数:
+            x_flat (Tensor): [中文] 展平后的节点特征, 形状 (N*4,) /
+                [English] flattened node features, shape (N*4,).
+
+        Returns / 返回:
+            Tensor: [中文] 目标类 logit, 形状 () / [English] target-class logit, shape ().
+        """
+
         x = x_flat.view(-1, 4)
         if hasattr(self.model, 'use_hierarchical') and self.model.use_hierarchical:
             output = self.model(x, self.edge_index, self.batch, return_attention=True)
@@ -345,7 +374,23 @@ def extract_embeddings(model, dataset, indices, device):
     activation = {}
 
     def get_hook(name):
+        """
+        返回一个 closure hook, 记录 module 输出到 `activation[name]` /
+        Return a closure that records a module's output to `activation[name]`.
+
+        Args / 参数:
+            name (str): [中文] 输出键名 / [English] key for the activation dict.
+
+        Returns / 返回:
+            Callable: [中文] PyTorch forward hook / [English] PyTorch forward hook.
+        """
+
         def hook(module, input, output):
+            """
+            实际 hook: 缓存 `output[0]` (tuple 时) 或 `output`, 并 detach /
+            The actual hook: caches `output[0]` (for tuples) or `output`, then detaches.
+            """
+
             if isinstance(output, tuple):
                 activation[name] = output[0].detach()
             else:

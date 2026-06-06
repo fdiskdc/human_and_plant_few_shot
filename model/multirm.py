@@ -57,9 +57,22 @@ from torch import nn
 
 class NaiveNet(nn.Module):
     """
-        CNN only
+    纯 CNN 基线（无 LSTM） / Pure CNN baseline (no LSTM).
+
+    3 层 1D CNN + 共享 FC + 每类独立 FC 头 / 3-layer 1D CNN + shared FC + per-class FC heads.
+
+    Attributes / 属性:
+        num_task (int): [中文] 任务/类别数 / [English] number of tasks/classes.
     """
+
     def __init__(self,input_size=None,num_task=None):
+        """
+        初始化 NaiveNet / Initialize NaiveNet.
+
+        Args / 参数:
+            input_size (Optional[int]): [中文] 输入尺寸 / [English] input size.
+            num_task (Optional[int]): [中文] 任务数 / [English] number of tasks.
+        """
         self.num_task = num_task
         super(NaiveNet, self).__init__()
         self.NaiveCNN = nn.Sequential(
@@ -96,6 +109,15 @@ class NaiveNet(nn.Module):
                                                     ))
 
     def forward(self,x):
+        """
+        前向传播 / Forward pass.
+
+        Args / 参数:
+            x (torch.Tensor): [中文] CNN 输入 / [English] CNN input.
+
+        Returns / 返回:
+            List[torch.Tensor]: [中文] 每类独立 logits / [English] per-class logits list.
+        """
         x = self.NaiveCNN(x)
         output = self.Flatten(x) # flatten output
         shared_layer = self.SharedFC(output)
@@ -109,9 +131,23 @@ class NaiveNet(nn.Module):
 
 class NaiveNet_v1(nn.Module):
     """
-        CNN + LSTM + Attention
+    CNN + BiLSTM + Bahdanau 注意力基线 / CNN + BiLSTM + Bahdanau attention baseline.
+
+    3 层 1D CNN 提取局部特征后送入 BiLSTM，再用 Bahdanau 注意力汇聚为上下文向量。
+    3-layer 1D CNN for local features, then BiLSTM, then Bahdanau attention pooling.
+
+    Attributes / 属性:
+        num_task (int): [中文] 任务/类别数 / [English] number of tasks/classes.
     """
+
     def __init__(self,input_size=None,num_task=None):
+        """
+        初始化 NaiveNet_v1 / Initialize NaiveNet_v1.
+
+        Args / 参数:
+            input_size (Optional[int]): [中文] 输入尺寸 / [English] input size.
+            num_task (Optional[int]): [中文] 任务数 / [English] number of tasks.
+        """
         self.num_task = num_task
         super(NaiveNet_v1, self).__init__()
         self.NaiveCNN = nn.Sequential(
@@ -138,6 +174,15 @@ class NaiveNet_v1(nn.Module):
                                                     ))
 
     def forward(self,x):
+        """
+        前向传播 / Forward pass.
+
+        Args / 参数:
+            x (torch.Tensor): [中文] CNN 输入 / [English] CNN input.
+
+        Returns / 返回:
+            List[torch.Tensor]: [中文] 每类 logits / [English] per-class logits.
+        """
         x = self.NaiveCNN(x)
         batch_size, features, seq_len = x.size()
         x = x.view(batch_size,seq_len, features) # parepare input for LSTM
@@ -154,9 +199,23 @@ class NaiveNet_v1(nn.Module):
 
 class NaiveNet_v2(nn.Module):
     """
-        CNN + LSTM
+    CNN + BiLSTM + Flatten+FC 基线 / CNN + BiLSTM + Flatten+FC baseline.
+
+    与 v1 类似但用 flatten 替换 Bahdanau 注意力。
+    Similar to v1 but uses flatten instead of Bahdanau attention.
+
+    Attributes / 属性:
+        num_task (int): [中文] 任务/类别数 / [English] number of tasks/classes.
     """
+
     def __init__(self,input_size=None,num_task=None):
+        """
+        初始化 NaiveNet_v2 / Initialize NaiveNet_v2.
+
+        Args / 参数:
+            input_size (Optional[int]): [中文] 输入尺寸 / [English] input size.
+            num_task (Optional[int]): [中文] 任务数 / [English] number of tasks.
+        """
         self.num_task = num_task
         super(NaiveNet_v2, self).__init__()
         self.NaiveCNN = nn.Sequential(
@@ -193,6 +252,15 @@ class NaiveNet_v2(nn.Module):
                                                     ))
 
     def forward(self,x):
+        """
+        前向传播 / Forward pass.
+
+        Args / 参数:
+            x (torch.Tensor): [中文] 输入 / [English] input.
+
+        Returns / 返回:
+            List[torch.Tensor]: [中文] 每类 logits / [English] per-class logits.
+        """
         x = self.NaiveCNN(x)
         batch_size, features, seq_len = x.size()
         x = x.view(batch_size,seq_len, features) # parepare input for LSTM
@@ -209,8 +277,28 @@ class NaiveNet_v2(nn.Module):
 
 
 class BahdanauAttention(nn.Module):
-    """Minimal Bahdanau Attention implementation for model_v3 compatibility."""
+    """
+    经典 Bahdanau 加性注意力 / Classical Bahdanau additive attention.
+
+    score = v^T · tanh(W_h · hidden + W_c · context)。
+    用于 model_v3 的多类独立上下文向量计算。
+    Used in model_v3 to compute per-class context vectors.
+
+    Attributes / 属性:
+        W_h (nn.Linear): [中文] hidden 投影 / [English] hidden projection.
+        W_c (nn.Linear): [中文] context 投影 / [English] context projection.
+        v (nn.Linear): [中文] 标量得分投影 / [English] scalar score projection.
+    """
+
     def __init__(self, in_features, hidden_units, num_task):
+        """
+        初始化 BahdanauAttention / Initialize BahdanauAttention.
+
+        Args / 参数:
+            in_features (int): [中文] 输入特征维度 / [English] input feature dim.
+            hidden_units (int): [中文] 隐藏单元数 / [English] number of hidden units.
+            num_task (int): [中文] 任务/类别数 / [English] number of tasks.
+        """
         super().__init__()
         self.in_features = in_features
         self.hidden_units = hidden_units
@@ -225,12 +313,14 @@ class BahdanauAttention(nn.Module):
 
     def forward(self, h_n, output):
         """
-        Args:
-            h_n: Hidden state, shape (batch_size, in_features)
-            output: LSTM output, shape (batch_size, seq_len, in_features)
-        Returns:
-            context_vector: Context vector, shape (batch_size, num_task, in_features)
-            attention_weights: Attention weights, shape (batch_size, num_task, seq_len)
+        前向传播：Bahdanau 注意力汇聚 / Forward: Bahdanau attention pooling.
+
+        Args / 参数:
+            h_n (torch.Tensor): [中文] 隐藏态 `(B, in_features)` / [English] hidden state.
+            output (torch.Tensor): [中文] LSTM 输出 `(B, L, in_features)` / [English] LSTM output.
+
+        Returns / 返回:
+            Tuple[torch.Tensor, torch.Tensor]: [中文] `(context_vector, attention_weights)` / [English] context and weights.
         """
         batch_size, seq_len, in_features = output.shape
 
@@ -267,8 +357,15 @@ class BahdanauAttention(nn.Module):
 
 class model_v3(nn.Module):
     """
-    Baseline model using BiLSTM + Bahdanau Attention.
-    Modified for compatibility with train.py.
+    MultIRM 主基线：BiLSTM + Bahdanau 注意力 / MultIRM primary baseline: BiLSTM + Bahdanau attention.
+
+    51nt 窗口，多类独立上下文向量。接口与 train.py 兼容，支持层级分组。
+    51nt window with per-class context vectors. Compatible with train.py interface, supports hierarchical grouping.
+
+    Attributes / 属性:
+        num_task (int): [中文] 任务/类别数 / [English] number of tasks/classes.
+        use_hierarchical (bool): [中文] 是否使用层级头 / [English] use hierarchical head.
+        lstm_hidden_size (int): [中文] LSTM 隐藏维度 / [English] LSTM hidden dim.
     """
 
     def __init__(self, num_task=12, use_embedding=False, cnn_hidden_dim=64,
@@ -278,10 +375,12 @@ class model_v3(nn.Module):
                  use_simple_pooling=False, use_hierarchical=False,
                  use_layer_norm=True, cnn_dropout=0.1):
         """
-        Args:
-            num_task: Number of tasks/classes (default 12 for compatibility)
-            use_embedding: Whether to use embedding (False for this baseline)
-            Additional params for train.py compatibility (ignored)
+        初始化 model_v3 / Initialize model_v3.
+
+        Args / 参数:
+            num_task (int): [中文] 任务数 (默认 12) / [English] number of tasks. Defaults to 12.
+            use_embedding (bool): [中文] 是否使用嵌入层 (不支持) / [English] use embedding (not supported). Defaults to False.
+            其余参数与 train.py 兼容 / Other params for train.py compatibility.
         """
         super(model_v3, self).__init__()
 
@@ -331,19 +430,18 @@ class model_v3(nn.Module):
 
     def forward(self, x, edge_index=None, batch=None, return_attention=False):
         """
-        Forward pass compatible with train.py
+        前向传播（与 train.py 兼容） / Forward pass compatible with train.py.
 
-        Args:
-            x: Input tensor
-               - Shape: (Total_Nodes, 4) for PyG format
-               - Shape: (Batch, 1001, 4) for tensor format
-            edge_index: Edge indices (unused in this baseline, kept for compatibility)
-            batch: Batch assignment vector (used for reshaping)
-            return_attention: Whether to return attention weights (for attention supervision)
+        Args / 参数:
+            x (torch.Tensor): [中文] 输入 / [English] input.
+                - PyG 格式: `(Total_Nodes, 4)`
+                - tensor 格式: `(Batch, 1001, 4)`
+            edge_index: [中文] 边索引 (此基线未使用) / [English] unused in this baseline.
+            batch (Optional[torch.Tensor]): [中文] 批索引 / [English] batch index.
+            return_attention (bool): [中文] 是否返回注意力 / [English] whether to return attention.
 
-        Returns:
-            If return_attention=True: (logits, attention_weights) or (logits_12class, logits_4class, attention_weights)
-            If return_attention=False: logits or (logits_12class, logits_4class)
+        Returns / 返回:
+            tuple or torch.Tensor: [中文] 视模式返回 logits 或带注意力的元组 / [English] depends on mode.
         """
         # Handle different input formats
         # LSTM with batch_first=True expects: (Batch, Seq_Len, Input_Size) = (Batch, 1001, 4)

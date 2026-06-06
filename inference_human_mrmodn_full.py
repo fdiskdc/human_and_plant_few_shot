@@ -65,12 +65,31 @@ ONEHOT_MAP = {
 
 
 def build_sequential_edge_index(seq_len):
+    """
+    构建顺序边索引 / Build sequential edge index.
+
+    Args / 参数:
+        seq_len (int): [中文] 序列长度 / [English] sequence length.
+
+    Returns / 返回:
+        torch.Tensor: [中文] 边索引 `(2, E)` / [English] edge index tensor.
+    """
     src = list(range(seq_len - 1)) + list(range(1, seq_len))
     dst = list(range(1, seq_len)) + list(range(seq_len - 1))
     return torch.tensor([src, dst], dtype=torch.long)
 
 
 def load_edge_index_from_cache(cache_path, idx):
+    """
+    从缓存加载边索引 / Load edge index from cache.
+
+    Args / 参数:
+        cache_path (str): [中文] 缓存路径 / [English] cache path.
+        idx (int): [中文] 索引 / [English] index.
+
+    Returns / 返回:
+        Optional[torch.Tensor]: [中文] 边索引或 None / [English] edge index or None.
+    """
     cache = np.load(cache_path, allow_pickle=True)
     if 'edge_indices' in cache:
         ei = cache['edge_indices'][idx]
@@ -83,7 +102,15 @@ def main(config_path='json/human.json',
          checkpoint_path='logs/old/rna_classification_20260129_195404/checkpoints/best_model.pt',
          output_path='npy/mrmodn_full_atten.npz',
          top_n=20):
+    """
+    mRModN 全长推理主函数 / mRModN full-length inference main.
 
+    Args / 参数:
+        config_path (str): [中文] 配置文件路径 / [English] config path.
+        checkpoint_path (str): [中文] checkpoint 路径 / [English] checkpoint path.
+        output_path (str): [中文] 输出路径 / [English] output path.
+        top_n (int): [中文] 选 Top-N / [English] select Top-N.
+    """
     Config, _ = load_config(config_path)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 

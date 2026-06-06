@@ -138,13 +138,13 @@ BATCH_CACHE_FILE = 'structures_cache.npz'
 # 多进程预计算的工作进程函数
 def _worker_process_batch(args):
     """
-    工作进程函数：处理一批序列的二级结构计算
+    工作进程函数：处理一批序列的二级结构计算 / Worker function: compute secondary structures for a batch.
 
-    Args:
-        args: tuple (batch_indices, sequences_bytes_array, linearfold_path)
+    Args / 参数:
+        args (tuple): [中文] `(batch_indices, sequences_bytes_array, linearfold_path)` / [English] batch args.
 
-    Returns:
-        list: [(idx, edge_index_numpy), ...] 或 [(idx, None, error_msg), ...]
+    Returns / 返回:
+        list: [中文] `[(idx, edge_index_numpy), ...]` 或错误 / [English] results or errors.
     """
     batch_indices, sequences_bytes_array, linearfold_path = args
 
@@ -177,10 +177,10 @@ def _worker_process_batch(args):
 # 创建字节到one-hot的映射表（用于快速转换）
 def _create_byte_to_onehot_mapping():
     """
-    创建字节值到one-hot编码的映射表，避免字符串处理开销
-    
-    Returns:
-        np.array: 形状为(256, 4)的映射表
+    创建字节值到 one-hot 编码的映射表（避免字符串处理开销） / Create byte-to-one-hot mapping table.
+
+    Returns / 返回:
+        np.array: [中文] 形状 `(256, 4)` 的映射表 / [English] mapping of shape (256, 4).
     """
     mapping = np.zeros((256, 4), dtype=np.float32)
     
@@ -215,13 +215,13 @@ _BYTE_TO_ONEHOT_MAPPING = _create_byte_to_onehot_mapping()
 
 def one_hot_to_sequence(one_hot_array):
     """
-    将One-Hot编码的RNA序列转换回字符序列
-    
-    Args:
-        one_hot_array (np.array): One-Hot编码的数组，形状为(N, 4)
-        
-    Returns:
-        str: RNA序列字符串
+    将 one-hot 编码转回 RNA 字符序列 / Convert one-hot encoded RNA sequence back to character string.
+
+    Args / 参数:
+        one_hot_array (np.array): [中文] `(N, 4)` one-hot 数组 / [English] one-hot array of shape (N, 4).
+
+    Returns / 返回:
+        str: [中文] RNA 序列字符串 / [English] RNA sequence string.
     """
     # 创建反向映射
     reverse_mapping = {
@@ -242,19 +242,18 @@ def one_hot_to_sequence(one_hot_array):
 
 def run_linearfold(sequences, timeout_seconds=1800):
     """
-    使用LinearFold预测RNA序列的二级结构（线程安全版本）
-    
-    Args:
-        sequences (list): RNA序列字符串列表
-        timeout_seconds (int): 超时时间（秒）
-        
-    Returns:
-        list: 二级结构字符串列表
-        
-    Raises:
-        RuntimeError: 如果LinearFold执行失败
-        FileNotFoundError: 如果LinearFold可执行文件不存在
-        subprocess.TimeoutExpired: 如果执行超时
+    使用 LinearFold 预测 RNA 二级结构（线程安全） / Predict RNA secondary structures using LinearFold.
+
+    Args / 参数:
+        sequences (list): [中文] RNA 序列字符串列表 / [English] list of RNA sequences.
+        timeout_seconds (int): [中文] 超时（秒）/ [English] timeout in seconds. Defaults to 1800.
+
+    Returns / 返回:
+        list: [中文] 二级结构字符串列表 / [English] list of secondary structures.
+
+    Raises / 异常:
+        RuntimeError: [中文] LinearFold 执行失败 / [English] LinearFold failed.
+        FileNotFoundError: [中文] LinearFold 不存在 / [English] LinearFold missing.
     """
     if not sequences:
         return []
@@ -354,14 +353,14 @@ def run_linearfold(sequences, timeout_seconds=1800):
 
 def build_edge_index_from_structure(sequence, structure):
     """
-    根据RNA二级结构构建边索引
-    
-    Args:
-        sequence (str): RNA序列
-        structure (str): 二级结构（点括号表示法）
-        
-    Returns:
-        torch.Tensor: 边索引，形状为[2, E]
+    根据 RNA 二级结构构建边索引 / Build edge index from RNA secondary structure.
+
+    Args / 参数:
+        sequence (str): [中文] RNA 序列 / [English] RNA sequence.
+        structure (str): [中文] 二级结构（点括号表示法） / [English] dot-bracket structure.
+
+    Returns / 返回:
+        torch.Tensor: [中文] 边索引 `(2, E)` / [English] edge index tensor.
     """
     if not structure:
         return build_sequential_edge_index(sequence)
@@ -396,13 +395,13 @@ def build_edge_index_from_structure(sequence, structure):
 
 def build_sequential_edge_index(sequence):
     """
-    仅构建顺序边 (i, i+1)
-    
-    Args:
-        sequence (str): RNA序列
-        
-    Returns:
-        torch.Tensor: 边索引，形状为[2, E]
+    仅构建顺序边 `(i, i+1)` / Build only sequential edges (i, i+1).
+
+    Args / 参数:
+        sequence (str): [中文] RNA 序列 / [English] RNA sequence.
+
+    Returns / 返回:
+        torch.Tensor: [中文] 边索引 `(2, E)` / [English] edge index tensor.
     """
     edge_list = []
     for i in range(len(sequence) - 1):
@@ -415,23 +414,29 @@ def build_sequential_edge_index(sequence):
 
 class Mer100Dataset(Dataset):
     """
-    用于加载4个核苷酸（A, C, G, U）的RNA序列数据集，执行12类细粒度分类预测任务
-    支持注意力监督和排序正则化
+    Human 12 修饰分类数据集（1001nt 全长） / Human 12-modification classification dataset (1001nt).
 
-    使用内存映射加载，支持多线程DataLoader
+    支持注意力监督、排序正则化、内存映射和多线程 DataLoader。
+    Supports attention supervision, ranking regularization, memory-mapped loading, and
+    multi-threaded DataLoader.
+
+    Attributes / 属性:
+        mode (str): [中文] 'train'/'val'/'test' / [English] split mode.
+        data_dir (str): [中文] 数据目录 / [English] data directory.
+        use_cache (bool): [中文] 启用二级结构缓存 / [English] enable structure cache.
     """
 
     def __init__(self, mode='train', data_dir='../npy', cache_dir=None, use_human3=True, use_cache=True, preload_cache=True):
         """
-        初始化数据集（支持内存映射和多线程）
+        初始化 Mer100Dataset / Initialize Mer100Dataset.
 
-        Args:
-            mode (str): 'train' 或 'test'，指定加载训练集还是测试集
-            data_dir (str): 数据文件目录路径
-            cache_dir (str): 缓存目录路径（默认None，使用默认路径）
-            use_human3 (bool): 是否使用human3目录数据（默认True）
-            use_cache (bool): 是否启用二级结构缓存（默认True）
-            preload_cache (bool): 是否在初始化时加载所有边索引到内存（默认True）
+        Args / 参数:
+            mode (str): [中文] 'train'/'val'/'test' / [English] split mode. Defaults to 'train'.
+            data_dir (str): [中文] 数据目录 / [English] data directory. Defaults to '../npy'.
+            cache_dir (Optional[str]): [中文] 缓存目录 / [English] cache directory.
+            use_human3 (bool): [中文] 使用 human3 数据 / [English] use human3 data. Defaults to True.
+            use_cache (bool): [中文] 启用缓存 / [English] enable cache. Defaults to True.
+            preload_cache (bool): [中文] 预加载到内存 / [English] preload cache. Defaults to True.
         """
         self.mode = mode
         self.data_dir = data_dir

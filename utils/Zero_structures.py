@@ -409,6 +409,22 @@ def precompute_zero_structures(zero_dir, cache_dir, batch_size=100, num_workers=
 # =============================================================================
 
 def main():
+    """
+    零样本(Zero-shot) 数据结构预计算 / CLI entry for zero-shot structure precomputation.
+
+    解析命令行 `--data-dir` / `--cache-dir` / `--numsample` / `--workers` 等,
+    调用 `precompute_zero_structures` 完成零样本二级结构预计算与落盘。
+    Parses CLI args (`--data-dir` / `--cache-dir` / `--numsample` / `--workers`),
+    then invokes `precompute_zero_structures` to compute and persist zero
+    secondary structures.
+
+    Raises / 异常:
+        RuntimeError: [中文] 当数据目录不存在或预计算失败 / [English] when the data
+            directory is missing or precomputation fails.
+
+    Called by / 被调用:
+        - __main__ 块: [中文] 命令行直接调用 / [English] invoked from CLI.
+    """
     parser = argparse.ArgumentParser(
         description='Precompute Zero dataset RNA structures using LinearFold'
     )

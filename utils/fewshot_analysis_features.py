@@ -52,6 +52,14 @@ class FeatureExtractor:
     """
 
     def __init__(self, model, device):
+        """
+        初始化特征提取器 / Initialize the feature extractor.
+
+        Args / 参数:
+            model (nn.Module): [中文] 待分析的模型 / [English] model to analyze.
+            device (torch.device | str): [中文] 推理设备 / [English] inference device.
+        """
+
         self.model = model
         self.device = device
         self.features = {}
@@ -59,12 +67,41 @@ class FeatureExtractor:
         self.attention_features = None
 
     def register_hooks(self):
+        """
+        注册前向 hook 捕获中间特征 / Register forward hooks to capture intermediate features.
+
+        为 `cnn_block` / `gcn_block` 注册 `tensor_hook` 记录输出; 若 `class_query_head`
+        含 `mha_12` / `cross_attention`, 再注册一个 `attention_hook` 抓取注意力输出。
+        Registers `tensor_hook` on `cnn_block` and `gcn_block`; if `class_query_head`
+        exposes `mha_12` / `cross_attention`, an `attention_hook` is added too.
+        """
+
         def tensor_hook(name):
+            """
+            返回一个闭包 hook, 把 module 输出存入 `features[name]` /
+            Return a closure that stores the module's output into `features[name]`.
+
+            Args / 参数:
+                name (str): [中文] 输出键名 / [English] key under which to store the output.
+
+            Returns / 返回:
+                Callable: [中文] PyTorch forward hook / [English] PyTorch forward hook.
+            """
+
             def _hook(_module, _inputs, output):
+                """
+                实际 hook: 缓存 `output.detach()` / The actual hook: cache `output.detach()`.
+                """
+
                 self.features[name] = output.detach()
             return _hook
 
         def attention_hook(_module, _inputs, output):
+            """
+            抓取 class-query 注意力的输出, 兼容 tuple / non-tuple /
+            Capture the class-query attention output; works for both tuple/non-tuple.
+            """
+
             if isinstance(output, tuple):
                 self.attention_features = output[0].detach()
             else:
@@ -83,11 +120,34 @@ class FeatureExtractor:
             )
 
     def remove_hooks(self):
+        """
+        移除所有已注册的 hook 并清空列表 / Remove all registered hooks and clear the list.
+        """
+
         for hook in self.hooks:
             hook.remove()
         self.hooks = []
 
     def extract_features(self, data_loader, layer_name='gcn_output'):
+        """
+        按层名提取所有 batch 的特征 / Extract features for the given layer across all batches.
+
+        每次 forward 后从 `self.features[layer_name]` (或 `attention_features` 当
+        `layer_name == 'attention_output'`) 抓取结果, 拼接后返回。
+        After each forward pass, fetches `self.features[layer_name]` (or
+        `attention_features` when `layer_name == 'attention_output'`) and
+        concatenates across batches.
+
+        Args / 参数:
+            data_loader (DataLoader): [中文] 数据加载器 / [English] data loader.
+            layer_name (str, optional): [中文] 抓取层 / [English] target layer.
+                Defaults to 'gcn_output'.
+
+        Returns / 返回:
+            Tuple[np.ndarray, np.ndarray]: [中文] (特征, 标签) /
+                [English] (features, labels).
+        """
+
         self.model.eval()
         self.register_hooks()
 

@@ -111,24 +111,27 @@ from human import (
 
 class AC4CDataset(Dataset):
     """
-    用于加载AC4C RNA序列数据集，执行12类多标签分类预测任务
+    AC4C RNA 修饰数据集 / AC4C RNA modification dataset.
 
-    与 Mer100Dataset 格式类似，但不包含1001loc.npy文件
-    数据集分为 balanced 和 unbalanced 两个版本，默认使用 balanced
+    与 Mer100Dataset 格式类似但不包含 1001loc.npy。分为 balanced / unbalanced 两个版本。
+    Same format as Mer100Dataset but without 1001loc.npy. Available in balanced/unbalanced versions.
+
+    Attributes / 属性:
+        mode (str): [中文] 'train'/'test' / [English] split mode.
+        data_dir (str): [中文] 数据目录 / [English] data directory.
     """
 
-    def __init__(self, mode='train', data_dir='npy/ac4c_processed/balanced_ac4c', 
+    def __init__(self, mode='train', data_dir='npy/ac4c_processed/balanced_ac4c',
                  cache_dir=None, use_cache=True, preload_cache=True):
         """
-        初始化AC4C数据集
+        初始化 AC4CDataset / Initialize AC4CDataset.
 
-        Args:
-            mode (str): 'train' 或 'test'，指定加载训练集还是测试集
-            data_dir (str): AC4C数据目录路径，默认为 'npy/ac4c_processed/balanced_ac4c'
-                          可以设置为 'npy/ac4c_processed/unbalanced_ac4c' 使用非平衡版本
-            cache_dir (str): 缓存目录路径（默认None，使用默认路径）
-            use_cache (bool): 是否启用二级结构缓存（默认True）
-            preload_cache (bool): 是否在初始化时加载所有边索引到内存（默认True）
+        Args / 参数:
+            mode (str): [中文] 'train'/'test' / [English] split mode. Defaults to 'train'.
+            data_dir (str): [中文] 数据目录 / [English] data directory. Defaults to balanced_ac4c.
+            cache_dir (Optional[str]): [中文] 缓存目录 / [English] cache directory.
+            use_cache (bool): [中文] 启用缓存 / [English] enable cache. Defaults to True.
+            preload_cache (bool): [中文] 预加载 / [English] preload. Defaults to True.
         """
         self.mode = mode
         self.data_dir = data_dir

@@ -51,12 +51,36 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class BahdanauAttention(nn.Module):
+    """
+    Bahdanau 加性注意力 / Bahdanau additive attention.
+
+    Attributes / 属性:
+        W (nn.Linear): [中文] hidden 投影 / [English] hidden projection.
+        v (nn.Linear): [中文] 标量得分投影 / [English] scalar score projection.
+    """
+
     def __init__(self, hidden_dim):
+        """
+        初始化 BahdanauAttention / Initialize BahdanauAttention.
+
+        Args / 参数:
+            hidden_dim (int): [中文] 隐藏维度 / [English] hidden dim.
+        """
         super(BahdanauAttention, self).__init__()
         self.W = nn.Linear(hidden_dim, hidden_dim)
         self.v = nn.Linear(hidden_dim, 1)
 
     def forward(self, hidden, encoder_outputs):
+        """
+        前向传播：Bahdanau 注意力 / Forward: Bahdanau attention.
+
+        Args / 参数:
+            hidden (torch.Tensor): [中文] query `(B, hidden_dim)` / [English] query.
+            encoder_outputs (torch.Tensor): [中文] key/value `(B, L, hidden_dim)` / [English] encoder outputs.
+
+        Returns / 返回:
+            Tuple[torch.Tensor, torch.Tensor]: [中文] `(context, weights)` / [English] context and weights.
+        """
         # hidden shape: (batch_size, hidden_dim)
         # encoder_outputs shape: (batch_size, seq_len, hidden_dim)
         hidden = hidden.unsqueeze(1)
@@ -77,7 +101,30 @@ class BahdanauAttention(nn.Module):
         return context_vector, attention_weights
 
 class RNAClassifierWithWord2Vec_Collect_Atten(nn.Module):
+    """
+    modX 收集注意力变体 / modX collect-attention variant.
+
+    与 RNAClassifierWithWord2Vec 相同架构，但额外返回 context vector 和注意力权重。
+    Same architecture as RNAClassifierWithWord2Vec, additionally returns context vector and attention weights.
+
+    Attributes / 属性:
+        input_dim (int): [中文] one-hot 维度 / [English] one-hot dim.
+        output_dim (int): [中文] 类别数 / [English] number of classes.
+        seq_len (int): [中文] 序列长度 (1001) / [English] sequence length (1001).
+    """
+
     def __init__(self, input_dim=4, embedding_dim=64, hidden_dim=128, num_layers=2, output_dim=12, dropout=0.5):
+        """
+        初始化 RNAClassifierWithWord2Vec_Collect_Atten / Initialize the collect-atten variant.
+
+        Args / 参数:
+            input_dim (int): [中文] 输入维度 / [English] input dim. Defaults to 4.
+            embedding_dim (int): [中文] 嵌入维度 / [English] embedding dim. Defaults to 64.
+            hidden_dim (int): [中文] LSTM 隐藏维度 / [English] LSTM hidden dim. Defaults to 128.
+            num_layers (int): [中文] LSTM 层数 / [English] LSTM layers. Defaults to 2.
+            output_dim (int): [中文] 类别数 / [English] number of classes. Defaults to 12.
+            dropout (float): [中文] dropout / [English] dropout. Defaults to 0.5.
+        """
         super(RNAClassifierWithWord2Vec_Collect_Atten, self).__init__()
 
         self.input_dim = input_dim
@@ -105,21 +152,16 @@ class RNAClassifierWithWord2Vec_Collect_Atten(nn.Module):
 
     def forward(self, x, edge_index=None, batch=None, return_attention=False):
         """
-        Forward pass for RNAClassifierWithWord2Vec_Collect_Atten.
+        前向传播（返回注意力） / Forward pass for RNAClassifierWithWord2Vec_Collect_Atten.
 
-        Args:
-            x: Input features - can be PyG Data object or tensor
-               If Data: uses x attribute (node features)
-               If tensor: shape (batch_size * seq_len, input_dim)
-            edge_index: Graph edge indices (unused in this model, kept for compatibility)
-            batch: Batch assignment vector (used for splitting)
-            return_attention: Whether to return context_vector and attention_weights
+        Args / 参数:
+            x: [中文] 输入 / [English] input.
+            edge_index: [中文] 边索引 (未使用) / [English] unused.
+            batch: [中文] 批索引 / [English] batch index.
+            return_attention (bool): [中文] 是否返回注意力 / [English] whether to return attention.
 
-        Returns:
-            If return_attention is False: logits (batch_size, output_dim)
-            If return_attention is True: (logits, context_vector, attention_weights)
-                - context_vector: (batch_size, 2 * hidden_dim)
-                - attention_weights: (batch_size, output_dim, seq_len)
+        Returns / 返回:
+            tuple or torch.Tensor: [中文] logits 或 `(logits, context, weights)` / [English] logits or tuple.
         """
         # Handle PyG Data object input
         if hasattr(x, 'x'):  # PyG Data object

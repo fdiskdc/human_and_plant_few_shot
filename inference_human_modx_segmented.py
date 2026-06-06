@@ -135,7 +135,17 @@ def main(config_path='json/human.json',
          checkpoint_path='logs/old/modx_rna_classification_20260203_135128/checkpoints/best_model.pt',
          output_path='npy/modx_segmented_atten.npz',
          window_size=101, stride=50, top_n=20):
+    """
+    ModX 分段推理主函数 / ModX segmented inference main.
 
+    Args / 参数:
+        config_path (str): [中文] 配置文件 / [English] config path.
+        checkpoint_path (str): [中文] checkpoint 路径 / [English] checkpoint path.
+        output_path (str): [中文] 输出路径 / [English] output path.
+        window_size (int): [中文] 窗口大小 / [English] window size.
+        stride (int): [中文] 步长 / [English] stride.
+        top_n (int): [中文] Top-N / [English] Top-N.
+    """
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     print(f"{'='*60}")

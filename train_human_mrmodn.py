@@ -109,7 +109,7 @@ def main(config_path='json/human.json'):
         None: The function trains the model, saves checkpoints, and logs results to files.
               Best model is saved based on macro F1 score on the test set.
     """
-    
+
     """
     RNA多标签分类模型的主训练函数。
     

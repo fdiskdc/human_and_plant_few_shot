@@ -59,7 +59,16 @@ from model.mrmodn import ParallelCNNBlock, GCNBlock
 
 
 def _make_query_proj(query_dim, hidden_dim):
-    """Create a projection layer if query_dim != hidden_dim, else identity."""
+    """
+    创建 query 投影层（当维度不匹配时） / Create a projection layer if query_dim != hidden_dim, else identity.
+
+    Args / 参数:
+        query_dim (int): [中文] query 维度 / [English] query dim.
+        hidden_dim (int): [中文] 目标隐藏维度 / [English] target hidden dim.
+
+    Returns / 返回:
+        nn.Module: [中文] 投影层或 Identity / [English] projection layer or Identity.
+    """
     if query_dim == hidden_dim:
         return nn.Identity()
     return nn.Linear(query_dim, hidden_dim)
@@ -90,10 +99,27 @@ class HierarchicalClassQueryHead1Query(nn.Module):
         self.classifier_4 = nn.Linear(hidden_dim, 4)
 
     def prune_heads(self, valid_class_indices, valid_group_indices):
+        """
+        注册剪枝缓冲区 / Register pruning buffers for class/group indices.
+
+        Args / 参数:
+            valid_class_indices (List[int]): [中文] 类索引 / [English] class indices.
+            valid_group_indices (List[int]): [中文] 组索引 / [English] group indices.
+        """
         self.register_buffer('valid_class_indices', torch.tensor(valid_class_indices, dtype=torch.long))
         self.register_buffer('valid_group_indices', torch.tensor(valid_group_indices, dtype=torch.long))
 
     def forward(self, node_features, batch):
+        """
+        前向传播（均值池化 + Linear） / Forward: mean-pool + Linear.
+
+        Args / 参数:
+            node_features (torch.Tensor): [中文] 节点特征 / [English] node features.
+            batch (torch.Tensor): [中文] PyG 批索引 / [English] PyG batch index.
+
+        Returns / 返回:
+            Tuple[torch.Tensor, torch.Tensor, torch.Tensor]: [中文] `(logits_12, logits_4, attn_weights)` / [English] three tensors.
+        """
         batch_size = batch.max().item() + 1
         device = node_features.device
         actual_seq_len = batch.bincount()[0].item()
@@ -173,10 +199,23 @@ class HierarchicalClassQueryHead4Query(nn.Module):
         )
 
     def prune_heads(self, valid_class_indices, valid_group_indices):
+        """
+        注册剪枝缓冲区 / Register pruning buffers for class/group indices.
+
+        Args / 参数:
+            valid_class_indices (List[int]): [中文] 类索引 / [English] class indices.
+            valid_group_indices (List[int]): [中文] 组索引 / [English] group indices.
+        """
         self.register_buffer('valid_class_indices', torch.tensor(valid_class_indices, dtype=torch.long))
         self.register_buffer('valid_group_indices', torch.tensor(valid_group_indices, dtype=torch.long))
 
     def _derive_class_queries(self):
+        """
+        从组查询派生子类查询 / Derive class queries from group queries.
+
+        Returns / 返回:
+            torch.Tensor: [中文] 类查询 `(num_classes, hidden_dim)` / [English] class queries.
+        """
         all_sub, all_idx = [], []
         for g_idx in range(self.num_groups):
             g_name = self.group_names[g_idx]
@@ -195,6 +234,16 @@ class HierarchicalClassQueryHead4Query(nn.Module):
         return ordered
 
     def forward(self, node_features, batch):
+        """
+        前向传播：4 组层级查询 + MHA / Forward: 4-group hierarchical queries + MHA.
+
+        Args / 参数:
+            node_features (torch.Tensor): [中文] 节点特征 / [English] node features.
+            batch (torch.Tensor): [中文] PyG 批索引 / [English] PyG batch index.
+
+        Returns / 返回:
+            Tuple[torch.Tensor, torch.Tensor, torch.Tensor]: [中文] `(logits_12, logits_4, attn_weights)` / [English] three tensors.
+        """
         batch_size = batch.max().item() + 1
         device = node_features.device
         actual_seq_len = batch.bincount()[0].item()
@@ -274,10 +323,27 @@ class HierarchicalClassQueryHead12Query(nn.Module):
         )
 
     def prune_heads(self, valid_class_indices, valid_group_indices):
+        """
+        注册剪枝缓冲区 / Register pruning buffers for class/group indices.
+
+        Args / 参数:
+            valid_class_indices (List[int]): [中文] 类索引 / [English] class indices.
+            valid_group_indices (List[int]): [中文] 组索引 / [English] group indices.
+        """
         self.register_buffer('valid_class_indices', torch.tensor(valid_class_indices, dtype=torch.long))
         self.register_buffer('valid_group_indices', torch.tensor(valid_group_indices, dtype=torch.long))
 
     def forward(self, node_features, batch):
+        """
+        前向传播：12 个独立 query + 独立 MHA / Forward: 12 independent queries + per-class MHA.
+
+        Args / 参数:
+            node_features (torch.Tensor): [中文] 节点特征 / [English] node features.
+            batch (torch.Tensor): [中文] PyG 批索引 / [English] PyG batch index.
+
+        Returns / 返回:
+            Tuple[torch.Tensor, torch.Tensor, torch.Tensor]: [中文] `(logits_12, logits_4, attn_weights)` / [English] three tensors.
+        """
         batch_size = batch.max().item() + 1
         device = node_features.device
         actual_seq_len = batch.bincount()[0].item()
@@ -373,10 +439,27 @@ class HierarchicalClassQueryHeadFullAttn(nn.Module):
         )
 
     def prune_heads(self, valid_class_indices, valid_group_indices):
+        """
+        注册剪枝缓冲区 / Register pruning buffers for class/group indices.
+
+        Args / 参数:
+            valid_class_indices (List[int]): [中文] 类索引 / [English] class indices.
+            valid_group_indices (List[int]): [中文] 组索引 / [English] group indices.
+        """
         self.register_buffer('valid_class_indices', torch.tensor(valid_class_indices, dtype=torch.long))
         self.register_buffer('valid_group_indices', torch.tensor(valid_group_indices, dtype=torch.long))
 
     def forward(self, node_features, batch):
+        """
+        前向传播：纯 TransformerEncoder 自注意力 / Forward: pure TransformerEncoder self-attention.
+
+        Args / 参数:
+            node_features (torch.Tensor): [中文] 节点特征 / [English] node features.
+            batch (torch.Tensor): [中文] PyG 批索引 / [English] PyG batch index.
+
+        Returns / 返回:
+            Tuple[torch.Tensor, torch.Tensor, torch.Tensor]: [中文] `(logits_12, logits_4, attn_weights)` / [English] three tensors.
+        """
         batch_size = batch.max().item() + 1
         device = node_features.device
         actual_seq_len = batch.bincount()[0].item()
@@ -424,13 +507,17 @@ _HEAD_REGISTRY = {
 
 class AblationModel(nn.Module):
     """
-    Drop-in replacement for RNA_ClassQuery_Model.
+    消融实验统一入口模型 / Unified ablation entry-point model.
 
-    Args:
-        query_type:       one of "1query", "4query", "12query", "fullattn"
-        group_query_dim:  dimensionality of the learnable query parameters
-                          (projected to gcn_out_channels before MHA).
-                          If None, defaults to gcn_out_channels.
+    Drop-in replacement for RNA_ClassQuery_Model. 根据 `query_type` 选择消融头。
+    Drop-in replacement for `RNA_ClassQuery_Model`. Selects ablation head by `query_type`.
+
+    Attributes / 属性:
+        QUERY_TYPES (List[str]): [中文] 支持的 query 类型 / [English] supported query types.
+        query_type (str): [中文] 当前 query 类型 / [English] current query type.
+        cnn_block (ParallelCNNBlock): [中文] CNN 块 / [English] CNN block.
+        gcn_block (GCNBlock): [中文] GCN 块 / [English] GCN block.
+        head (nn.Module): [中文] 选定的分类头 / [English] selected head.
     """
 
     QUERY_TYPES = list(_HEAD_REGISTRY.keys())
@@ -508,6 +595,13 @@ class AblationModel(nn.Module):
         )
 
     def prune_heads(self, valid_class_indices, valid_group_indices=None):
+        """
+        公开接口：剪枝分类头 / Public interface to prune the classification head.
+
+        Args / 参数:
+            valid_class_indices (List[int]): [中文] 要保留的类索引 / [English] class indices to keep.
+            valid_group_indices (Optional[List[int]]): [中文] 组索引（仅某些头需要） / [English] group indices (some heads).
+        """
         if hasattr(self.class_query_head, 'prune_heads'):
             if valid_group_indices is not None:
                 self.class_query_head.prune_heads(valid_class_indices, valid_group_indices)
@@ -515,6 +609,18 @@ class AblationModel(nn.Module):
                 self.class_query_head.prune_heads(valid_class_indices)
 
     def forward(self, x, edge_index, batch=None, return_attention=False):
+        """
+        前向传播：CNN → GCN → Head / Forward pass: CNN → GCN → Head.
+
+        Args / 参数:
+            x (torch.Tensor): [中文] 输入 / [English] input.
+            edge_index (torch.Tensor): [中文] PyG 边索引 / [English] PyG edge indices.
+            batch (Optional[torch.Tensor]): [中文] PyG 批索引 / [English] PyG batch index.
+            return_attention (bool): [中文] 是否返回注意力 / [English] whether to return attention.
+
+        Returns / 返回:
+            tuple: [中文] `(logits_12, logits_4, attn_weights)` / [English] three tensors.
+        """
         if isinstance(x, Data) or isinstance(x, Batch):
             batch_obj = x
             x = batch_obj.x

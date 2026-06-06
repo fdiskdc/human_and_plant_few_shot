@@ -104,29 +104,29 @@ from human import (
 
 class PlantSingleDataset(Dataset):
     """
-    Combined Plant + Zero Dataset for Single-Class Binary Classification.
+    Plant + Zero 单类二分类数据集 / Combined Plant + Zero Dataset for Single-Class Binary Classification.
 
-    This dataset provides:
-    1. Virtual indexing where:
-       - Indices 0 to num_plant-1 return Plant samples (positives)
-       - Indices num_plant to total-1 return Zero samples (negatives/background)
+    1. 虚拟索引：0 ~ num_plant-1 返回 Plant（正样本），其余返回 Zero（负样本）
+    2. Zero 数据集确定切分以避免数据泄漏
+    3. Zero 结构独立缓存
+    4. y_12class 属性无缝拼接 Plant + Zero 标签
 
-    2. Deterministic splitting of Zero dataset to prevent data leakage
-    3. Separate caching for Zero structures
-    4. y_12class property that seamlessly concatenates Plant and Zero labels
+    Attributes / 属性:
+        plant_dir (str): [中文] Plant 数据目录 / [English] Plant data directory.
+        zero_dir (str): [中文] Zero 数据目录 / [English] Zero data directory.
     """
 
     def __init__(self, plant_dir='plant', zero_dir='npy/zero', cache_dir=None,
                  use_cache=True, preload_cache=True):
         """
-        Initialize the Plant+Zero combined dataset.
+        初始化 PlantSingleDataset / Initialize the Plant+Zero combined dataset.
 
-        Args:
-            plant_dir: Directory containing plant data (seq.npy, 12loc.npy, etc.)
-            zero_dir: Directory containing zero data (zero_seq.npy, zero_label12.npy, etc.)
-            cache_dir: Directory for structure cache files
-            use_cache: Whether to enable structure caching
-            preload_cache: Whether to preload cache into memory at initialization
+        Args / 参数:
+            plant_dir (str): [中文] Plant 数据目录 / [English] Plant data dir. Defaults to 'plant'.
+            zero_dir (str): [中文] Zero 数据目录 / [English] Zero data dir. Defaults to 'npy/zero'.
+            cache_dir (Optional[str]): [中文] 缓存目录 / [English] cache directory.
+            use_cache (bool): [中文] 启用缓存 / [English] enable caching. Defaults to True.
+            preload_cache (bool): [中文] 预加载 / [English] preload. Defaults to True.
         """
         self.plant_dir = plant_dir
         self.zero_dir = zero_dir
@@ -260,7 +260,7 @@ class PlantSingleDataset(Dataset):
         one_hot_seq = self._one_hot_encode_optimized(seq_bytes)
         node_features = torch.FloatTensor(one_hot_seq)
 
-data = Data(
+        data = Data(
             x=node_features,
             edge_index=edge_index,
             y=torch.FloatTensor(y12).unsqueeze(0),

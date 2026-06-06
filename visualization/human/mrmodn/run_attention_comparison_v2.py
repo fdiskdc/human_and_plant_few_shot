@@ -66,6 +66,22 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def build_scripts(top_n, low_n, output_dir):
+    """
+    生成 v2 注意力对比 pipeline 的脚本序列 / Build the v2 attention-comparison script list.
+
+    v2 在 v1 基础上加入 modx 全长推理, 同时选序时区分 top / low 修饰密度。
+    v2 adds modx full-length inference and picks representatives across both
+    top and low modification density buckets.
+
+    Args / 参数:
+        top_n (int): [中文] 高修饰密度代表序列数 / [English] top-density sequence count.
+        low_n (int): [中文] 低修饰密度代表序列数 / [English] low-density sequence count.
+        output_dir (str): [中文] 可视化输出目录 / [English] visualization output dir.
+
+    Returns / 返回:
+        List[Tuple[str, List[str]]]: [中文] `(脚本, 参数)` 列表 / [English] `(script, args)` list.
+    """
+
     return [
         ("select_representative_sequences.py", ["--top_n", str(top_n), "--low_n", str(low_n)]),
         ("inference_mrmodn_full.py",            []),
@@ -77,6 +93,21 @@ def build_scripts(top_n, low_n, output_dir):
 
 
 def main(output_dir='fig/attention_comparison', top_n=100, low_n=100):
+    """
+    注意力对比 v2 实验主入口 / Attention-comparison v2 experiment main entry.
+
+    Args / 参数:
+        output_dir (str, optional): [中文] 可视化输出目录 / [English] output dir.
+            Defaults to 'fig/attention_comparison'.
+        top_n (int, optional): [中文] 高修饰密度代表序列数 / [English] top-density count.
+            Defaults to 100.
+        low_n (int, optional): [中文] 低修饰密度代表序列数 / [English] low-density count.
+            Defaults to 100.
+
+    Called by / 被调用:
+        - __main__ 块: [中文] 命令行直接调用 / [English] invoked from CLI.
+    """
+
     scripts = build_scripts(top_n, low_n, output_dir)
     total_start = time.time()
 

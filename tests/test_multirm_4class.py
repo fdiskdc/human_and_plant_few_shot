@@ -42,6 +42,22 @@ from dataset.multirm import MultirmDataset, MULTIRM_CLASSES, MULTIRM_4CLASS_NAME
 from model.mrmodn_multirm import RNA_ClassQuery_Model
 
 def main():
+    """
+    MultiRM 4-class 测试入口 / MultiRM 4-class test main entry.
+
+    加载 `MultirmDataset`, 构建 DataLoader, 跑一遍 forward + loss 反向以验证
+    4 分组 / 12 类的标签映射与模型头对接是否正确。
+    Loads `MultirmDataset`, builds DataLoader, runs one forward + backward
+    pass to verify the 4-group / 12-class label mapping and model-head wiring.
+
+    Called by / 被调用:
+        - __main__ 块: [中文] 直接 CLI 调用 / [English] invoked from CLI.
+
+    Raises / 异常:
+        AssertionError: [中文] 当形状 / 标签 / 损失不匹配时 / [English] shape, label,
+            or loss mismatch.
+    """
+
     print("=" * 60)
     print("Test 1: Check class mappings")
     print("=" * 60)

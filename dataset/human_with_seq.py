@@ -101,23 +101,27 @@ Mer100Dataset = human_module.Mer100Dataset
 
 class Mer100DatasetWithSeq(Mer100Dataset):
     """
-    Extended Mer100Dataset that includes sequence string in Data objects.
-    
-    This avoids expensive one-hot to string conversion during inference.
+    Mer100Dataset 扩展：Data 对象中包含序列字符串 / Extended Mer100Dataset including sequence string.
+
+    避免推理时昂贵的 one-hot → string 转换。
+    Avoids expensive one-hot to string conversion during inference.
+
+    Attributes / 属性:
+        继承自 Mer100Dataset / Inherits from Mer100Dataset.
     """
-    
-    def __init__(self, mode='train', data_dir='../npy', cache_dir=None, 
+
+    def __init__(self, mode='train', data_dir='../npy', cache_dir=None,
                  use_human3=True, use_cache=True, preload_cache=True):
         """
-        Initialize the enhanced dataset.
-        
-        Args:
-            mode (str): 'train' or 'test'
-            data_dir (str): Data file directory path
-            cache_dir (str): Cache directory path
-            use_human3 (bool): Whether to use human3 directory data
-            use_cache (bool): Whether to enable secondary structure cache
-            preload_cache (bool): Whether to load all edge indices to memory
+        初始化 Mer100DatasetWithSeq / Initialize the enhanced dataset.
+
+        Args / 参数:
+            mode (str): [中文] 'train'/'test' / [English] 'train' or 'test'. Defaults to 'train'.
+            data_dir (str): [中文] 数据目录 / [English] data directory. Defaults to '../npy'.
+            cache_dir (Optional[str]): [中文] 缓存目录 / [English] cache directory.
+            use_human3 (bool): [中文] 使用 human3 / [English] use human3. Defaults to True.
+            use_cache (bool): [中文] 启用缓存 / [English] enable cache. Defaults to True.
+            preload_cache (bool): [中文] 预加载 / [English] preload. Defaults to True.
         """
         # Initialize parent class to load all data and structures
         super().__init__(
@@ -131,13 +135,13 @@ class Mer100DatasetWithSeq(Mer100Dataset):
     
     def __getitem__(self, idx):
         """
-        Get single data sample with sequence string included.
-        
-        Args:
-            idx (int): Sample index
-            
-        Returns:
-            Data: PyG Data object with additional 'seq_str' attribute
+        获取数据样本（含序列字符串） / Get single data sample with sequence string included.
+
+        Args / 参数:
+            idx (int): [中文] 样本索引 / [English] sample index.
+
+        Returns / 返回:
+            Data: [中文] PyG Data 对象，含 `seq_str` / [English] PyG Data with `seq_str` attribute.
         """
         # Get sequence bytes and labels (using copy() for thread safety)
         sequence_bytes = self.sequences[idx].copy()

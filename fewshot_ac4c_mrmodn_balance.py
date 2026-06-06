@@ -71,7 +71,28 @@ from utils import (
     MOD_NAMES, get_all_predictions
 )
 class LabelSmoothingLoss(nn.Module):
+    """
+    标签平滑 BCE 损失 / Label-smoothed BCE loss.
+
+    在二分类场景下将硬标签 {0, 1} 平滑为 (smoothing/2, 1 - smoothing/2)，
+    以缓解过拟合并提升模型校准。底层使用 `BCEWithLogitsLoss`。
+    Smooths hard labels {0, 1} to (smoothing/2, 1 - smoothing/2) to mitigate
+    overfitting and improve calibration. Backed by `BCEWithLogitsLoss`.
+
+    Attributes / 属性:
+        smoothing (float): [中文] 平滑系数, 取值 (0, 1) / [English] smoothing factor in (0, 1).
+        bce (nn.BCEWithLogitsLoss): [中文] 底层 BCE 损失 / [English] underlying BCE loss.
+    """
+
     def __init__(self, smoothing=0.1):
+        """
+        初始化标签平滑损失 / Initialize the label-smoothing loss.
+
+        Args / 参数:
+            smoothing (float, optional): [中文] 标签平滑系数 / [English] label-smoothing
+                factor. Defaults to 0.1.
+        """
+
         super(LabelSmoothingLoss, self).__init__()
         self.smoothing = smoothing
         self.bce = nn.BCEWithLogitsLoss()
@@ -79,6 +100,20 @@ class LabelSmoothingLoss(nn.Module):
     def forward(self, logits, targets):
         # 将 [0, 1] 标签转换为 [0.05, 0.95] (假设 smoothing=0.1)
         # targets: (Batch,)
+        """
+        计算平滑后的 BCE 损失 / Compute smoothed BCE loss.
+
+        将 targets 从 {0, 1} 平滑到 (smoothing/2, 1 - smoothing/2) 后与 logits 计算 BCE。
+        Smooths targets from {0, 1} to (smoothing/2, 1 - smoothing/2) then applies BCE.
+
+        Args / 参数:
+            logits (Tensor): [中文] 模型原始输出, 形状 (Batch,) / [English] raw logits, shape (Batch,).
+            targets (Tensor): [中文] 0/1 标签, 形状 (Batch,) / [English] 0/1 labels, shape (Batch,).
+
+        Returns / 返回:
+            Tensor: [中文] 标量损失值 / [English] scalar loss value.
+        """
+
         smooth_targets = targets * (1.0 - self.smoothing) + 0.5 * self.smoothing
         loss = self.bce(logits, smooth_targets)
         return loss
@@ -92,13 +127,43 @@ class PrunedModelWrapper(nn.Module):
     It pads the pruned 1-dim output back to 12-dim (filling others with very small logits).
     """
     def __init__(self, pruned_model, class_idx=AC4C_CLASS_IDX, group_idx=AC4C_GROUP_IDX):
+        """
+        初始化包装器 / Initialize the pruned-model wrapper.
+
+        Args / 参数:
+            pruned_model (nn.Module): [中文] 剪枝后的单类输出模型 / [English] pruned single-class model.
+            class_idx (int, optional): [中文] ac4C 在 12 类中的索引 / [English] ac4C class index
+                in the full 12-class head. Defaults to AC4C_CLASS_IDX.
+            group_idx (int, optional): [中文] ac4C 在 4 分组中的索引 / [English] ac4C group index
+                in the 4-group head. Defaults to AC4C_GROUP_IDX.
+        """
+
         super().__init__()
         self.model = pruned_model
         self.class_idx = class_idx
         self.group_idx = group_idx
         self.use_hierarchical = pruned_model.use_hierarchical
-        
+
     def forward(self, x, edge_index, batch=None):
+        """
+        前向传播, 将 1 维输出回填到 12 维 / Forward pass, padding 1-d output back to 12-d.
+
+        非激活类的 logits 用 `-1e9` 填充, 以保证 sigmoid 后趋近 0, 从而与原有 12 维
+        评估流程完全兼容。分层模式下同时回填 4 维分组输出。
+        Fills inactive class logits with `-1e9` so sigmoid(output) -> 0, keeping
+        compatibility with the existing 12-d evaluation pipeline. In hierarchical
+        mode the 4-d group output is padded as well.
+
+        Args / 参数:
+            x (Tensor): [中文] 节点特征 / [English] node features.
+            edge_index (LongTensor): [中文] 边索引 / [English] edge index.
+            batch (LongTensor, optional): [中文] 批索引 / [English] batch index.
+
+        Returns / 返回:
+            Tuple[Tensor, Tensor] | Tensor: [中文] (12 维 logits [, 4 维 logits]) /
+                [English] 12-d logits, optionally followed by 4-d logits.
+        """
+
         device = x.device
         
         # Get pruned output (Batch, 1) or (Batch, 1), (Batch, 1)
@@ -235,6 +300,24 @@ def test_epoch(model, dataloader, criterion, device, phase, logger, use_hierarch
     return total_loss / num_batches
 
 def main(config_path='json/ac4c_balance.json', checkpoint_path=None):
+    """
+    ac4C 平衡数据集训练主入口 / ac4C balanced-dataset training main entry.
+
+    流程: 加载配置 -> 加载数据 -> 剪枝模型仅保留 ac4C 头 -> 自定义训练循环
+    -> 按 `test_interval` 周期性评估 -> 保存最优 checkpoint。
+    Pipeline: load config -> load data -> prune model to ac4C-only head ->
+    custom train loop -> periodic eval at `test_interval` -> save best checkpoint.
+
+    Args / 参数:
+        config_path (str, optional): [中文] 训练配置文件路径 / [English] training config path.
+            Defaults to 'json/ac4c_balance.json'.
+        checkpoint_path (str, optional): [中文] 预训练权重路径, 用于热启动 /
+            [English] pretrained checkpoint path for warm start. Defaults to None.
+
+    Called by / 被调用:
+        - __main__ 块: [中文] 通过 argparse 解析参数后调用 / [English] called from CLI after argparse.
+    """
+
     global Config, config_dict
     Config, config_dict = load_config(config_path)
 
@@ -365,6 +448,22 @@ def main(config_path='json/ac4c_balance.json', checkpoint_path=None):
 
             # Print results
             def print_ac4c_table(metrics, title, logger):
+                """
+                打印 ac4C 评估结果表 / Pretty-print the ac4C evaluation table.
+
+                使用 PrettyTable 输出 ac4C 单类的 F1/Prec/Rec/Acc/AUC/AUPRC/Sn/Sp
+                以及混淆矩阵, 同时附 macro 平均行。
+                Emits F1/Prec/Rec/Acc/AUC/AUPRC/Sn/Sp and confusion matrix for
+                the ac4C class via PrettyTable, with a macro-average row.
+
+                Args / 参数:
+                    metrics (dict): [中文] `evaluate_ac4c` 返回的指标字典 / [English] metrics dict
+                        returned by `evaluate_ac4c`.
+                    title (str): [中文] 表标题, 含 "Unbalanced" / "Balanced" 标识 /
+                        [English] table title indicating "Unbalanced" or "Balanced".
+                    logger (logging.Logger): [中文] 日志记录器 / [English] logger instance.
+                """
+
                 table = PrettyTable()
                 table.field_names = ["Class", "F1", "Prec", "Rec", "Acc", "AUC", "AUPRC", "Sn", "Sp", "TP", "TN", "FP", "FN"]
                 table.align = "r"
