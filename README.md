@@ -278,6 +278,210 @@ Cluster_WebAndWx_backend  ←── HTTP API 入口
 
 详细计划见 `.omo/plans/codebase-documentation.md`。/ Detailed plan: `.omo/plans/codebase-documentation.md`.
 
+## 注释标准 / Documentation Standards
+
+本项目采用**中英双语**注释标准,确保代码可读性和国际化。所有新增和修改的代码必须遵循以下规范。/ This project uses **bilingual (Chinese-English)** documentation standards. All new and modified code must follow these conventions.
+
+### 1. 文件头注释 / File Header Comments
+
+每个 `.py` 文件必须以模块级 docstring 开头,包含以下 7 个部分:
+
+```python
+"""
+<filename>.py - <中文简述> / <English Summary>
+
+<中文详细描述: 本模块的功能、在项目中的角色、核心算法或技术要点>
+<English detailed description: module purpose, role in project, key algorithms or technical points>
+
+功能模块 / Modules:
+- <ClassName>: <中文描述> / <English description>
+- <function_name>: <中文描述> / <English description>
+
+输入 / Inputs:
+- <数据源>: <格式说明> - <中文描述> / <English description>
+- 命令行参数 / CLI: <参数列表>
+
+输出 / Outputs:
+- <输出内容>: <格式说明> - <中文描述> / <English description>
+
+数据流 / Data Flow:
+1. <步骤1中文> / <Step 1 English>
+2. <步骤2中文> / <Step 2 English>
+
+相关文件 / Related Files:
+- 调用 / Calls: <依赖的模块或库>
+- 被调用 / Called by: <调用本模块的文件>
+
+使用示例 / Usage Example:
+    from <module> import <class_or_function>
+    <示例代码>
+
+作者 / Author: RGCNFormer Project
+日期 / Date: YYYY-MM-DD
+版本 / Version: X.Y
+"""
+```
+
+**示例** (参考 `model/mrmodn.py`):
+```python
+"""
+mrmodn.py - RGCNFormer 多尺度类查询分类模型 / RGCNFormer Multi-scale Class-Query Model
+
+实现RNA 12类多标签修饰分类主模型，结合多尺度CNN局部特征提取、GCN图结构特征传播,
+以及基于可学习类查询的注意力分类头。
+Implements the primary RNA 12-class multi-label modification classification model,
+combining multi-scale CNN local feature extraction, GCN graph propagation, and
+learnable class-query attention classification head.
+
+功能模块 / Modules:
+- ParallelCNNBlock: 多尺度并行一维卷积块 / Multi-scale parallel 1D CNN block
+- GCNBlock: 残差图卷积块 / Residual GCN block
+- ClassQueryHead: 类查询注意力头 / Class-query attention head
+...
+"""
+```
+
+### 2. 类注释 / Class Comments
+
+每个类必须有 docstring,包含功能描述和属性说明:
+
+```python
+class MyClass(nn.Module):
+    """
+    <中文类描述: 功能、用途、技术要点>
+    <English class description: purpose, usage, technical details>
+
+    Attributes / 属性:
+        attr1 (type): [中文] <描述> / [English] <description>.
+        attr2 (type): [中文] <描述> / [English] <description>.
+    """
+```
+
+**示例** (参考 `model/mrmodn.py`):
+```python
+class ParallelCNNBlock(nn.Module):
+    """
+    多尺度并行一维卷积块 (M2D 模块核心) / Multi-scale parallel 1D CNN block (M2D module core).
+
+    使用 4 个不同核大小的并行 1D 卷积捕获 RNA 序列的 k-mer 局部模式 (k=1,3,5,7)。
+    Uses 4 parallel 1D convolutions with different kernel sizes (k=1,3,5,7) to capture
+    k-mer local patterns.
+
+    Attributes / 属性:
+        in_channels (int): [中文] 输入通道数 (固定 4) / [English] input channels (fixed at 4).
+        hidden_dim (int): [中文] 隐藏维度 / [English] hidden dimension.
+    """
+```
+
+### 3. 函数/方法注释 / Function/Method Comments
+
+每个函数必须有 docstring,包含功能、参数、返回值和异常:
+
+```python
+def my_function(param1: int, param2: str = "default") -> bool:
+    """
+    <中文功能描述>
+    <English function description>
+
+    Args / 参数:
+        param1 (int): [中文] <描述> / [English] <description>.
+        param2 (str): [中文] <描述> / [English] <description>. Defaults to "default".
+
+    Returns / 返回值:
+        bool: [中文] <描述> / [English] <description>.
+
+    Raises / 异常:
+        ValueError: [中文] <触发条件> / [English] <trigger condition>.
+    """
+```
+
+**简化版** (用于简短函数):
+```python
+def helper(x: int) -> int:
+    """计算平方 / Calculate square."""  # 单行中英双语
+    return x * x
+```
+
+### 4. 行内注释 / Inline Comments
+
+- **必须使用中英双语** (除非代码逻辑显而易见)
+- 注释以 `#` 开头,中英文用 `/` 分隔
+- 复杂逻辑、算法步骤、数值含义必须注释
+
+```python
+# 常量定义 (与 human_make_npy.py 中的 MOD_TO_INDEX 一致)
+# Constants (consistent with MOD_TO_INDEX in human_make_npy.py)
+MOD_NAMES = {
+    0: 'Am', 1: 'Atol', 2: 'Cm',  # 索引 0-2 / Indices 0-2
+    ...
+}
+
+# 计算类别权重 (平滑处理以避免极端值)
+# Calculate class weights (smoothed to avoid extreme values)
+weights = 1.0 / (class_counts + 1e-6)
+```
+
+### 5. 常量/全局变量注释 / Constants/Global Variables
+
+```python
+# ============================================================================
+# Section Name (中英双语)
+# ============================================================================
+
+# 12类修饰名称映射 (模型索引 -> 修饰名称)
+# 与 human_make_npy.py 中的 MOD_TO_INDEX 一致 (mod_index - 1 转换后)
+# 12-class modification name mapping (model index -> modification name)
+# Consistent with MOD_TO_INDEX in human_make_npy.py (after mod_index - 1 conversion)
+MOD_NAMES = {
+    0: 'Am',     1: 'Atol',   2: 'Cm',
+    ...
+}
+```
+
+### 6. 数据结构注释 / Data Structure Comments
+
+```python
+# PyG Data 对象字段说明 / PyG Data object field descriptions
+# - x: (1001, 4) one-hot 编码的 RNA 序列 / one-hot encoded RNA sequence
+# - edge_index: (2, E) 图边索引 (PyG 格式) / graph edge indices (PyG format)
+# - y: (1, 12) 12 类多标签二值向量 / 12-class multi-label binary vector
+# - y_site: (1001,) 位点级标签 / site-level labels
+```
+
+### 7. 特殊标记 / Special Markers
+
+使用以下标记突出重要信息:
+
+```python
+# TODO: <待完成任务描述> / <task description>
+# FIXME: <已知问题描述> / <known issue description>
+# HACK: <临时解决方案> / <workaround description>
+# NOTE: <重要说明> / <important note>
+# WARNING: <警告信息> / <warning message>
+```
+
+### 8. 注释质量检查清单 / Documentation Quality Checklist
+
+新增或修改代码时,确保:
+
+- [ ] 文件头 docstring 包含全部 7 个部分
+- [ ] 所有类有完整的 Attributes 文档
+- [ ] 所有公共函数有 Args/Returns 文档
+- [ ] 复杂逻辑有行内注释
+- [ ] 常量有来源说明和用途解释
+- [ ] 中英文描述准确对应,无机械翻译痕迹
+- [ ] 使用示例可直接运行
+
+### 9. 快速参考 / Quick Reference
+
+| 场景 / Scenario | 格式 / Format |
+|---|---|
+| 文件头 / File header | `"""filename.py - 中文 / English\n...\n"""` |
+| 类 / Class | `"""中文描述\nEnglish description\n\nAttributes / 属性:\n..."""` |
+| 函数 / Function | `"""中文功能\nEnglish purpose\n\nArgs / 参数:\n..."""` |
+| 单行注释 / Single line | `# 中文说明 / English explanation` |
+| 常量 / Constants | `# 中文来源说明 / English source note` |
+
 ## 注意事项 / Notes
 
 - 数据通过软链接 `npy/` 共享, 删除软链接会导致训练失败 / Data via `npy/` symlink; breaking it will fail training
