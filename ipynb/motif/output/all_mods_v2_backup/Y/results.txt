@@ -1,0 +1,29 @@
+Mod: Y
+Windows: 22005
+
+  Model_Motif_1 vs 3-CUUUA: p=0.000884198 E=0.00707358 q=0.00707358
+  Model_Motif_2 vs 3-CUUUA: p=0.00101395 E=0.00811161 q=0.00811161
+  Model_Motif_2 vs 1-UYYUY: p=0.062516 E=0.500128 q=0.250064
+  Model_Motif_2 vs 6-UUUAAGUG: p=0.176984 E=1.41587 q=0.471958
+  Model_Motif_3 vs 3-CUUUA: p=0.00125803 E=0.0100642 q=0.0100642
+  Model_Motif_3 vs 6-UUUAAGUG: p=0.0183507 E=0.146805 q=0.0734026
+  Model_Motif_3 vs 1-UYYUY: p=0.0812154 E=0.649723 q=0.216574
+  Model_Motif_5 vs 2-CMUCC: p=0.0877459 E=0.701967 q=0.381659
+  Model_Motif_5 vs 5-UGGCUU: p=0.0954148 E=0.763318 q=0.381659
+  Model_Motif_5 vs 3-CUUUA: p=0.175643 E=1.40515 q=0.468382
+  Model_Motif_6 vs 1-UYYUY: p=0.0323019 E=0.258415 q=0.258415
+  Model_Motif_7 vs 3-CUUUA: p=0.0659393 E=0.527514 q=0.313951
+  Model_Motif_7 vs 1-UYYUY: p=0.0784876 E=0.627901 q=0.313951
+  Model_Motif_7 vs 6-UUUAAGUG: p=0.168258 E=1.34606 q=0.448688
+  Model_Motif_9 vs 3-CUUUA: p=0.048398 E=0.387184 q=0.330532
+  Model_Motif_9 vs 1-UYYUY: p=0.0826329 E=0.661063 q=0.330532
+  Model_Motif_11 vs 6-UUUAAGUG: p=0.0397482 E=0.317986 q=0.17763
+  Model_Motif_11 vs 4-RUUUG: p=0.0444075 E=0.35526 q=0.17763
+  Model_Motif_11 vs 3-CUUUA: p=0.100734 E=0.805873 q=0.268624
+  Model_Motif_14 vs 4-RUUUG: p=0.13652 E=1.09216 q=0.382969
+  Model_Motif_14 vs 5-UGGCUU: p=0.147158 E=1.17726 q=0.382969
+  Model_Motif_14 vs 7-UCCGACU: p=0.177546 E=1.42037 q=0.382969
+  Model_Motif_14 vs 8-UYCCCCCU: p=0.191485 E=1.53188 q=0.382969
+  # Tomtom (Motif Comparison Tool): Version 5.3.0 compiled on Apr 12 2021 at 08:28:11 vs None: p=None E=None q=None
+  # The format of this file is described at http://meme-suite.org/doc/tomtom-output-format.html. vs None: p=None E=None q=None
+  # tomtom -no-ssc -dist pearson -oc ipynb/motif/output/all_mods_v2/Y/tomtom_out ipynb/motif/output/all_mods_v2/Y/model_motifs.meme ipynb/motif/output/all_mods_v2/Y/streme_out/streme.txt vs None: p=None E=None q=None

@@ -22,7 +22,12 @@ figs_atten/
 gen3process/
 # 忽略所有名为node_modules的文件夹（无论在哪个目录下）
 **/node_modules
-/ipynb
+/ipynb/**/*.jpg
+/ipynb/**/*.png
+/ipynb/**/*.pdf
+/ipynb/**/*.svg
+/ipynb/**/*.npy
+/ipynb/**/*.npz
 /motif_logo_clustered_noback
 /output
 # Web frontend logs and build artifacts

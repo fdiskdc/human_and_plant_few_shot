@@ -1,0 +1,29 @@
+Mod: ac4C
+Windows: 17799
+
+  Model_Motif_2 vs 4-CCUGGC: p=0.0180209 E=0.0720838 q=0.0720838
+  Model_Motif_2 vs 3-URCWYW: p=0.1056 E=0.422398 q=0.211199
+  Model_Motif_3 vs 1-CKCCU: p=0.00376095 E=0.0150438 q=0.0150438
+  Model_Motif_3 vs 3-URCWYW: p=0.0292389 E=0.116955 q=0.0584777
+  Model_Motif_4 vs 2-KYCAGU: p=0.0234002 E=0.0936009 q=0.0936009
+  Model_Motif_4 vs 4-CCUGGC: p=0.0535468 E=0.214187 q=0.107094
+  Model_Motif_5 vs 4-CCUGGC: p=0.0244366 E=0.0977464 q=0.0977464
+  Model_Motif_5 vs 2-KYCAGU: p=0.0884085 E=0.353634 q=0.176817
+  Model_Motif_5 vs 1-CKCCU: p=0.143395 E=0.573582 q=0.191194
+  Model_Motif_11 vs 1-CKCCU: p=0.0606588 E=0.242635 q=0.242635
+  Model_Motif_12 vs 1-CKCCU: p=0.12469 E=0.49876 q=0.375343
+  Model_Motif_12 vs 3-URCWYW: p=0.187671 E=0.750686 q=0.375343
+  Model_Motif_12 vs 2-KYCAGU: p=0.308538 E=1.23415 q=0.411383
+  Model_Motif_13 vs 1-CKCCU: p=0.0384731 E=0.153892 q=0.153892
+  Model_Motif_13 vs 3-URCWYW: p=0.132776 E=0.531105 q=0.265552
+  Model_Motif_13 vs 2-KYCAGU: p=0.374759 E=1.49904 q=0.499679
+  Model_Motif_14 vs 2-KYCAGU: p=0.112248 E=0.44899 q=0.44899
+  Model_Motif_16 vs 3-URCWYW: p=0.128237 E=0.512949 q=0.368694
+  Model_Motif_16 vs 2-KYCAGU: p=0.184347 E=0.737387 q=0.368694
+  Model_Motif_17 vs 3-URCWYW: p=0.08892 E=0.35568 q=0.298514
+  Model_Motif_17 vs 2-KYCAGU: p=0.149257 E=0.597028 q=0.298514
+  Model_Motif_17 vs 1-CKCCU: p=0.249881 E=0.999522 q=0.333174
+  Model_Motif_19 vs 2-KYCAGU: p=0.0387602 E=0.155041 q=0.155041
+  # Tomtom (Motif Comparison Tool): Version 5.3.0 compiled on Apr 12 2021 at 08:28:11 vs None: p=None E=None q=None
+  # The format of this file is described at http://meme-suite.org/doc/tomtom-output-format.html. vs None: p=None E=None q=None
+  # tomtom -no-ssc -dist pearson -oc ipynb/motif/output/all_mods_v2/ac4C/tomtom_out ipynb/motif/output/all_mods_v2/ac4C/model_motifs.meme ipynb/motif/output/all_mods_v2/ac4C/streme_out/streme.txt vs None: p=None E=None q=None

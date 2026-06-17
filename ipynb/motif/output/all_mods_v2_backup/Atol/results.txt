@@ -1,0 +1,33 @@
+Mod: Atol
+Windows: 23077
+
+  Model_Motif_1 vs 3-UCUCUW: p=0.00672115 E=0.0470481 q=0.0470481
+  Model_Motif_2 vs 3-UCUCUW: p=0.102439 E=0.717073 q=0.493772
+  Model_Motif_2 vs 1-UAWUU: p=0.141078 E=0.987543 q=0.493772
+  Model_Motif_6 vs 7-AGAUGGAG: p=0.146513 E=1.02559 q=0.417997
+  Model_Motif_6 vs 4-AGGAG: p=0.151585 E=1.06109 q=0.417997
+  Model_Motif_6 vs 2-AWGAGCAW: p=0.179141 E=1.25399 q=0.417997
+  Model_Motif_8 vs 7-AGAUGGAG: p=0.041471 E=0.290297 q=0.290297
+  Model_Motif_9 vs 4-AGGAG: p=0.0423404 E=0.296383 q=0.247711
+  Model_Motif_9 vs 7-AGAUGGAG: p=0.0833061 E=0.583143 q=0.247711
+  Model_Motif_9 vs 1-UAWUU: p=0.106162 E=0.743134 q=0.247711
+  Model_Motif_9 vs 2-AWGAGCAW: p=0.174086 E=1.2186 q=0.30465
+  Model_Motif_10 vs 4-AGGAG: p=0.00920312 E=0.0644219 q=0.0644219
+  Model_Motif_11 vs 6-AAAAAAAA: p=0.0473517 E=0.331462 q=0.331462
+  Model_Motif_14 vs 4-AGGAG: p=0.0134179 E=0.0939252 q=0.0939252
+  Model_Motif_14 vs 2-AWGAGCAW: p=0.111862 E=0.783031 q=0.391516
+  Model_Motif_15 vs 3-UCUCUW: p=0.00785524 E=0.0549867 q=0.0549867
+  Model_Motif_16 vs 1-UAWUU: p=0.00387405 E=0.0271184 q=0.0271184
+  Model_Motif_17 vs 3-UCUCUW: p=0.0104246 E=0.0729725 q=0.0729725
+  Model_Motif_18 vs 6-AAAAAAAA: p=0.0413763 E=0.289634 q=0.289634
+  Model_Motif_19 vs 6-AAAAAAAA: p=0.0471626 E=0.330138 q=0.330138
+  Model_Motif_24 vs 3-UCUCUW: p=0.00275871 E=0.019311 q=0.019311
+  Model_Motif_26 vs 7-AGAUGGAG: p=0.0108718 E=0.0761027 q=0.0761027
+  Model_Motif_27 vs 1-UAWUU: p=0.0368097 E=0.257668 q=0.257668
+  Model_Motif_28 vs 3-UCUCUW: p=0.0386793 E=0.270755 q=0.187139
+  Model_Motif_28 vs 5-UGAAACC: p=0.0534684 E=0.374279 q=0.187139
+  Model_Motif_28 vs 2-AWGAGCAW: p=0.1203 E=0.8421 q=0.2807
+  Model_Motif_29 vs 3-UCUCUW: p=0.000151792 E=0.00106254 q=0.00106254
+  # Tomtom (Motif Comparison Tool): Version 5.3.0 compiled on Apr 12 2021 at 08:28:11 vs None: p=None E=None q=None
+  # The format of this file is described at http://meme-suite.org/doc/tomtom-output-format.html. vs None: p=None E=None q=None
+  # tomtom -no-ssc -dist pearson -oc ipynb/motif/output/all_mods_v2/Atol/tomtom_out ipynb/motif/output/all_mods_v2/Atol/model_motifs.meme ipynb/motif/output/all_mods_v2/Atol/streme_out/streme.txt vs None: p=None E=None q=None
