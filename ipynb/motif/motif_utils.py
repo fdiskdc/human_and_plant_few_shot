@@ -345,7 +345,7 @@ def trim(motif, threshold=0.2):
 
 def draw_motif_logos(consensus_motif, ig_scores, mod_name, res_dir=None,
                      filename=None, save_only=True, file_format='png',
-                     p_values=None):
+                     p_values=None, motif_labels=None):
     """Draw motif logos using logomaker with Liquid Glass visual style.
 
     Parameters
@@ -355,6 +355,9 @@ def draw_motif_logos(consensus_motif, ig_scores, mod_name, res_dir=None,
     p_values : list[float | str | None]
         Optional Tomtom/STREME comparison p-values to show in titles. When
         provided, titles display p-value instead of IG score.
+    motif_labels : list[str] | None
+        Optional per-panel labels, e.g. original MEME/Tomtom query IDs such as
+        Model_Motif_17. When omitted, panels are labeled Motif 1..N.
     mod_name : str
     res_dir : str
     filename : str  (without extension)
@@ -396,6 +399,9 @@ def draw_motif_logos(consensus_motif, ig_scores, mod_name, res_dir=None,
 
     for i in range(n_motifs):
         ax = axes[i]
+        motif_label = (str(motif_labels[i])
+                       if motif_labels is not None and i < len(motif_labels)
+                       else f"Motif {i+1}")
         pwm = consensus_motif[i].T          # (L, 4)
         pwm_trimmed = trim(pwm, threshold=0.1)
         df = pd.DataFrame(pwm_trimmed, columns=['A', 'C', 'G', 'U'])
@@ -427,9 +433,9 @@ def draw_motif_logos(consensus_motif, ig_scores, mod_name, res_dir=None,
                     except (AttributeError, TypeError):
                         pass
         except Exception as e:
-            print(f"Warning: Could not draw motif {i}: {e}")
+            print(f"Warning: Could not draw motif {motif_label}: {e}")
             ax.set_facecolor('#EBEDF0')
-            ax.text(0.5, 0.5, f"Motif {i+1}\n(Error)", ha='center', va='center',
+            ax.text(0.5, 0.5, f"{motif_label}\n(Error)", ha='center', va='center',
                     fontsize=12, color='#5A6B7C', fontfamily='sans-serif')
 
         if p_values is not None and i < len(p_values):
@@ -443,7 +449,7 @@ def draw_motif_logos(consensus_motif, ig_scores, mod_name, res_dir=None,
                     value_str = f"  (p={pv})"
         else:
             value_str = f"  (score={ig_scores[i]:.4f})" if i < len(ig_scores) else ""
-        ax.set_title(f"{mod_name} Motif {i+1}{value_str}",
+        ax.set_title(f"{mod_name} {motif_label}{value_str}",
                      fontsize=13, fontweight='bold', fontfamily='sans-serif',
                      color='#3D4752', pad=12, loc='left')
         ax.spines['bottom'].set_visible(True)

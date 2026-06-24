@@ -1101,14 +1101,17 @@ def run_pipeline(args):
                             print(f"[{mod_name}] no Tomtom p-values for logos; "
                                   "removed motif logo files")
                         else:
+                            motif_labels = [f"Model_Motif_{i + 1}" for i in keep_idx]
                             print(f"[{mod_name}] logo motifs kept after p-value filter: "
-                                  f"{[i + 1 for i in keep_idx]}")
+                                  f"{motif_labels}")
                             draw_motif_logos(cm_plot, ig_plot, mod_name, res_dir=mod_dir,
                                              filename=f"{mod_name}_motif",
-                                             file_format='png', p_values=p_plot)
+                                             file_format='png', p_values=p_plot,
+                                             motif_labels=motif_labels)
                             draw_motif_logos(cm_plot, ig_plot, mod_name, res_dir=mod_dir,
                                              filename=f"{mod_name}_motif",
-                                             file_format='pdf', p_values=p_plot)
+                                             file_format='pdf', p_values=p_plot,
+                                             motif_labels=motif_labels)
                     except Exception as e_logo:
                         print(f"[{mod_name}] p-value motif logo failed: {e_logo}")
 

@@ -1,0 +1,73 @@
+********************************************************************************
+STREME - Sensitive, Thorough, Rapid, Enriched Motif Elicitation
+********************************************************************************
+MEME version 5.3.0 (Release date: Wed Nov 25 19:19:29 2020 -0800)
+
+For further information on how to interpret please access http://meme-suite.org.
+To get a copy of the MEME Suite software please access http://meme-suite.org.
+
+********************************************************************************
+
+
+********************************************************************************
+REFERENCE
+********************************************************************************
+If you use this program in your research, please cite:
+
+Timothy L. Bailey,
+"STREME: Accurate and versatile sequence motif discovery",
+bioRxiv, (preprint), Nov. 23, 2020.
+********************************************************************************
+
+
+ALPHABET= ACGU
+
+strands: +
+
+Background letter frequencies
+A 0.289 C 0.232 G 0.244 U 0.234 
+
+MOTIF 1-CKCCU STREME-1
+letter-probability matrix: alength= 4 w= 5 nsites= 9538 P= 6.5e-025
+ 0.075893 0.561491 0.141014 0.221602
+ 0.165735 0.186305 0.217477 0.430482
+ 0.056431 0.591759 0.235668 0.116143
+ 0.045297 0.824684 0.114720 0.015299
+ 0.208340 0.050906 0.114827 0.625926
+
+MOTIF 2-KYCAGU STREME-2
+letter-probability matrix: alength= 4 w= 6 nsites= 277 P= 8.0e-002
+ 0.076453 0.000380 0.538210 0.384957
+ 0.175156 0.436038 0.147920 0.240886
+ 0.000473 0.998746 0.000398 0.000383
+ 0.692052 0.000380 0.101350 0.206219
+ 0.000473 0.000380 0.998764 0.000383
+ 0.000473 0.088125 0.065816 0.845587
+
+MOTIF 3-URCWYW STREME-3
+letter-probability matrix: alength= 4 w= 6 nsites= 150 P= 7.3e-001
+ 0.000753 0.008088 0.000634 0.990525
+ 0.481810 0.000605 0.455620 0.061965
+ 0.000753 0.998003 0.000634 0.000610
+ 0.572962 0.000605 0.000634 0.425800
+ 0.018784 0.542417 0.000634 0.438165
+ 0.309234 0.000605 0.224100 0.466061
+
+MOTIF 4-CCUGGC STREME-4
+letter-probability matrix: alength= 4 w= 6 nsites= 96 P= 8.3e-001
+ 0.092352 0.838790 0.007318 0.061540
+ 0.021873 0.933885 0.020202 0.024040
+ 0.167423 0.001177 0.063818 0.767582
+ 0.001465 0.001177 0.944905 0.052453
+ 0.044460 0.001177 0.841131 0.113232
+ 0.001465 0.715931 0.281417 0.001187
+
+********************************************************************************
+Stopped because 3 consecutive motifs exceeded the p-value threshold (0.05).
+********************************************************************************
+COMMAND:	streme --p ipynb/motif/output/all_mods_v2/ac4C/positives.fasta --minw 5 --maxw 15 --oc ipynb/motif/output/all_mods_v2/ac4C/streme_out --n ipynb/motif/output/all_mods_v2/ac4C/negatives.fasta --rna
+********************************************************************************
+CPU:		n401dual3090
+********************************************************************************
+FINALTIME:	6.45 seconds
+********************************************************************************
