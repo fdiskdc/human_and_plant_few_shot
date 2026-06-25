@@ -20,6 +20,9 @@
 *.csv
 *.npz
 *.tsv
+# 忽略所有 fasta 文件
+*.fasta
+*.fa
 /motif_logo
 # 忽略__pycache__文件夹
 __pycache__/
