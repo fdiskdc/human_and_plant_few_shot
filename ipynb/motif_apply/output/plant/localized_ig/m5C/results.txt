@@ -1,0 +1,47 @@
+Mod: m5C
+Windows: 21252
+
+  Model_Motif_1 vs 4-GGCUUC: p=0.050649 E=0.455841 q=0.310683
+  Model_Motif_1 vs 8-GAGCU: p=0.0690408 E=0.621367 q=0.310683
+  Model_Motif_4 vs 8-GAGCU: p=0.011664 E=0.104976 q=0.104976
+  Model_Motif_7 vs 4-GGCUUC: p=0.135994 E=1.22395 q=0.467497
+  Model_Motif_7 vs 2-NRRGGCAN: p=0.149141 E=1.34227 q=0.467497
+  Model_Motif_7 vs 8-GAGCU: p=0.155832 E=1.40249 q=0.467497
+  Model_Motif_8 vs 1-KYGDYG: p=0.0666742 E=0.600067 q=0.33124
+  Model_Motif_8 vs 3-CGRAA: p=0.0736089 E=0.662481 q=0.33124
+  Model_Motif_12 vs 5-CUCUU: p=0.0330999 E=0.297899 q=0.297899
+  Model_Motif_12 vs 4-GGCUUC: p=0.0971708 E=0.874537 q=0.420856
+  Model_Motif_12 vs 8-GAGCU: p=0.140285 E=1.26257 q=0.420856
+  Model_Motif_14 vs 4-GGCUUC: p=0.025432 E=0.228888 q=0.228888
+  Model_Motif_14 vs 8-GAGCU: p=0.0960535 E=0.864481 q=0.35025
+  Model_Motif_14 vs 1-KYGDYG: p=0.11675 E=1.05075 q=0.35025
+  Model_Motif_14 vs 7-GGCWAG: p=0.167976 E=1.51179 q=0.377947
+  Model_Motif_14 vs 2-NRRGGCAN: p=0.244521 E=2.20069 q=0.383493
+  Model_Motif_14 vs 9-GCWRAGG: p=0.255662 E=2.30096 q=0.383493
+  Model_Motif_14 vs 5-CUCUU: p=0.360866 E=3.24779 q=0.46397
+  Model_Motif_16 vs 8-GAGCU: p=0.0283917 E=0.255525 q=0.2362
+  Model_Motif_16 vs 4-GGCUUC: p=0.0591201 E=0.532081 q=0.2362
+  Model_Motif_16 vs 5-CUCUU: p=0.0787334 E=0.7086 q=0.2362
+  Model_Motif_18 vs 4-GGCUUC: p=0.00355467 E=0.031992 q=0.031992
+  Model_Motif_18 vs 5-CUCUU: p=0.0262727 E=0.236455 q=0.118227
+  Model_Motif_18 vs 1-KYGDYG: p=0.0976678 E=0.87901 q=0.293003
+  Model_Motif_21 vs 6-GAAGAAG: p=0.0444854 E=0.400369 q=0.2198
+  Model_Motif_21 vs 7-GGCWAG: p=0.0488444 E=0.439599 q=0.2198
+  Model_Motif_22 vs 7-GGCWAG: p=0.0233602 E=0.210242 q=0.210242
+  Model_Motif_22 vs 2-NRRGGCAN: p=0.146748 E=1.32074 q=0.435834
+  Model_Motif_22 vs 3-CGRAA: p=0.172783 E=1.55505 q=0.435834
+  Model_Motif_22 vs 9-GCWRAGG: p=0.193704 E=1.74333 q=0.435834
+  Model_Motif_23 vs 8-GAGCU: p=0.00874905 E=0.0787415 q=0.0787415
+  Model_Motif_23 vs 3-CGRAA: p=0.0830536 E=0.747483 q=0.288504
+  Model_Motif_23 vs 9-GCWRAGG: p=0.0961681 E=0.865513 q=0.288504
+  Model_Motif_27 vs 3-CGRAA: p=0.00537239 E=0.0483515 q=0.0483515
+  Model_Motif_30 vs 5-CUCUU: p=0.0112679 E=0.101411 q=0.101411
+  Model_Motif_30 vs 1-KYGDYG: p=0.0395167 E=0.355651 q=0.177825
+  Model_Motif_42 vs 7-GGCWAG: p=0.023026 E=0.207234 q=0.207234
+  Model_Motif_42 vs 3-CGRAA: p=0.0810741 E=0.729667 q=0.364833
+  Model_Motif_44 vs 3-CGRAA: p=0.0610563 E=0.549507 q=0.300864
+  Model_Motif_44 vs 6-GAAGAAG: p=0.0668586 E=0.601727 q=0.300864
+  Model_Motif_44 vs 1-KYGDYG: p=0.140497 E=1.26447 q=0.421491
+  # Tomtom (Motif Comparison Tool): Version 5.3.0 compiled on Apr 12 2021 at 08:28:11 vs None: p=None E=None q=None
+  # The format of this file is described at http://meme-suite.org/doc/tomtom-output-format.html. vs None: p=None E=None q=None
+  # tomtom -no-ssc -dist pearson -oc /home/dc/vscode/vscode20260406/rgcnformer_sum/ipynb/motif_apply/output/plant/localized_ig/m5C/tomtom_out /home/dc/vscode/vscode20260406/rgcnformer_sum/ipynb/motif_apply/output/plant/localized_ig/m5C/model_motifs.meme /home/dc/vscode/vscode20260406/rgcnformer_sum/ipynb/motif_apply/output/plant/localized_ig/m5C/streme_out/streme.txt vs None: p=None E=None q=None

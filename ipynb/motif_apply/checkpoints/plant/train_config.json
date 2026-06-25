@@ -1,6 +1,6 @@
 {
-  "dataset_name": "gen3",
-  "config_path": "json/3gen.json",
+  "dataset_name": "plant",
+  "config_path": "json/plant.json",
   "init_checkpoint": "logs/old/rna_classification_20260129_195404/checkpoints/epoch_090.pt",
   "max_epochs": 1,
   "patience": 10,
@@ -8,7 +8,7 @@
   "val_ratio": 0.1,
   "seed": 666,
   "batch_size": 10,
-  "n_train": 25776,
-  "n_val": 2864,
+  "n_train": 78781,
+  "n_val": 8753,
   "device": "cuda"
 }

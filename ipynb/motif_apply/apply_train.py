@@ -157,8 +157,8 @@ def _eval_epoch(model, dataloader, device, dataset_name):
         for batch in dataloader:
             if not isinstance(batch.y, torch.Tensor):
                 batch.y = torch.tensor(batch.y, dtype=torch.float32)
-            batch = batch.to(device)
-            batch.y = batch.y.to(device)
+            batch = batch.to(device, non_blocking=True)
+            batch.y = batch.y.to(device, non_blocking=True)
 
             cfg_hier = model.use_hierarchical if hasattr(model, 'use_hierarchical') else True
             result = model(batch.x, batch.edge_index, batch.batch,
@@ -239,10 +239,10 @@ def _train_loop(model, train_loader, val_loader, dataset_name, config_dict,
         for batch in pbar:
             if not isinstance(batch.y, torch.Tensor):
                 batch.y = torch.tensor(batch.y, dtype=torch.float32)
-            batch = batch.to(device)
-            batch.y = batch.y.to(device)
+            batch = batch.to(device, non_blocking=True)
+            batch.y = batch.y.to(device, non_blocking=True)
 
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=True)
 
             if use_amp and device.type == 'cuda':
                 with torch.amp.autocast('cuda'):
@@ -427,9 +427,9 @@ def ensure_converged_checkpoint(
     if seed is None:
         seed = train_cfg.get('random_seed', 666 if dataset_name == 'gen3' else 42)
     if batch_size is None:
-        batch_size = train_cfg.get('batch_size', 240)
+        batch_size = train_cfg.get('batch_size', 10)
     if max_epochs is None:
-        max_epochs = train_cfg.get('num_epochs', 40 if dataset_name == 'gen3' else 50)
+        max_epochs = train_cfg.get('num_epochs', 5)
 
     # ---- Build dataset ----
     data_cfg = config_dict.get('data', {})
@@ -442,7 +442,7 @@ def ensure_converged_checkpoint(
                                               data_cfg.get('cache_dir', 'npy/cache')))
         dataset = Gen3Dataset(mode='train', data_dir=data_dir,
                               cache_dir=cache_dir, use_cache=True,
-                              preload_cache=True)
+                              preload_cache=True, skip_attn=True)
         train_indices, val_indices = _split_gen3(dataset, val_ratio, seed)
     elif dataset_name == 'plant':
         from dataset.plant import PlantDataset
@@ -467,11 +467,15 @@ def ensure_converged_checkpoint(
     train_subset = Subset(dataset, train_indices)
     val_subset = Subset(dataset, val_indices)
 
-    # NOTE: num_workers=0 and pin_memory=False to avoid CUDA fork deadlock
+    # Use num_workers>0 for parallel data loading; persistent_workers avoids
+    # repeated process startup; pin_memory accelerates CPU->GPU transfer.
+    _nw = min(4, os.cpu_count() or 1)
     train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True,
-                              num_workers=0, pin_memory=False)
+                              num_workers=_nw, pin_memory=True,
+                              persistent_workers=True)
     val_loader = DataLoader(val_subset, batch_size=batch_size, shuffle=False,
-                            num_workers=0, pin_memory=False)
+                            num_workers=_nw, pin_memory=True,
+                            persistent_workers=True)
 
     # ---- Build model (on CPU first, move to device inside training loop) ----
     cpu_device = torch.device('cpu')

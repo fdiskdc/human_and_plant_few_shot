@@ -2,7 +2,7 @@
   "dataset_name": "gen3",
   "config_path": "json/3gen.json",
   "init_checkpoint": "logs/old/rna_classification_20260129_195404/checkpoints/epoch_090.pt",
-  "max_epochs": 1,
+  "max_epochs": 5,
   "patience": 10,
   "min_delta": 0.0001,
   "val_ratio": 0.1,

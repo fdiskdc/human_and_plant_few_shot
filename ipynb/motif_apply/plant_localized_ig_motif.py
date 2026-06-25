@@ -138,9 +138,15 @@ def bytes_to_onehot(row):
     """
     raw = np.asarray(row)
     if raw.dtype.kind == 'S':
-        byte_array = raw.view(np.uint8).reshape(-1)
+        if raw.ndim == 0:
+            byte_array = np.frombuffer(raw.item(), dtype=np.uint8)
+        else:
+            byte_array = raw.view(np.uint8).reshape(-1)
     else:
-        byte_array = raw.astype(np.uint8, copy=False).reshape(-1)
+        if raw.ndim == 0:
+            byte_array = np.frombuffer(raw.item(), dtype=np.uint8)
+        else:
+            byte_array = raw.astype(np.uint8, copy=False).reshape(-1)
     return _BYTE_TO_ONEHOT_MAPPING[byte_array].copy()
 
 # ---------------------------------------------------------------------------
@@ -243,7 +249,10 @@ def bytes_to_seqstr(row):
     Convert a (1001,) |S1/byte array to an RNA sequence string, normalizing T to U.
     """
     raw = np.asarray(row)
-    seq = b''.join(raw[i] for i in range(len(raw))).decode('ascii')
+    if raw.ndim == 0:
+        seq = raw.item().decode('ascii') if isinstance(raw.item(), bytes) else str(raw.item())
+    else:
+        seq = b''.join(raw[i] for i in range(len(raw))).decode('ascii')
     return normalize_rna_seq(seq)
 
 

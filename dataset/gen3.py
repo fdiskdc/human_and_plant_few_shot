@@ -408,7 +408,7 @@ class Gen3Dataset(Dataset):
     使用内存映射加载，支持多线程DataLoader
     """
 
-    def __init__(self, mode='train', data_dir='../npy/3gen', cache_dir=None, use_cache=True, preload_cache=True):
+    def __init__(self, mode='train', data_dir='../npy/3gen', cache_dir=None, use_cache=True, preload_cache=True, skip_attn=False):
         """
         初始化数据集（支持内存映射和多线程）
 
@@ -418,10 +418,12 @@ class Gen3Dataset(Dataset):
             cache_dir (str): 缓存目录路径（默认None，使用默认路径）
             use_cache (bool): 是否启用二级结构缓存（默认True）
             preload_cache (bool): 是否在初始化时加载所有边索引到内存（默认True）
+            skip_attn (bool): 是否跳过注意力掩码计算以加速训练（默认False）
         """
         self.mode = mode
         self.data_dir = data_dir
         self.use_cache = use_cache
+        self.skip_attn = skip_attn
         self._batch_cache = None  # 批量缓存数据
         self._edge_indices = None  # 内存中的边索引列表
 
@@ -492,12 +494,6 @@ class Gen3Dataset(Dataset):
         # 节点特征
         node_features = torch.FloatTensor(one_hot_seq)
 
-        # 生成注意力掩码（用于监督）
-        attn_masks = self._extract_attention_masks(full_label)
-
-        # 生成N字符掩码（用于标记未知核苷酸位置）
-        attn_mask_N = self._extract_attention_masks_N(sequence_bytes)
-
         # 创建PyG Data对象，整合所有层级标签
         data = Data(
             x=node_features,
@@ -507,12 +503,13 @@ class Gen3Dataset(Dataset):
             y_site=torch.LongTensor(full_label)  # 形状为 [1001]
         )
 
-        # 将注意力掩码添加为data的属性
-        for nuc, mask in attn_masks.items():
-            setattr(data, f'attn_mask_{nuc}', mask)
-
-        # 添加N字符掩码
-        setattr(data, 'attn_mask_N', attn_mask_N)
+        # 仅在需要时计算注意力掩码（跳过时可显著加速训练）
+        if not self.skip_attn:
+            attn_masks = self._extract_attention_masks(full_label)
+            attn_mask_N = self._extract_attention_masks_N(sequence_bytes)
+            for nuc, mask in attn_masks.items():
+                setattr(data, f'attn_mask_{nuc}', mask)
+            setattr(data, 'attn_mask_N', attn_mask_N)
 
         return data
     

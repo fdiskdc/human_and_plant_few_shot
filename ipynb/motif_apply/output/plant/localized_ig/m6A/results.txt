@@ -1,0 +1,34 @@
+Mod: m6A
+Windows: 22430
+
+  Model_Motif_3 vs 2-RAAAC: p=0.0126293 E=0.138923 q=0.0833069
+  Model_Motif_3 vs 11-UGAAUC: p=0.0151467 E=0.166614 q=0.0833069
+  Model_Motif_3 vs 5-UCGAU: p=0.131511 E=1.44662 q=0.355103
+  Model_Motif_3 vs 3-HGAWGAWG: p=0.155868 E=1.71454 q=0.355103
+  Model_Motif_3 vs 6-AACCG: p=0.16141 E=1.77551 q=0.355103
+  Model_Motif_3 vs 4-AACAA: p=0.201018 E=2.2112 q=0.368533
+  Model_Motif_4 vs 9-CUAACAYC: p=0.00311881 E=0.034307 q=0.034307
+  Model_Motif_7 vs 2-RAAAC: p=0.024179 E=0.265969 q=0.265969
+  Model_Motif_8 vs 5-UCGAU: p=0.0211636 E=0.2328 q=0.204904
+  Model_Motif_8 vs 11-UGAAUC: p=0.0372553 E=0.409809 q=0.204904
+  Model_Motif_8 vs 10-UGUUUCA: p=0.0997147 E=1.09686 q=0.365621
+  Model_Motif_9 vs 10-UGUUUCA: p=0.0269748 E=0.296723 q=0.296723
+  Model_Motif_10 vs 5-UCGAU: p=0.0387437 E=0.426181 q=0.426181
+  Model_Motif_11 vs 5-UCGAU: p=0.0452055 E=0.49726 q=0.49726
+  Model_Motif_12 vs 6-AACCG: p=0.00799134 E=0.0879047 q=0.0879047
+  Model_Motif_12 vs 9-CUAACAYC: p=0.0228796 E=0.251675 q=0.125838
+  Model_Motif_12 vs 2-RAAAC: p=0.101894 E=1.12083 q=0.373611
+  Model_Motif_12 vs 4-AACAA: p=0.143822 E=1.58204 q=0.377131
+  Model_Motif_12 vs 11-UGAAUC: p=0.171423 E=1.88566 q=0.377131
+  Model_Motif_13 vs 4-AACAA: p=0.0333115 E=0.366427 q=0.196097
+  Model_Motif_13 vs 5-UCGAU: p=0.035654 E=0.392194 q=0.196097
+  Model_Motif_13 vs 3-HGAWGAWG: p=0.1109 E=1.2199 q=0.406632
+  Model_Motif_13 vs 11-UGAAUC: p=0.166606 E=1.83266 q=0.458166
+  Model_Motif_14 vs 2-RAAAC: p=0.101252 E=1.11377 q=0.382292
+  Model_Motif_14 vs 4-AACAA: p=0.123024 E=1.35326 q=0.382292
+  Model_Motif_14 vs 9-CUAACAYC: p=0.136105 E=1.49715 q=0.382292
+  Model_Motif_14 vs 11-UGAAUC: p=0.165013 E=1.81514 q=0.382292
+  Model_Motif_14 vs 6-AACCG: p=0.173769 E=1.91146 q=0.382292
+  # Tomtom (Motif Comparison Tool): Version 5.3.0 compiled on Apr 12 2021 at 08:28:11 vs None: p=None E=None q=None
+  # The format of this file is described at http://meme-suite.org/doc/tomtom-output-format.html. vs None: p=None E=None q=None
+  # tomtom -no-ssc -dist pearson -oc /home/dc/vscode/vscode20260406/rgcnformer_sum/ipynb/motif_apply/output/plant/localized_ig/m6A/tomtom_out /home/dc/vscode/vscode20260406/rgcnformer_sum/ipynb/motif_apply/output/plant/localized_ig/m6A/model_motifs.meme /home/dc/vscode/vscode20260406/rgcnformer_sum/ipynb/motif_apply/output/plant/localized_ig/m6A/streme_out/streme.txt vs None: p=None E=None q=None

@@ -138,9 +138,17 @@ def bytes_to_onehot(row):
     """
     raw = np.asarray(row)
     if raw.dtype.kind == 'S':
-        byte_array = raw.view(np.uint8).reshape(-1)
+        # |S1 字节数组或 0d 标量，先用 np.frombuffer 转为 uint8 一维数组
+        if raw.ndim == 0:
+            byte_array = np.frombuffer(raw.item(), dtype=np.uint8)
+        else:
+            byte_array = raw.view(np.uint8).reshape(-1)
     else:
-        byte_array = raw.astype(np.uint8, copy=False).reshape(-1)
+        # 避免对 0d 数组做 .astype(np.uint8) 导致 "Changing the dtype of a 0d array" 错误
+        if raw.ndim == 0:
+            byte_array = np.frombuffer(raw.item(), dtype=np.uint8)
+        else:
+            byte_array = raw.astype(np.uint8, copy=False).reshape(-1)
     return _BYTE_TO_ONEHOT_MAPPING[byte_array].copy()
 
 # ---------------------------------------------------------------------------
@@ -241,7 +249,11 @@ def bytes_to_seqstr(row):
     Convert a (1001,) |S1/byte array to an RNA sequence string, normalizing T to U.
     """
     raw = np.asarray(row)
-    seq = b''.join(raw[i] for i in range(len(raw))).decode('ascii')
+    if raw.ndim == 0:
+        # mmap 0d 标量：直接从字节解码
+        seq = raw.item().decode('ascii') if isinstance(raw.item(), bytes) else str(raw.item())
+    else:
+        seq = b''.join(raw[i] for i in range(len(raw))).decode('ascii')
     return normalize_rna_seq(seq)
 
 
