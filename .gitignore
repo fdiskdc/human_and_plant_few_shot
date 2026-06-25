@@ -16,6 +16,9 @@
 *.svg
 *.pt
 *.zip
+*.xlsx
+*.csv
+*.npz
 *.tsv
 /motif_logo
 # 忽略__pycache__文件夹
