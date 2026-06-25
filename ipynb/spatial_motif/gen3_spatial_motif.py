@@ -607,7 +607,19 @@ MAX_REL_POS = 1000
 REL_RANGE = (MAX_REL_POS - MIN_REL_POS) + 1  # 2001
 CENTER_IDX = -MIN_REL_POS  # 1000
 REVERSE_LABEL_MAPPING = {v: k for k, v in LABEL_MAPPING.items()}
-INDEX_TO_NUCLEOTIDE = {0: 'A', 1: 'C', 2: 'G', 3: 'U'}
+COL_TO_NUCLEOTIDE = {0: 'A', 1: 'C', 2: 'G', 3: 'U'}
+# 修饰位点的原始碱基映射 (m6A→A, m5C→C, Y→U 等)
+CLASS_TO_NUCLEOTIDE = {
+    0: 'A', 1: 'A',                          # Am, Atol → A
+    2: 'C',                                  # Cm → C
+    3: 'G',                                  # Gm → G
+    4: 'U', 5: 'U',                          # Tm, Y → U
+    6: 'C',                                  # ac4C → C
+    7: 'A',                                  # m1A → A
+    8: 'C',                                  # m5C → C
+    9: 'A', 10: 'A',                         # m6A, m6Am → A
+    11: 'G'                                  # m7G → G
+}
 
 # Morandi colors for logomaker
 MORANDI_COLORS = {
@@ -965,7 +977,7 @@ def plot_top_k_logo(
                 if nuc not in sig_bases:
                     logo_matrix_norm[local_idx, col_idx] = 0.0
 
-    target_nuc = INDEX_TO_NUCLEOTIDE.get(class_idx, 'N')
+    target_nuc = CLASS_TO_NUCLEOTIDE.get(class_idx, 'N')
     if target_nuc in NUC_TO_INDEX:
         target_col = NUC_TO_INDEX[target_nuc]
         logo_matrix_norm[anchor_local_idx, :] = 0
