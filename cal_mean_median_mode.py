@@ -143,6 +143,7 @@ def calculate_statistics_per_class(full_labels, max_samples=None):
             results[class_name] = {
                 'class': class_name,
                 'seq_count': 0,
+                'total_sites': 0,
                 'mean': np.nan,
                 'median': np.nan,
                 'mode': np.nan,
@@ -168,6 +169,7 @@ def calculate_statistics_per_class(full_labels, max_samples=None):
             results[class_name] = {
                 'class': class_name,
                 'seq_count': len(counts),
+                'total_sites': int(np.sum(counts_array)),
                 'mean': round(np.mean(counts_array), 2),
                 'median': round(float(np.median(counts_array)), 2),
                 'mode': mode_value,
@@ -200,6 +202,7 @@ def print_summary_table(results):
         table_data.append({
             'Class': class_name,
             '序列数': r['seq_count'],
+            '修饰位点数': r['total_sites'],
             '平均数': r['mean'],
             '中位数': r['median'],
             '众数': r['mode'],
@@ -267,6 +270,7 @@ def save_to_csv(results, output_path='statistics_summary.csv'):
         table_data.append({
             'Class': class_name,
             '序列数': r['seq_count'],
+            '修饰位点数': r['total_sites'],
             '平均数': r['mean'],
             '中位数': r['median'],
             '众数': r['mode'],
