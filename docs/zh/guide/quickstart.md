@@ -4,9 +4,10 @@
 
 | 依赖 / Dependency | 版本 / Version | 用途 / Purpose |
 |---|---|---|
-| Python | 3.8+ (推荐 3.10) | 运行时 / Runtime |
-| PyTorch | 1.10+ | 深度学习框架 / Deep learning framework |
-| PyTorch Geometric | 2.0+ | 图卷积 / Graph convolution |
+| Python | 3.11 | 运行时 / Runtime |
+| [uv](https://docs.astral.sh/uv/) | latest | Python 包管理器 / Package manager |
+| PyTorch | 2.0+ | 深度学习框架 / Deep learning framework |
+| PyTorch Geometric | 2.4+ | 图卷积 / Graph convolution |
 | numpy | 1.20+ | 数值计算 / Numerical computing |
 | pandas | 1.3+ | 数据分析 / Data analysis |
 | scikit-learn | 1.0+ | 评估指标 / Evaluation metrics |
@@ -22,10 +23,13 @@ git clone https://github.com/<your-org>/human_and_plant_few_shot.git
 cd human_and_plant_few_shot
 
 # Python 依赖 / Python deps
-pip install torch torch-geometric numpy pandas scikit-learn matplotlib
+uv sync --locked
+
+# (可选) 分析工具 / (Optional) Analysis tools
+uv sync --locked --group analysis
 
 # (可选) 文档依赖 / (Optional) Docs deps
-cd docs && npm install
+cd docs && npm ci
 ```
 
 ## 3. 数据准备 / Data Preparation
@@ -44,7 +48,7 @@ ls -la npy
 If the symlink is missing, run preprocessing scripts in `dataset/`:
 
 ```bash
-python dataset/preprocess_human.py
+uv run python dataset/preprocess_human.py
 # 生成 train_pos.npy, train_neg.npy, test_pos.npy, test_neg.npy
 ```
 
@@ -54,7 +58,7 @@ python dataset/preprocess_human.py
 # 训练 Human mRModN 30 个 epoch
 import subprocess
 subprocess.run([
-    "python", "train_human_mrmodn.py",
+    "uv", "run", "python", "train_human_mrmodn.py",
     "--epochs", "30",
     "--batch-size", "32",
     "--lr", "1e-3"
@@ -64,7 +68,7 @@ subprocess.run([
 或直接命令行：
 
 ```bash
-python train_human_mrmodn.py --epochs 30 --batch-size 32
+uv run python train_human_mrmodn.py --epochs 30 --batch-size 32
 ```
 
 训练完成后，模型权重保存到 `output/human_mrmodn/epoch_030.pt`，日志写入 `logs/`。
@@ -75,10 +79,10 @@ After training, weights are saved to `output/human_mrmodn/epoch_030.pt`, logs to
 
 ```bash
 # Human + mRModN 全长 1001nt 推理
-python inference_human_mrmodn_full.py
+uv run python inference_human_mrmodn_full.py
 
 # 滑窗推理 (segmented)
-python inference_human_modx_segmented.py --input sequences.fasta
+uv run python inference_human_modx_segmented.py --input sequences.fasta
 ```
 
 ## 6. 常见问题 / FAQ
@@ -93,7 +97,7 @@ A: 确认 `npy/` 软链接指向正确目录，或重新运行 `dataset/preproce
 A: 修改 `dataset/human.py` 的标签筛选逻辑或 `model/mrmodn.py` 的 `num_classes`。
 
 **Q: 训练时 Loss 不下降？**
-A: 检查学习率（建议 1e-3 ~ 5e-4）、warmup 步数和数据增强。
+A: 检查学习率（建议 1e-3 ~ 5e-4），warmup 步数和数据增强。
 
 ## 7. 目录速览 / Directory Tour
 

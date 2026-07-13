@@ -69,10 +69,10 @@ Scripts in each dataset subdirectory run independently. From project root:
 
 ```bash
 # 示例: human 数据集 mRModN 模型的空间 motif 可视化
-python visualization/human/mrmodn/spatial_motif.py
+uv run python visualization/human/mrmodn/spatial_motif.py
 
 # 工具脚本
-python visualization/tools/view_npz.py path/to/data.npz
+uv run python visualization/tools/view_npz.py path/to/data.npz
 ```
 
 ## 添加新可视化 / Adding new visualizations

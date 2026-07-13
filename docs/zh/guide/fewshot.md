@@ -96,9 +96,9 @@ class AdaptiveBalancedSampler:
 **Balanced sampling** — equal number of samples per class.
 
 ```bash
-python fewshot_ac4c_mrmodn_balance.py --n-shot 5 --n-way 2
-python fewshot_ac4c_mrmodn_balance.py --n-shot 10 --n-way 2
-python fewshot_ac4c_mrmodn_balance.py --n-shot 20 --n-way 2
+uv run python fewshot_ac4c_mrmodn_balance.py --n-shot 5 --n-way 2
+uv run python fewshot_ac4c_mrmodn_balance.py --n-shot 10 --n-way 2
+uv run python fewshot_ac4c_mrmodn_balance.py --n-shot 20 --n-way 2
 ```
 
 **输出 / Output**: `output/fewshot/ac4c_balance_{n_shot}shot.csv`
@@ -118,7 +118,7 @@ python fewshot_ac4c_mrmodn_balance.py --n-shot 20 --n-way 2
 **Task**: Simulates real-world scenario with 1:10 positive-negative ratio.
 
 ```bash
-python fewshot_ac4c_mrmodn_unbalan.py --n-shot 5 --neg-ratio 10
+uv run python fewshot_ac4c_mrmodn_unbalan.py --n-shot 5 --neg-ratio 10
 ```
 
 **特点**: 启用 ABS 采样器处理不平衡
@@ -134,7 +134,7 @@ python fewshot_ac4c_mrmodn_unbalan.py --n-shot 5 --neg-ratio 10
 **Task**: 5-way 5-shot learning on 3 independent species (Arabidopsis, rice, maize).
 
 ```bash
-python fewshot_plant_mrmodn_3way.py --species arabidopsis rice maize
+uv run python fewshot_plant_mrmodn_3way.py --species arabidopsis rice maize
 ```
 
 **关键点 / Key points**:
@@ -150,7 +150,7 @@ python fewshot_plant_mrmodn_3way.py --species arabidopsis rice maize
 **Task**: Evaluate generalization to unseen species/sites.
 
 ```bash
-python zeroshot_human_mrmodn_analysis.py \
+uv run python zeroshot_human_mrmodn_analysis.py \
     --pretrained output/human_mrmodn/best.pt \
     --target gen3 plant
 ```
@@ -169,7 +169,7 @@ python zeroshot_human_mrmodn_analysis.py \
 Extract intermediate features from a pretrained model for visualization or downstream tasks.
 
 ```bash
-python zeroshot_human_mrmodn_extract.py \
+uv run python zeroshot_human_mrmodn_extract.py \
     --pretrained output/human_mrmodn/best.pt \
     --output output/zeroshot/features.npz
 ```

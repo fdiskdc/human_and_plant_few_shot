@@ -31,7 +31,7 @@ The 3×3 matrix has **rows** for pooling strategy and **columns** for loss combi
 | MoHE    | ✓     | ✓               | ✓            |
 
 ```bash
-python ablation/ablation_3x3_human_mrmodn.py --epochs 20
+uv run python ablation/ablation_3x3_human_mrmodn.py --epochs 20
 # 输出: output/ablation/3x3_results.csv
 ```
 
@@ -57,7 +57,7 @@ python ablation/ablation_3x3_human_mrmodn.py --epochs 20
 | ABS 采样 | {with, without} |
 
 ```bash
-python ablation/ablation_3x3_v2_human_mrmodn.py
+uv run python ablation/ablation_3x3_v2_human_mrmodn.py
 # 输出: output/ablation/3x3_v2_results.csv
 ```
 
@@ -81,7 +81,7 @@ Step-by-step ablation of MoHE sub-modules:
 **文件 / File**: `ablation/cal_flops_human_mrmodn.py`
 
 ```bash
-python ablation/cal_flops_human_mrmodn.py
+uv run python ablation/cal_flops_human_mrmodn.py
 ```
 
 **输出示例 / Sample output**:
@@ -109,7 +109,7 @@ Inference time (1000 samples): 1.05 s
 **文件 / File**: `ablation/cal_stats_human_mrmodn.py`
 
 ```bash
-python ablation/cal_stats_human_mrmodn.py
+uv run python ablation/cal_stats_human_mrmodn.py
 ```
 
 **输出 / Output**:
@@ -127,19 +127,19 @@ python ablation/cal_stats_human_mrmodn.py
 
 ```bash
 # 1. 3×3 矩阵
-python ablation/ablation_3x3_human_mrmodn.py --epochs 20
+uv run python ablation/ablation_3x3_human_mrmodn.py --epochs 20
 
 # 2. 3×3 v2
-python ablation/ablation_3x3_v2_human_mrmodn.py
+uv run python ablation/ablation_3x3_v2_human_mrmodn.py
 
 # 3. MoHE 单独消融
-python ablation/ablation_mohe_human_mrmodn.py
+uv run python ablation/ablation_mohe_human_mrmodn.py
 
 # 4. FLOPs
-python ablation/cal_flops_human_mrmodn.py
+uv run python ablation/cal_flops_human_mrmodn.py
 
 # 5. 训练/推理统计
-python ablation/cal_stats_human_mrmodn.py
+uv run python ablation/cal_stats_human_mrmodn.py
 ```
 
 ## 9. 结果表格 / Results Table Template

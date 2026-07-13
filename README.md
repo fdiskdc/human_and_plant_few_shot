@@ -121,19 +121,25 @@ rgcnformer_sum/
 
 ### 环境要求 / Requirements
 
-- **Python 3.8+**(推荐 3.10)/ Python 3.8+ (3.10 recommended)
-- **PyTorch 1.10+** + **PyTorch Geometric**(用于图卷积)/ PyTorch + PyG
+- **Python 3.11** / Python 3.11
+- **[uv](https://docs.astral.sh/uv/)**（Python 包管理器）/ uv (Python package manager)
+- **PyTorch 2.0+** + **PyTorch Geometric**（用于图卷积）/ PyTorch + PyG
 - **numpy / pandas / scikit-learn / matplotlib**
-- **R 4.0+**(用于 R 可视化脚本)/ R 4.0+ (for R viz scripts)
-- **JupyterLab / Notebook** (用于 `visualization/notebooks/`) / Jupyter for notebooks
-- 训练用 GPU(推荐 NVIDIA V100/A100,显存 ≥ 16GB)/ Training GPU recommended
+- **R 4.0+**（用于 R 可视化脚本）/ R 4.0+ (for R viz scripts)
+- **JupyterLab / Notebook**（用于 `visualization/notebooks/`）/ Jupyter for notebooks
+- 训练用 GPU（推荐 NVIDIA V100/A100，显存 ≥ 16GB）/ Training GPU recommended
 
 ### 安装 / Installation
 
 ```bash
-cd rgcnformer_sum
-pip install torch torch-geometric numpy pandas scikit-learn matplotlib
-# 或使用项目根目录的 requirements(如有)/ or use project requirements if present
+cd human_and_plant_few_shot
+uv sync --locked
+
+# (可选) 分析工具 / (Optional) Analysis tools
+uv sync --locked --group analysis
+
+# (可选) 文档依赖 / (Optional) Docs deps
+cd docs && npm ci
 ```
 
 ### 数据准备 / Data Preparation
@@ -150,18 +156,18 @@ ls -la npy
 
 ```bash
 # 训练 Human 数据集上的 mRModN (RGCNFormer)
-python train_human_mrmodn.py --epochs 40 --batch-size 32
+uv run python train_human_mrmodn.py --epochs 40 --batch-size 32
 
 # 训练 Plant 数据集
-python train_plant_mrmodn.py
+uv run python train_plant_mrmodn.py
 
 # 训练多 RM 数据集
-python train_human_multirm.py
-python train_multirm_mrmodn.py
+uv run python train_human_multirm.py
+uv run python train_multirm_mrmodn.py
 
 # 训练 ModX / EvoRMD 变体
-python train_human_modx.py
-python train_human_evormd.py
+uv run python train_human_modx.py
+uv run python train_human_evormd.py
 ```
 
 训练产物保存到 `output/`,日志保存到 `logs/`。/ Outputs to `output/`, logs to `logs/`.
@@ -170,26 +176,26 @@ python train_human_evormd.py
 
 ```bash
 # Human + mRModN 全长 1001nt 推理
-python inference_human_mrmodn_full.py
+uv run python inference_human_mrmodn_full.py
 
 # 滑窗推理 (segmented)
-python inference_human_modx_segmented.py --input sequences.fasta
-python inference_human_evormd_segmented.py
-python inference_multirm_multirm_segmented.py
+uv run python inference_human_modx_segmented.py --input sequences.fasta
+uv run python inference_human_evormd_segmented.py
+uv run python inference_multirm_multirm_segmented.py
 ```
 
 ### 可视化 / Visualization
 
 ```bash
 # 注意力对比 (从 atten_comp/ 迁移到 visualization/)
-python visualization/human/mrmodn/run_attention_comparison_v2.py
-python visualization/human/mrmodn/attention_comparison.py
+uv run python visualization/human/mrmodn/run_attention_comparison_v2.py
+uv run python visualization/human/mrmodn/attention_comparison.py
 
 # 空间 motif
-python visualization/human/mrmodn/spatial_motif.py
+uv run python visualization/human/mrmodn/spatial_motif.py
 
 # UMAP 工具
-python visualization/tools/prepare_umap_data.py
+uv run python visualization/tools/prepare_umap_data.py
 
 # R 脚本: 零样本/少样本图表 (从根目录迁移到 analysis/)
 Rscript analysis/plot_zero_fewshot_analysis.R
@@ -199,19 +205,19 @@ Rscript analysis/plot_zero_fewshot_analysis.R
 
 ```bash
 # 运行完整测试套件 (pytest)
-pytest tests/ -v
+uv run pytest tests/ -v
 
 # 仅运行命名规范审计
-pytest tests/test_naming_convention.py -v
+uv run pytest tests/test_naming_convention.py -v
 
 # 仅运行模型导入回归
-pytest tests/test_model_import.py -v
+uv run pytest tests/test_model_import.py -v
 ```
 
 ### Jupyter Notebooks
 
 ```bash
-jupyter lab visualization/notebooks/
+uv run jupyter lab visualization/notebooks/
 # 打开 view_gen3.ipynb 等进行交互式分析
 ```
 

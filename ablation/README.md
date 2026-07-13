@@ -21,8 +21,8 @@ FLOPs / parameter statistics utilities.
 从项目根目录执行 / Run from project root:
 
 ```bash
-python ablation/ablation_mohe_human_mrmodn.py
-python ablation/cal_flops_human_mrmodn.py
+uv run python ablation/ablation_mohe_human_mrmodn.py
+uv run python ablation/cal_flops_human_mrmodn.py
 ```
 
 ## 输出 / Outputs

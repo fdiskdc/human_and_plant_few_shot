@@ -34,7 +34,7 @@ visualization/
 **Purpose**: Compares attention distributions of multiple models (mRModN, ModX, MultiRM) on the same sequence.
 
 ```bash
-python visualization/human/mrmodn/run_attention_comparison_v2.py \
+uv run python visualization/human/mrmodn/run_attention_comparison_v2.py \
     --models mrmodn modx multirm \
     --sequence examples/seq1.fa \
     --output fig/attention_comparison.png
@@ -122,7 +122,7 @@ Available notebooks:
 **Purpose**: Quickly inspect the contents of `.npz` inference result files.
 
 ```bash
-python visualization/tools/view_npz.py output/inference/human_mrmodn_full.npz
+uv run python visualization/tools/view_npz.py output/inference/human_mrmodn_full.npz
 ```
 
 Prints shape, statistics (min/max/mean), and sample data of each array.
@@ -132,7 +132,7 @@ Prints shape, statistics (min/max/mean), and sample data of each array.
 Use the `collect_atten_*.py` series:
 
 ```bash
-python collect_atten_human_mrmodn.py \
+uv run python collect_atten_human_mrmodn.py \
     --checkpoint output/human_mrmodn/best.pt \
     --output output/atten/human_mrmodn.npz
 ```
